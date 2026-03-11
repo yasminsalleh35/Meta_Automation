@@ -1,6 +1,7 @@
 // supabase/functions/_shared/cors.ts
 const DEFAULT_ALLOWED = [
   "https://iacamply.com",
+  "https://camplyia.netlify.app",
 ];
 
 const ORIGINS_FROM_ENV =
