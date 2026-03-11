@@ -1,0 +1,9 @@
+[build]
+  command = "npm install --legacy-peer-deps && npm run build"
+  publish = "dist"
+
+# SPA routing — all paths serve index.html, React Router handles routing
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200

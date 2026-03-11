@@ -1,0 +1,238 @@
+project_id = "ibwhqkgvrkkqxiksbiqr"
+
+[api]
+enabled = true
+port = 54321
+schemas = ["public", "graphql_public"]
+extra_search_path = ["public", "extensions"]
+max_rows = 1000
+
+[auth]
+enabled = true
+site_url = "https://iacamply.com"
+additional_redirect_urls = ["https://iacamply.com/auth/reset-password", "https://ibwhqkgvrkkqxiksbiqr.supabase.co"]
+jwt_expiry = 3600
+enable_signup = true
+
+[auth.email]
+enable_signup = true
+double_confirm_changes = true
+enable_confirmations = true
+
+[db]
+port = 54322
+
+[studio]
+enabled = true
+port = 54323
+
+[storage]
+enabled = true
+file_size_limit = "1GiB"
+
+[edge_runtime]
+enabled = true
+
+[analytics]
+enabled = false
+
+[functions.stripe-webhook]
+verify_jwt = false
+
+[functions.check-subscription]
+verify_jwt = true
+
+[functions.check-pagarme-subscription]
+verify_jwt = true
+
+[functions.guest-checkout]
+verify_jwt = false
+
+[functions.create-checkout]
+verify_jwt = true
+
+[functions.create-payment-intent]
+verify_jwt = false
+
+[functions.customer-portal]
+verify_jwt = true
+
+[functions.get-campaigns]
+verify_jwt = true
+
+[functions.save-campaign]
+verify_jwt = true
+
+[functions.business-settings]
+verify_jwt = true
+
+[functions.meta-campaigns-insights]
+verify_jwt = true
+
+[functions.meta-campaign-management]
+verify_jwt = true
+
+[functions.meta-campaign-bulk-operations]
+verify_jwt = true
+
+[functions.meta-campaign-auto-sync]
+verify_jwt = true
+
+[functions.verify-and-correct-ad-set]
+verify_jwt = true
+
+[functions.auto-verify-ad-sets]
+verify_jwt = false
+
+[functions.manage-snapshots]
+verify_jwt = true
+
+[functions.meta-campaigns-list]
+verify_jwt = true
+
+[functions.lead-quiz-submit]
+verify_jwt = false
+
+[functions.strategy-report]
+verify_jwt = true
+
+[functions.meta-targeting-search]
+verify_jwt = true
+
+[functions.security-audit]
+verify_jwt = true
+
+[functions.meta-campaigns-enhanced]
+verify_jwt = true
+
+[functions.meta-selection]
+verify_jwt = true
+
+[functions.simple-campaign-create]
+verify_jwt = true
+
+[functions.ai-suggestions]
+verify_jwt = false
+
+[functions.pagarme-init]
+verify_jwt = true
+
+[functions.pagarme-test-connection]
+verify_jwt = true
+
+[functions.pagarme-webhook]
+verify_jwt = false
+
+[functions.pagarme-calc]
+verify_jwt = true
+
+[functions.meta-oauth-exchange]
+verify_jwt = true
+
+[functions.meta-assets]
+verify_jwt = true
+
+[functions.meta-validation]
+verify_jwt = true
+
+[functions.save-asset-selection]
+verify_jwt = true
+
+[functions.meta-ads-account-pages]
+verify_jwt = true
+
+[functions.meta-dynamic-assets]
+verify_jwt = true
+
+[functions.meta-whatsapp-assets]
+verify_jwt = true
+
+[functions.meta-whatsapp-save-selection]
+verify_jwt = true
+
+[functions.pagarme-subscribe]
+verify_jwt = false
+
+[functions.pagarme-create-plans]
+verify_jwt = true
+
+[functions.pagarme-public-config]
+verify_jwt = false
+
+[functions.send-account-creation]
+verify_jwt = false
+
+[functions.test-meta-campaign-create]
+verify_jwt = true
+
+[functions.test-meta-adset-create]
+verify_jwt = true
+
+[functions.test-meta-ad-create]
+verify_jwt = true
+
+[functions.test-meta-creative-create]
+verify_jwt = true
+
+[functions.simple-campaign-activate]
+verify_jwt = true
+
+[functions.simple-campaign-pause]
+verify_jwt = true
+
+[functions.meta-campaigns-cached]
+verify_jwt = true
+
+[functions.meta-discovery-initial]
+verify_jwt = true
+
+[functions.meta-discovery-diff]
+verify_jwt = true
+
+[functions.meta-sync-actives]
+verify_jwt = true
+
+[functions.meta-campaign-refresh-one]
+verify_jwt = true
+
+[functions.account-insights-refresh]
+verify_jwt = true
+
+[functions.account-insights-read]
+verify_jwt = true
+
+[functions.contingency-manual-sync]
+verify_jwt = true
+
+[functions.contingency-auto-retry-walink]
+verify_jwt = false
+
+[functions.test-wa-link-campaign-create]
+verify_jwt = false
+
+[functions.campaign-external-sync]
+verify_jwt = true
+
+[functions.asaas-webhook]
+verify_jwt = false
+
+[functions.asaas-public-checkout]
+verify_jwt = false
+
+[functions.asaas-test-connection]
+verify_jwt = true
+
+[functions.asaas-create-checkout]
+verify_jwt = true
+
+[functions.asaas-process-checkout-success]
+verify_jwt = false
+
+[functions.quiz-lead-scoring]
+verify_jwt = true
+
+[functions.quiz-submit]
+verify_jwt = false
+
+[functions.meta-campaigns-discover]
+verify_jwt = true

@@ -1,0 +1,44 @@
+
+export interface RealCampaign {
+  id: string;
+  name: string;
+  status: 'draft' | 'active' | 'paused' | 'finished';
+  objective: string;
+  budget_daily: number;
+  budget_total: number;
+  location_country?: string;
+  location_state?: string;
+  location_city?: string;
+  location_radius?: number;
+  selected_locations?: any[];
+  age_min?: number;
+  age_max?: number;
+  gender?: string;
+  interests?: any[];
+  placements?: any[];
+  devices?: any[];
+  ad_title?: string;
+  ad_text?: string;
+  destination_url?: string;
+  media_file_id?: string;
+  facebook_page?: string;
+  instagram_account?: string;
+  whatsapp_number?: string;
+  created_at: string;
+  updated_at: string;
+  start_date?: string;
+  end_date?: string;
+  meta_campaign_id?: string;
+  meta_adset_id?: string;
+  meta_ad_id?: string;
+  processing_status?: string;
+  meta_integration_status?: string;
+  verification_status?: string;
+  last_verified_at?: string;
+  user_id: string;
+  ad_account_id?: string;
+  error_log?: any[];
+  retry_count?: number;
+  last_processed_at?: string;
+  job_id?: string;
+}
