@@ -65,7 +65,7 @@ serve(async (req) => {
     }
 
     const accessToken = integration.access_token;
-    const baseUrl = 'https://graph.facebook.com/v19.0';
+    const baseUrl = 'https://graph.facebook.com/v23.0';
 
     let result;
 

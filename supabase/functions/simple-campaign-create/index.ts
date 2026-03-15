@@ -1168,47 +1168,57 @@ serve(async (req) => {
       throw new Error('Página do Facebook é obrigatória para campanhas CTWA');
     }
 
-    // ✅ PHASE 6: WhatsApp validation - BYPASS MODE (apenas logs)
-    logger('info', 'CTWA-VALIDATION-BYPASS', '⚠️ Validação de WhatsApp DESABILITADA - Tentando criar campanha', { 
-      pageId,
-      mode: 'bypass',
-      note: 'Meta API irá rejeitar se WhatsApp não estiver conectado'
-    });
-    
-    // BYPASS: Comentado todo o bloco de validação para observar comportamento da Meta API
-    // Se a Meta API rejeitar, veremos o erro específico nos logs
-    /*
-    try {
-      const pageCheckRes = await fetch(
-        `https://graph.facebook.com/v23.0/${pageId}?fields=whatsapp_number{display_phone_number}&access_token=${accessToken}`,
-        { signal: AbortSignal.timeout(8000) }
-      );
+    // ✅ PHASE 6: WhatsApp pre-validation (non-blocking)
+    // Checks if the page has WhatsApp connected before attempting campaign creation.
+    // If user has selected a phone_number_id, we trust it. Otherwise, verify via page.
+    if (!whatsappPhoneId) {
+      try {
+        const pageCheckRes = await fetch(
+          `https://graph.facebook.com/v23.0/${pageId}?fields=whatsapp_number{display_phone_number}&access_token=${accessToken}`,
+          { signal: AbortSignal.timeout(8000) }
+        );
 
-      if (pageCheckRes.ok) {
-        const pageData = await pageCheckRes.json();
-        if (!pageData.whatsapp_number) {
-          throw new Error(
-            `[CTWA-VALIDATION] Page ${pageId} does not have a WhatsApp number connected. ` +
-            `Please connect a WhatsApp number at https://business.facebook.com/latest/settings/pages/${pageId}/whatsapp`
-          );
+        if (pageCheckRes.ok) {
+          const pageData = await pageCheckRes.json();
+          if (!pageData.whatsapp_number) {
+            logger('error', 'CTWA-VALIDATION', '❌ Página sem WhatsApp Business conectado', {
+              pageId,
+              solution: `https://business.facebook.com/latest/settings/pages/${pageId}/whatsapp`
+            });
+            throw new Error(
+              'A Página selecionada não possui WhatsApp Business conectado. ' +
+              'Acesse o Meta Business Suite e vincule uma conta WhatsApp Business à sua Página, ' +
+              'ou selecione um número de WhatsApp na tela de integrações.'
+            );
+          }
+          logger('info', 'CTWA-VALIDATION', '✅ WhatsApp verificado via página', {
+            pageId,
+            whatsappNumber: pageData.whatsapp_number.display_phone_number
+          });
+        } else {
+          // API check failed but user may still have valid setup — allow and let Meta API decide
+          logger('warn', 'CTWA-VALIDATION', 'Não foi possível verificar WhatsApp via API, prosseguindo', {
+            pageId,
+            status: pageCheckRes.status
+          });
         }
-        logger('info', 'CTWA-VALIDATION', '✅ WhatsApp verified', { 
-          pageId,
-          whatsappNumber: pageData.whatsapp_number.display_phone_number 
-        });
-      } else {
-        logger('warn', 'CTWA-VALIDATION', 'Could not verify WhatsApp connection via API, proceeding anyway', { 
-          pageId,
-          status: pageCheckRes.status 
+      } catch (whatsappCheckError: any) {
+        // If this is our own validation error, re-throw it
+        if (whatsappCheckError.message?.includes('WhatsApp Business conectado')) {
+          throw whatsappCheckError;
+        }
+        // Network/timeout errors: log and proceed — Meta API will be the final validator
+        logger('warn', 'CTWA-VALIDATION', 'Verificação de WhatsApp falhou (timeout/rede), prosseguindo', {
+          error: whatsappCheckError instanceof Error ? whatsappCheckError.message : String(whatsappCheckError)
         });
       }
-    } catch (whatsappCheckError) {
-      logger('error', 'CTWA-VALIDATION', 'WhatsApp validation failed', { 
-        error: whatsappCheckError instanceof Error ? whatsappCheckError.message : String(whatsappCheckError)
+    } else {
+      logger('info', 'CTWA-VALIDATION', '✅ WhatsApp phone_number_id fornecido pelo usuário', {
+        pageId,
+        whatsappPhoneId,
+        whatsappDisplay: integration.selected_whatsapp_display ?? null
       });
-      // Don't throw, just warn - let Meta API reject if truly invalid
     }
-    */
 
     logger('info', 'CTWA-CONFIG', 'Configuração CTWA detectada', {
       hasWhatsAppLink: !!payload.whatsappLink,
