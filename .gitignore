@@ -35,5 +35,8 @@ dist-ssr
 # OS
 Thumbs.db
 
+# Supabase CLI temp/cache files
+supabase/.temp/
+
 # Internal documentation (development plans, notes)
 docs/
