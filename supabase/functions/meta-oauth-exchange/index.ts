@@ -127,11 +127,13 @@ serve(async (req) => {
   const validRedirectUris = [
     'https://iacamply.com/auth/meta-callback',
     'https://iacamply.com/auth/callback/meta',
-    'https://iacamply.com/auth/logout/meta'
+    'https://iacamply.com/auth/logout/meta',
+    'https://camplyia.netlify.app/auth/meta-callback',
   ];
-  
-  const REDIRECT_URI = body.redirectUri || 'https://iacamply.com/auth/meta-callback';
-  
+
+  // Accept both camelCase (redirectUri) and snake_case (redirect_uri) from client
+  const REDIRECT_URI = body.redirectUri || (body as any).redirect_uri || 'https://iacamply.com/auth/meta-callback';
+
   if (!validRedirectUris.includes(REDIRECT_URI)) {
     console.error('[meta-oauth-exchange][INVALID-REDIRECT-URI]', REDIRECT_URI);
     return j({ error: 'Invalid redirect URI' }, { status: 400, headers });
