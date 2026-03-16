@@ -23,7 +23,8 @@ export const useMetaAdsPermissionLevels = () => {
         'business_management',
         'instagram_manage_insights',
         'ads_read',
-        'read_insights'
+        'read_insights',
+        'whatsapp_business_management'
       ],
       description: 'Permissões necessárias para integração completa com Meta Ads',
       features: [
@@ -32,7 +33,8 @@ export const useMetaAdsPermissionLevels = () => {
         'Conectar contas do Instagram Business',
         'Criar e gerenciar campanhas publicitárias',
         'Acessar insights e métricas avançadas',
-        'Gerenciar Business Manager'
+        'Gerenciar Business Manager',
+        'Selecionar números WhatsApp Business'
       ]
     }
   });

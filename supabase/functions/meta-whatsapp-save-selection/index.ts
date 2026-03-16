@@ -59,15 +59,29 @@ function createServiceClient() {
   );
 }
 
-function validateSelection(body: any): WhatsAppSelection {
+function validateSelection(body: any): WhatsAppSelection & { clearing: boolean } {
+  // Allow empty strings for clearing the selection
+  const isClearRequest = body.business_id === '' && body.waba_id === '' && body.phone_number_id === '';
+
+  if (isClearRequest) {
+    return {
+      business_id: '',
+      waba_id: '',
+      phone_number_id: '',
+      display_phone_number: null,
+      verified_name: null,
+      clearing: true,
+    };
+  }
+
   if (!body.business_id || typeof body.business_id !== 'string') {
     throw new Error('business_id is required and must be a string');
   }
-  
+
   if (!body.waba_id || typeof body.waba_id !== 'string') {
     throw new Error('waba_id is required and must be a string');
   }
-  
+
   if (!body.phone_number_id || typeof body.phone_number_id !== 'string') {
     throw new Error('phone_number_id is required and must be a string');
   }
@@ -77,7 +91,8 @@ function validateSelection(body: any): WhatsAppSelection {
     waba_id: body.waba_id,
     phone_number_id: body.phone_number_id,
     display_phone_number: body.display_phone_number || null,
-    verified_name: body.verified_name || null
+    verified_name: body.verified_name || null,
+    clearing: false,
   };
 }
 
@@ -132,15 +147,15 @@ serve(async (req) => {
       return json(404, { error: 'No active Meta integration found' });
     }
 
-    // Update the integration with WhatsApp selection
+    // Update the integration with WhatsApp selection (null when clearing)
     const { error: updateError } = await supabase
       .from('integrations')
       .update({
-        selected_business_id: selection.business_id,
-        selected_waba_id: selection.waba_id,
-        selected_whatsapp_phone_id: selection.phone_number_id,
-        selected_whatsapp_display: selection.display_phone_number,
-        selected_whatsapp_verified_name: selection.verified_name,
+        selected_business_id: selection.clearing ? null : selection.business_id,
+        selected_waba_id: selection.clearing ? null : selection.waba_id,
+        selected_whatsapp_phone_id: selection.clearing ? null : selection.phone_number_id,
+        selected_whatsapp_display: selection.clearing ? null : selection.display_phone_number,
+        selected_whatsapp_verified_name: selection.clearing ? null : selection.verified_name,
         updated_at: new Date().toISOString()
       })
       .eq('id', integration.id);

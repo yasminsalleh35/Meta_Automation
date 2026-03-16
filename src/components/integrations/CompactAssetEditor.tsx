@@ -313,12 +313,15 @@ export const CompactAssetEditor: React.FC<CompactAssetEditorProps> = ({
             {isLoading ? (
               <Skeleton className="h-10 w-full" />
             ) : (
-              <Select value={selectedInstagram} onValueChange={setSelectedInstagram}>
+              <Select
+                value={selectedInstagram || '__none__'}
+                onValueChange={(value) => setSelectedInstagram(value === '__none__' ? '' : value)}
+              >
                 <SelectTrigger>
                   <SelectValue placeholder="Selecione um Instagram ou deixe em branco" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">Não usar Instagram</SelectItem>
+                  <SelectItem value="__none__">Não usar Instagram</SelectItem>
                   {instagramAccounts.map((instagram) => (
                     <SelectItem key={instagram.id} value={instagram.id}>
                       {instagram.name}
@@ -359,9 +362,10 @@ export const CompactAssetEditor: React.FC<CompactAssetEditorProps> = ({
               <div className="space-y-3">
                 {/* Business Manager */}
                 <Select
-                  value={selectedBusinessId}
+                  value={selectedBusinessId || '__none__'}
                   onValueChange={(value) => {
-                    setSelectedBusinessId(value);
+                    const actual = value === '__none__' ? '' : value;
+                    setSelectedBusinessId(actual);
                     setSelectedWabaId('');
                     setSelectedPhoneId('');
                     setSelectedPhoneDisplay('');
@@ -372,7 +376,7 @@ export const CompactAssetEditor: React.FC<CompactAssetEditorProps> = ({
                     <SelectValue placeholder="Selecione um Business Manager" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">Não usar WhatsApp</SelectItem>
+                    <SelectItem value="__none__">Não usar WhatsApp</SelectItem>
                     {whatsAppBusinesses.map((biz) => (
                       <SelectItem key={biz.id} value={biz.id}>
                         <div className="flex items-center gap-2">
