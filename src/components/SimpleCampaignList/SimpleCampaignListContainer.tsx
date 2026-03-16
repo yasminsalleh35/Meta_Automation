@@ -1,5 +1,5 @@
 
-import React from 'react';
+import React, { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { FileText, RefreshCw } from 'lucide-react';
@@ -17,11 +17,19 @@ export const SimpleCampaignListContainer: React.FC = () => {
     fetchCampaigns,
     pauseCampaign,
     activateCampaign,
+    duplicateCampaign,
     updateFilters,
     refreshMetrics
   } = useSimpleCampaignList();
 
   const { toast } = useToast();
+  const [duplicatingId, setDuplicatingId] = useState<string | null>(null);
+
+  const handleDuplicateCampaign = async (campaignId: string) => {
+    setDuplicatingId(campaignId);
+    await duplicateCampaign(campaignId);
+    setDuplicatingId(null);
+  };
 
   const handlePauseCampaign = async (campaignId: string, campaignName: string) => {
     const result = await pauseCampaign(campaignId);
@@ -108,6 +116,8 @@ export const SimpleCampaignListContainer: React.FC = () => {
               error={error}
               onPauseCampaign={handlePauseCampaign}
               onActivateCampaign={handleActivateCampaign}
+              onDuplicateCampaign={handleDuplicateCampaign}
+              duplicatingCampaignId={duplicatingId}
               onRefresh={fetchCampaigns}
             />
           </CardContent>

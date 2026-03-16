@@ -126,6 +126,35 @@ export const useSimpleCampaignList = () => {
     }
   }, [supabase]);
 
+  const duplicateCampaign = useCallback(async (campaignId: string) => {
+    try {
+      const { data, error } = await supabase.functions.invoke('duplicate-campaign', {
+        body: { campaignId }
+      });
+
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+
+      toast({
+        title: "Campanha duplicada",
+        description: `Nova campanha "${data.newCampaignName}" criada com sucesso.`,
+      });
+
+      // Refresh the list
+      await fetchCampaigns();
+
+      return { success: true, newCampaignId: data.newCampaignId };
+    } catch (error) {
+      console.error('Error duplicating campaign:', error);
+      toast({
+        title: "Erro ao duplicar",
+        description: error instanceof Error ? error.message : 'Erro desconhecido',
+        variant: "destructive"
+      });
+      return { success: false, error: error instanceof Error ? error.message : 'Erro desconhecido' };
+    }
+  }, [supabase, fetchCampaigns, toast]);
+
   const updateFilters = useCallback((newFilters: SimpleCampaignListFilters) => {
     setFilters(newFilters);
   }, []);
@@ -181,6 +210,7 @@ export const useSimpleCampaignList = () => {
     fetchCampaigns,
     pauseCampaign,
     activateCampaign,
+    duplicateCampaign,
     updateFilters,
     refreshMetrics
   };

@@ -10,6 +10,7 @@ export interface SimpleCampaignFormData {
   selectedMediaFile: any | null;
   dailyBudget: number;
   startDate: Date;
+  endDate?: Date | null;
   city: string;
   cityCoordinates?: {
     latitude: number;
@@ -50,6 +51,7 @@ export interface SimpleCampaignPayload {
   whatsappLink: string;
   dailyBudget: number;
   startDate: string;
+  endDate?: string | null;
   city: string;
   cityCoordinates?: {
     latitude: number;

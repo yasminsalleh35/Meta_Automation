@@ -371,6 +371,7 @@ export const useSimpleCampaignWizard = () => {
         whatsappLink,
         dailyBudget: formData.dailyBudget,
         startDate: formData.startDate.toISOString(),
+        endDate: formData.endDate ? formData.endDate.toISOString() : null,
         city: formData.city,
         cityCoordinates: formData.cityCoordinates,
         radius: formData.radius,

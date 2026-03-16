@@ -1324,6 +1324,7 @@ serve(async (req) => {
       destination_type: 'WHATSAPP', // ✅ CTWA: sempre WHATSAPP
       bid_strategy: 'LOWEST_COST_WITHOUT_CAP',
       start_time: payload.startDate,
+      ...(payload.endDate ? { end_time: payload.endDate } : {}),
       status: 'PAUSED',
       promoted_object: {
         page_id: pageId,
@@ -1672,17 +1673,63 @@ serve(async (req) => {
           object_story_id: objectStoryId
         });
         
-        throw new Error(`Creative creation failed: ${errorData.error?.message || 'Unknown error'}`);
+        // ✅ FASE 4.2: Dark post fallback — se object_story_id falhar, criar creative link com a mídia do post
+        logger('warn', 'CREATIVE-EXISTING-POST-FALLBACK', '⚠️ object_story_id falhou, tentando dark post fallback via link creative', {
+          original_error: errorData.error?.message
+        });
+
+        // Fallback: create a standard link creative using the post image as a regular ad
+        const fallbackPayload: Record<string, any> = {
+          name: `${payload.campaignName} - Creative (fallback)`,
+          object_story_spec: {
+            page_id: pageId,
+            link_data: {
+              message: payload.adText,
+              link: payload.whatsappLink || `https://wa.me/${payload.whatsappNumber || ''}`,
+              name: payload.adTitle,
+              call_to_action: {
+                type: 'WHATSAPP_MESSAGE',
+                value: { link: payload.whatsappLink || `https://wa.me/${payload.whatsappNumber || ''}` }
+              }
+            }
+          },
+          access_token: accessToken
+        };
+
+        // Add Instagram actor if available
+        if (instagramUserId) {
+          fallbackPayload.object_story_spec.instagram_actor_id = instagramUserId;
+        }
+
+        const fallbackResponse = await fetch(`https://graph.facebook.com${creativeEndpoint}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(fallbackPayload)
+        });
+
+        if (!fallbackResponse.ok) {
+          const fallbackError = await fallbackResponse.json();
+          logger('error', 'CREATIVE-FALLBACK-FAILED', '❌ Dark post fallback also failed', {
+            error: fallbackError.error?.message
+          });
+          throw new Error(`Creative creation failed (original: ${errorData.error?.message}, fallback: ${fallbackError.error?.message})`);
+        }
+
+        const fallbackResult = await fallbackResponse.json();
+        creativeId = fallbackResult.id;
+        logger('info', 'CREATIVE-FALLBACK-SUCCESS', '✅ Dark post fallback creative criado', { creative_id: creativeId });
       }
-      
-      const creativeResult = await creativeResponse.json();
-      creativeId = creativeResult.id;
-      
-      logger('info', 'CREATIVE-EXISTING-POST-CREATED', '✅ Creative com post existente criado com sucesso', {
-        creative_id: creativeId,
-        object_story_id: objectStoryId,
-        page_id: pageId
-      });
+
+      if (!creativeId) {
+        const creativeResult = await creativeResponse.json();
+        creativeId = creativeResult.id;
+
+        logger('info', 'CREATIVE-EXISTING-POST-CREATED', '✅ Creative com post existente criado com sucesso', {
+          creative_id: creativeId,
+          object_story_id: objectStoryId,
+          page_id: pageId
+        });
+      }
 
       // ✅ Delay estratégico após criação de creative
       await smartDelay(500, 'post-creative-creation');
@@ -1785,6 +1832,26 @@ serve(async (req) => {
           page_id: pageId,
           instagram_id: instagramUserId
         },
+        start_date: payload.startDate,
+        ...(payload.endDate ? { end_date: payload.endDate } : {}),
+        campaign_name: payload.campaignName,
+        campaign_type: payload.campaignType || 'simple',
+        creative_type: payload.creativeType,
+        fanpage: payload.fanpage,
+        instagram: payload.instagram,
+        whatsapp_link: payload.whatsappLink,
+        daily_budget: payload.dailyBudget,
+        city: payload.city,
+        city_coordinates: payload.cityCoordinates,
+        radius: payload.radius,
+        country_code: payload.countryCode,
+        selected_locations: payload.selected_locations,
+        gender: payload.gender,
+        age_min: payload.ageMin,
+        age_max: payload.ageMax,
+        special_categories: payload.specialCategories,
+        media_url: payload.mediaUrl,
+        media_file_id: payload.mediaFileId,
         processing_status: 'completed',
         meta_integration_status: 'active',
         needs_immediate_sync: true,

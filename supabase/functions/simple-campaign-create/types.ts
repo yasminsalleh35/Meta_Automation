@@ -11,6 +11,7 @@ export interface SimpleCampaignPayload {
   whatsappLink: string;
   dailyBudget: number;
   startDate: string;
+  endDate?: string | null;
   city: string;
   cityCoordinates?: {
     latitude: number;
@@ -55,6 +56,12 @@ export interface SimpleCampaignPayload {
   pageId?: string;
   postId?: string;
   destinationUrl?: string;
+  countryCode?: string;
+  selected_locations?: any[];
+  whatsapp_meta?: any;
+  whatsappNumber?: string;
+  mediaUrl?: string | null;
+  mediaFileId?: string | null;
 }
 
 export interface CampaignProcessingResult {

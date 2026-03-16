@@ -16,6 +16,8 @@ interface SimpleCampaignListTableProps {
   error: string | null;
   onPauseCampaign: (campaignId: string, campaignName: string) => void;
   onActivateCampaign: (campaignId: string, campaignName: string) => void;
+  onDuplicateCampaign?: (campaignId: string) => void;
+  duplicatingCampaignId?: string | null;
   onRefresh: () => void;
 }
 
@@ -25,6 +27,8 @@ export const SimpleCampaignListTable: React.FC<SimpleCampaignListTableProps> = (
   error,
   onPauseCampaign,
   onActivateCampaign,
+  onDuplicateCampaign,
+  duplicatingCampaignId,
   onRefresh
 }) => {
   const getStatusBadge = (status: string) => {
@@ -132,6 +136,8 @@ export const SimpleCampaignListTable: React.FC<SimpleCampaignListTableProps> = (
                   campaign={campaign}
                   onPause={() => onPauseCampaign(campaign.campaignId, campaign.name)}
                   onActivate={() => onActivateCampaign(campaign.campaignId, campaign.name)}
+                  onDuplicate={onDuplicateCampaign ? () => onDuplicateCampaign(campaign.campaignId) : undefined}
+                  isDuplicating={duplicatingCampaignId === campaign.campaignId}
                 />
               </TableCell>
             </TableRow>

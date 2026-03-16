@@ -1,7 +1,7 @@
 
 import React from 'react';
 import { Button } from '@/components/ui/button';
-import { Play, Pause, Eye, BarChart3 } from 'lucide-react';
+import { Play, Pause, Eye, BarChart3, Copy, Loader2 } from 'lucide-react';
 import { SimpleCampaignListItem } from '@/hooks/useSimpleCampaignList';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Link } from 'react-router-dom';
@@ -10,12 +10,16 @@ interface SimpleCampaignListActionsProps {
   campaign: SimpleCampaignListItem;
   onPause: () => void;
   onActivate: () => void;
+  onDuplicate?: () => void;
+  isDuplicating?: boolean;
 }
 
 export const SimpleCampaignListActions: React.FC<SimpleCampaignListActionsProps> = ({
   campaign,
   onPause,
-  onActivate
+  onActivate,
+  onDuplicate,
+  isDuplicating
 }) => {
   return (
     <TooltipProvider>
@@ -71,6 +75,29 @@ export const SimpleCampaignListActions: React.FC<SimpleCampaignListActionsProps>
             <p>Ver insights detalhados</p>
           </TooltipContent>
         </Tooltip>
+
+        {onDuplicate && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="outline"
+                size="sm"
+                className="p-2"
+                onClick={onDuplicate}
+                disabled={isDuplicating}
+              >
+                {isDuplicating ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Copy className="w-4 h-4" />
+                )}
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>
+              <p>Duplicar campanha</p>
+            </TooltipContent>
+          </Tooltip>
+        )}
 
         <Tooltip>
           <TooltipTrigger asChild>

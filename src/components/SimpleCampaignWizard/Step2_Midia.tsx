@@ -12,6 +12,7 @@ import { useMetaAssetsContext } from '@/contexts/MetaAssetsContext';
 import { useNormalizedMetaSelection } from '@/hooks/useNormalizedMetaSelection';
 import { WhatsAppInput } from './WhatsAppInput';
 import { MediaSelector } from './MediaSelector';
+import { InstagramPostSelector } from './InstagramPostSelector';
 import { MetaAssetsLoading } from '@/components/ui/meta-assets-loading';
 import { supabase } from '@/integrations/supabase/client';
 import { useSession } from '@supabase/auth-helpers-react';
@@ -329,12 +330,67 @@ export const Step2Midia: React.FC<Step2MidiaProps> = ({ formData, updateFormData
         </CardContent>
       </Card>
 
-      {/* Media Selection Section - Apenas Upload disponível */}
+      {/* Creative Type Selection */}
+      <Card className="w-full max-w-2xl mx-auto">
+        <CardHeader>
+          <CardTitle className="text-lg">Tipo de Criativo</CardTitle>
+          <CardDescription>
+            Escolha como criar o anúncio
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <RadioGroup
+            value={formData.creativeType}
+            onValueChange={(value) => handleCreativeTypeChange(value as 'upload' | 'post')}
+            className="flex gap-4"
+          >
+            <div className="flex items-center space-x-2">
+              <RadioGroupItem value="upload" id="upload" />
+              <Label htmlFor="upload" className="flex items-center gap-2 cursor-pointer">
+                <Upload className="w-4 h-4" />
+                Enviar mídia
+              </Label>
+            </div>
+            <div className="flex items-center space-x-2">
+              <RadioGroupItem
+                value="post"
+                id="post"
+                disabled={!formData.instagram}
+              />
+              <Label
+                htmlFor="post"
+                className={`flex items-center gap-2 cursor-pointer ${!formData.instagram ? 'opacity-50' : ''}`}
+              >
+                <User className="w-4 h-4" />
+                Usar post do Instagram
+              </Label>
+            </div>
+          </RadioGroup>
+          {!formData.instagram && formData.creativeType !== 'post' && (
+            <p className="text-xs text-muted-foreground mt-2">
+              Selecione uma conta do Instagram acima para usar posts existentes.
+            </p>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Media Selection Section */}
       <div className="w-full max-w-2xl mx-auto">
-        <MediaSelector 
-          formData={formData}
-          updateFormData={updateFormData}
-        />
+        {formData.creativeType === 'upload' ? (
+          <MediaSelector
+            formData={formData}
+            updateFormData={updateFormData}
+          />
+        ) : (
+          formData.instagram && formData.fanpage && (
+            <InstagramPostSelector
+              instagramUserId={formData.instagram}
+              pageId={formData.fanpage}
+              selectedPost={formData.selectedInstagramPost}
+              onPostSelect={handleInstagramPostSelect}
+            />
+          )
+        )}
       </div>
     </div>
   );

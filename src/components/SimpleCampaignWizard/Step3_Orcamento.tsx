@@ -77,8 +77,52 @@ export const Step3Orcamento: React.FC<Step3OrcamentoProps> = ({ formData, update
               />
             </PopoverContent>
           </Popover>
+        </div>
+
+        <div className="space-y-2">
+          <Label>Data de Término (Opcional)</Label>
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button
+                variant="outline"
+                className={cn(
+                  "w-full justify-start text-left font-normal",
+                  !formData.endDate && "text-muted-foreground"
+                )}
+              >
+                <CalendarIcon className="mr-2 h-4 w-4" />
+                {formData.endDate ? (
+                  format(formData.endDate, "dd 'de' MMMM 'de' yyyy", { locale: ptBR })
+                ) : (
+                  <span>Campanha contínua (sem data de fim)</span>
+                )}
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-auto p-0" align="start">
+              <Calendar
+                mode="single"
+                selected={formData.endDate || undefined}
+                onSelect={(date) => updateFormData('endDate', date || null)}
+                disabled={(date) => date <= (formData.startDate || new Date())}
+                initialFocus
+                className="pointer-events-auto"
+              />
+            </PopoverContent>
+          </Popover>
+          {formData.endDate && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => updateFormData('endDate', null)}
+              className="text-xs text-muted-foreground"
+            >
+              Remover data de término (campanha contínua)
+            </Button>
+          )}
           <p className="text-sm text-gray-600">
-            A campanha será contínua (sem data de fim)
+            {formData.endDate
+              ? 'A campanha será encerrada automaticamente nesta data.'
+              : 'Sem data de término, a campanha roda continuamente até você pausar.'}
           </p>
         </div>
       </CardContent>
