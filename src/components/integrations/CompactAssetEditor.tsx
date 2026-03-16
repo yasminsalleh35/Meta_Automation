@@ -14,13 +14,35 @@ import { useToast } from '@/hooks/use-toast';
 import { useMetaAssetsContext } from '@/contexts/MetaAssetsContext';
 import { useMetaAdsIntegration } from '@/hooks/useMetaAdsIntegration';
 import { supabase } from '@/integrations/supabase/client';
-import { 
-  Facebook, 
-  Instagram, 
-  CreditCard, 
+import {
+  Facebook,
+  Instagram,
+  CreditCard,
   Save,
-  AlertCircle
+  AlertCircle,
+  MessageCircle,
+  Building2,
+  Smartphone,
+  RefreshCw
 } from 'lucide-react';
+
+interface WhatsAppPhoneNumber {
+  id: string;
+  display_phone_number: string;
+  verified_name: string;
+}
+
+interface WhatsAppWABA {
+  id: string;
+  name: string;
+  phone_numbers: WhatsAppPhoneNumber[];
+}
+
+interface WhatsAppBusiness {
+  id: string;
+  name: string;
+  wabas: WhatsAppWABA[];
+}
 
 interface CompactAssetEditorProps {
   isOpen: boolean;
@@ -49,7 +71,40 @@ export const CompactAssetEditor: React.FC<CompactAssetEditorProps> = ({
   const [selectedInstagram, setSelectedInstagram] = useState<string>('');
   const [isSaving, setSaving] = useState(false);
 
+  // WhatsApp state
+  const [whatsAppBusinesses, setWhatsAppBusinesses] = useState<WhatsAppBusiness[]>([]);
+  const [whatsAppLoading, setWhatsAppLoading] = useState(false);
+  const [selectedBusinessId, setSelectedBusinessId] = useState<string>('');
+  const [selectedWabaId, setSelectedWabaId] = useState<string>('');
+  const [selectedPhoneId, setSelectedPhoneId] = useState<string>('');
+  const [selectedPhoneDisplay, setSelectedPhoneDisplay] = useState<string>('');
+  const [selectedPhoneVerifiedName, setSelectedPhoneVerifiedName] = useState<string>('');
+
   const isLoading = assetsLoading || adAccountsLoading;
+
+  // Fetch WhatsApp assets from edge function
+  const fetchWhatsAppAssets = async () => {
+    setWhatsAppLoading(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) return;
+
+      const response = await supabase.functions.invoke('meta-whatsapp-assets', {
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      });
+
+      if (response.error) throw new Error(response.error.message);
+      setWhatsAppBusinesses(response.data?.businesses || []);
+    } catch (error) {
+      console.error('[CompactAssetEditor] Error fetching WhatsApp assets:', error);
+    } finally {
+      setWhatsAppLoading(false);
+    }
+  };
+
+  // Derived WhatsApp objects for cascading selectors
+  const selectedBusiness = whatsAppBusinesses.find(b => b.id === selectedBusinessId);
+  const selectedWaba = selectedBusiness?.wabas.find(w => w.id === selectedWabaId);
 
   // ✅ FASE 4: Improved state management with fallback
   useEffect(() => {
@@ -57,21 +112,32 @@ export const CompactAssetEditor: React.FC<CompactAssetEditorProps> = ({
       setSelectedAdAccount(existingIntegration.ad_account_id || '');
       setSelectedPage(existingIntegration.page_id || '');
       setSelectedInstagram(existingIntegration.selected_instagram_ids?.[0] || '');
-      
+
+      // Load existing WhatsApp selections
+      setSelectedBusinessId(existingIntegration.selected_business_id || '');
+      setSelectedWabaId(existingIntegration.selected_waba_id || '');
+      setSelectedPhoneId(existingIntegration.selected_whatsapp_phone_id || '');
+      setSelectedPhoneDisplay(existingIntegration.selected_whatsapp_display || '');
+      setSelectedPhoneVerifiedName(existingIntegration.selected_whatsapp_verified_name || '');
+
       // ✅ Smart data fetching - check if we have sufficient data
       const hasMinimumData = facebookPages.length > 0 && adAccounts.length > 0;
-      
+
       if (!hasMinimumData && !isLoading) {
         console.log('[CompactAssetEditor] Fetching required assets:', {
           currentPages: facebookPages.length,
           currentAdAccounts: adAccounts.length,
           isLoading
         });
-        
-        // ✅ Fetch with shorter delay for better UX
+
         setTimeout(() => {
-          fetchAllAssets(); // Remove the 'true' parameter since it's optional
+          fetchAllAssets();
         }, 100);
+      }
+
+      // Fetch WhatsApp assets when modal opens
+      if (existingIntegration.status === 'active') {
+        fetchWhatsAppAssets();
       }
     }
   }, [existingIntegration, isOpen]); // Kept minimal dependencies
@@ -88,6 +154,7 @@ export const CompactAssetEditor: React.FC<CompactAssetEditorProps> = ({
 
     setSaving(true);
     try {
+      // Save core assets (Ad Account, Page, Instagram)
       const { error } = await supabase.functions.invoke('save-asset-selection', {
         body: {
           integrationId,
@@ -98,6 +165,43 @@ export const CompactAssetEditor: React.FC<CompactAssetEditorProps> = ({
       });
 
       if (error) throw error;
+
+      // Save WhatsApp selection if a phone is selected
+      if (selectedPhoneId) {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.access_token) {
+          const { error: waError } = await supabase.functions.invoke('meta-whatsapp-save-selection', {
+            body: {
+              business_id: selectedBusinessId,
+              waba_id: selectedWabaId,
+              phone_number_id: selectedPhoneId,
+              display_phone_number: selectedPhoneDisplay,
+              verified_name: selectedPhoneVerifiedName,
+            },
+            headers: { Authorization: `Bearer ${session.access_token}` },
+          });
+
+          if (waError) {
+            console.error('Error saving WhatsApp selection:', waError);
+            // Non-blocking — core assets already saved
+          }
+        }
+      } else if (existingIntegration?.selected_whatsapp_phone_id && !selectedPhoneId) {
+        // User cleared WhatsApp selection — update DB to remove it
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.access_token) {
+          await supabase.functions.invoke('meta-whatsapp-save-selection', {
+            body: {
+              business_id: '',
+              waba_id: '',
+              phone_number_id: '',
+              display_phone_number: '',
+              verified_name: '',
+            },
+            headers: { Authorization: `Bearer ${session.access_token}` },
+          });
+        }
+      }
 
       await refreshIntegration();
 
@@ -124,7 +228,7 @@ export const CompactAssetEditor: React.FC<CompactAssetEditorProps> = ({
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="max-w-md max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Facebook className="h-5 w-5 text-primary" />
@@ -222,6 +326,118 @@ export const CompactAssetEditor: React.FC<CompactAssetEditorProps> = ({
                   ))}
                 </SelectContent>
               </Select>
+            )}
+          </div>
+
+          {/* WhatsApp Business Section */}
+          <div className="space-y-3 pt-2 border-t">
+            <div className="flex items-center justify-between">
+              <Label className="flex items-center gap-2">
+                <MessageCircle className="h-4 w-4 text-green-600" />
+                WhatsApp Business (Opcional)
+              </Label>
+              {!whatsAppLoading && whatsAppBusinesses.length > 0 && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => fetchWhatsAppAssets()}
+                  className="h-6 px-2"
+                >
+                  <RefreshCw className="w-3 h-3" />
+                </Button>
+              )}
+            </div>
+
+            {whatsAppLoading ? (
+              <Skeleton className="h-10 w-full" />
+            ) : whatsAppBusinesses.length === 0 ? (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <AlertCircle className="h-4 w-4" />
+                <span>Nenhum negócio WhatsApp encontrado. Verifique as permissões da sua conta Meta.</span>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {/* Business Manager */}
+                <Select
+                  value={selectedBusinessId}
+                  onValueChange={(value) => {
+                    setSelectedBusinessId(value);
+                    setSelectedWabaId('');
+                    setSelectedPhoneId('');
+                    setSelectedPhoneDisplay('');
+                    setSelectedPhoneVerifiedName('');
+                  }}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecione um Business Manager" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="">Não usar WhatsApp</SelectItem>
+                    {whatsAppBusinesses.map((biz) => (
+                      <SelectItem key={biz.id} value={biz.id}>
+                        <div className="flex items-center gap-2">
+                          <Building2 className="w-3 h-3" />
+                          {biz.name}
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+
+                {/* WABA */}
+                {selectedBusiness && selectedBusiness.wabas.length > 0 && (
+                  <Select
+                    value={selectedWabaId}
+                    onValueChange={(value) => {
+                      setSelectedWabaId(value);
+                      setSelectedPhoneId('');
+                      setSelectedPhoneDisplay('');
+                      setSelectedPhoneVerifiedName('');
+                    }}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Selecione uma WABA" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {selectedBusiness.wabas.map((waba) => (
+                        <SelectItem key={waba.id} value={waba.id}>
+                          {waba.name} ({waba.phone_numbers.length} número{waba.phone_numbers.length !== 1 ? 's' : ''})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+
+                {/* Phone Number */}
+                {selectedWaba && selectedWaba.phone_numbers.length > 0 && (
+                  <Select
+                    value={selectedPhoneId}
+                    onValueChange={(value) => {
+                      const phone = selectedWaba.phone_numbers.find(p => p.id === value);
+                      setSelectedPhoneId(value);
+                      setSelectedPhoneDisplay(phone?.display_phone_number || '');
+                      setSelectedPhoneVerifiedName(phone?.verified_name || '');
+                    }}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Selecione um número" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {selectedWaba.phone_numbers.map((phone) => (
+                        <SelectItem key={phone.id} value={phone.id}>
+                          <div className="flex items-center gap-2">
+                            <Smartphone className="w-3 h-3" />
+                            {phone.display_phone_number}
+                            {phone.verified_name && (
+                              <span className="text-xs text-muted-foreground">({phone.verified_name})</span>
+                            )}
+                          </div>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+              </div>
             )}
           </div>
 

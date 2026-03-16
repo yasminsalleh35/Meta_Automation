@@ -6,15 +6,16 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { useMetaAdsIntegration } from '@/hooks/useMetaAdsIntegration';
 import { useMetaAssetsContext } from '@/contexts/MetaAssetsContext';
 import { CompactAssetEditor } from './CompactAssetEditor';
-import { 
-  Facebook, 
-  Instagram, 
-  CreditCard, 
-  Settings, 
+import {
+  Facebook,
+  Instagram,
+  CreditCard,
+  Settings,
   CheckCircle2,
   AlertCircle,
   RefreshCw,
-  ExternalLink
+  ExternalLink,
+  MessageCircle
 } from 'lucide-react';
 
 interface IntegrationStatusCardProps {
@@ -47,6 +48,14 @@ export const IntegrationStatusCard: React.FC<IntegrationStatusCardProps> = ({ on
 
   const selectedInstagram = existingIntegration?.selected_instagram_ids?.[0]
     ? instagramAccounts.find(ig => ig.id === existingIntegration.selected_instagram_ids[0])
+    : null;
+
+  const selectedWhatsApp = existingIntegration?.selected_whatsapp_phone_id
+    ? {
+        phoneId: existingIntegration.selected_whatsapp_phone_id,
+        display: existingIntegration.selected_whatsapp_display,
+        verifiedName: existingIntegration.selected_whatsapp_verified_name,
+      }
     : null;
 
   // Calculate connection health
@@ -179,6 +188,22 @@ export const IntegrationStatusCard: React.FC<IntegrationStatusCardProps> = ({ on
                   </p>
                 </div>
                 {selectedInstagram && (
+                  <CheckCircle2 className="w-4 h-4 text-green-600" />
+                )}
+              </div>
+
+              {/* WhatsApp */}
+              <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/30">
+                <MessageCircle className="w-5 h-5 text-green-600" />
+                <div className="flex-1">
+                  <p className="text-sm font-medium">WhatsApp Business</p>
+                  <p className="text-sm text-muted-foreground">
+                    {selectedWhatsApp
+                      ? `${selectedWhatsApp.display || selectedWhatsApp.phoneId}${selectedWhatsApp.verifiedName ? ` (${selectedWhatsApp.verifiedName})` : ''}`
+                      : 'Não configurado'}
+                  </p>
+                </div>
+                {selectedWhatsApp && (
                   <CheckCircle2 className="w-4 h-4 text-green-600" />
                 )}
               </div>
