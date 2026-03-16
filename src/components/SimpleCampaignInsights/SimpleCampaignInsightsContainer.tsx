@@ -10,6 +10,7 @@ import { SimpleCampaignInsightsStats } from './SimpleCampaignInsightsStats';
 import { SimpleCampaignInsightsChart } from './SimpleCampaignInsightsChart';
 import { SimpleCampaignInsightsLoading } from './SimpleCampaignInsightsLoading';
 import { SimpleCampaignInsightsError } from './SimpleCampaignInsightsError';
+import { OptimizationPanel } from '@/components/optimization/OptimizationPanel';
 
 interface SimpleCampaignInsightsContainerProps {
   campaignId: string;
@@ -70,6 +71,11 @@ export const SimpleCampaignInsightsContainer: React.FC<SimpleCampaignInsightsCon
             <SimpleCampaignInsightsChart insights={insights} />
           </CardContent>
         </Card>
+
+        {/* AI Optimization Suggestions */}
+        <div className="mt-6">
+          <OptimizationPanel campaignId={campaignId} />
+        </div>
       </div>
     </div>
   );
