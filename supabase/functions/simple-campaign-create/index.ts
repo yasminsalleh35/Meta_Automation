@@ -16,6 +16,7 @@ interface SimpleCampaignPayload {
   whatsappLink: string;
   dailyBudget: number;
   startDate: string;
+  endDate?: string | null;
   city: string;
   cityCoordinates?: {
     latitude: number;
@@ -1834,24 +1835,15 @@ serve(async (req) => {
         },
         start_date: payload.startDate,
         ...(payload.endDate ? { end_date: payload.endDate } : {}),
-        campaign_name: payload.campaignName,
-        campaign_type: payload.campaignType || 'simple',
-        creative_type: payload.creativeType,
-        fanpage: payload.fanpage,
-        instagram: payload.instagram,
-        whatsapp_link: payload.whatsappLink,
-        daily_budget: payload.dailyBudget,
-        city: payload.city,
-        city_coordinates: payload.cityCoordinates,
-        radius: payload.radius,
-        country_code: payload.countryCode,
+        facebook_page: payload.fanpage,
+        instagram_account: payload.instagram,
+        location_city: payload.city,
+        location_radius: payload.radius,
         selected_locations: payload.selected_locations,
         gender: payload.gender,
         age_min: payload.ageMin,
         age_max: payload.ageMax,
-        special_categories: payload.specialCategories,
-        media_url: payload.mediaUrl,
-        media_file_id: payload.mediaFileId,
+        interests: payload.interests,
         processing_status: 'completed',
         meta_integration_status: 'active',
         needs_immediate_sync: true,

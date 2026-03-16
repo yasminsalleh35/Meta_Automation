@@ -17,6 +17,7 @@ const initialFormData: SimpleCampaignFormData = {
   selectedMediaFile: null,
   dailyBudget: 50,
   startDate: new Date(),
+  endDate: null,
   city: '',
   cityCoordinates: null,
   radius: 10,

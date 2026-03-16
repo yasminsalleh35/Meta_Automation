@@ -68,46 +68,51 @@ serve(async (req) => {
       return json(404, { error: 'Campaign not found' });
     }
 
-    // Build new campaign data (remove IDs and meta references)
-    const newName = `${original.name || original.campaign_name} (cópia)`;
+    // Build new campaign data using ACTUAL DB column names
+    const newName = `${original.name} (cópia)`;
     const now = new Date().toISOString();
+    const today = now.split('T')[0];
 
     const newCampaign: Record<string, any> = {
       user_id: user.id,
       name: newName,
-      campaign_name: newName,
-      status: 'DRAFT',
-      // Copy all configuration fields
+      objective: original.objective || 'OUTCOME_ENGAGEMENT',
+      status: 'draft',
+      // Creatives
       ad_title: original.ad_title,
       ad_text: original.ad_text,
-      daily_budget: original.daily_budget,
-      fanpage: original.fanpage,
-      instagram: original.instagram,
-      whatsapp_link: original.whatsapp_link,
-      whatsapp_number: original.whatsapp_number,
-      creative_type: original.creative_type,
-      media_url: original.media_url,
+      destination_url: original.destination_url,
       media_file_id: original.media_file_id,
-      campaign_type: original.campaign_type || 'simple',
-      // Location
-      city: original.city,
-      city_coordinates: original.city_coordinates,
-      radius: original.radius,
-      country_code: original.country_code,
+      media_preview_url: original.media_preview_url,
+      // Social media assets (correct DB column names)
+      facebook_page: original.facebook_page,
+      instagram_account: original.instagram_account,
+      whatsapp_number: original.whatsapp_number,
+      // Budget
+      budget_daily: original.budget_daily,
+      budget_total: original.budget_total,
+      // Location (correct DB column names)
+      location_country: original.location_country,
+      location_state: original.location_state,
+      location_city: original.location_city,
+      location_radius: original.location_radius,
       selected_locations: original.selected_locations,
       // Targeting
       gender: original.gender,
       age_min: original.age_min,
       age_max: original.age_max,
-      special_categories: original.special_categories,
       interests: original.interests,
-      // Scheduling
-      start_date: now.split('T')[0], // Reset to today
+      placements: original.placements,
+      devices: original.devices,
+      // Scheduling — reset start_date to today
+      start_date: today,
       end_date: original.end_date,
+      // Meta data
+      ad_account_id: original.ad_account_id,
+      meta_data: original.meta_data ? { ...original.meta_data, duplicated_from: campaignId } : null,
+      source: original.source || 'camply',
       // Meta IDs are NOT copied (new campaign needs to be created on Meta)
-      // meta_campaign_id: null,
-      // meta_adset_id: null,
-      // meta_ad_id: null,
+      // meta_campaign_id, meta_adset_id, meta_ad_id are intentionally omitted
       created_at: now,
       updated_at: now,
     };

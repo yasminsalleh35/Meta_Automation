@@ -170,9 +170,14 @@ export const Step2Midia: React.FC<Step2MidiaProps> = ({ formData, updateFormData
     }
   };
 
-  const handleInstagramPostSelect = (post: { id: string; caption: string; media_url: string }) => {
-    console.log('[STEP2] Seleção de ativos', { page_id: formData.fanpage, instagram_user_id: formData.instagram });
-    updateFormData('selectedInstagramPost', post);
+  const handleInstagramPostSelect = (post: { id: string; caption: string; media_url: string; instagram_user_id?: string; media_type?: string }) => {
+    console.log('[STEP2] Seleção de ativos', { page_id: formData.fanpage, instagram_user_id: post.instagram_user_id || formData.instagram });
+    updateFormData('selectedInstagramPost', {
+      id: post.id,
+      caption: post.caption,
+      media_url: post.media_url,
+      instagram_user_id: post.instagram_user_id || formData.instagram,
+    });
     updateFormData('useExistingInstagramPost', true);
     updateFormData('selectedInstagramPostId', post.id);
   };

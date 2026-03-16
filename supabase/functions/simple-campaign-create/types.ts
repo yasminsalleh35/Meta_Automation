@@ -60,8 +60,6 @@ export interface SimpleCampaignPayload {
   selected_locations?: any[];
   whatsapp_meta?: any;
   whatsappNumber?: string;
-  mediaUrl?: string | null;
-  mediaFileId?: string | null;
 }
 
 export interface CampaignProcessingResult {
