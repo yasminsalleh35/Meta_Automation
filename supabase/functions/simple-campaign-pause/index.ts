@@ -247,7 +247,7 @@ serve(async (req) => {
           error: 'Erro temporário na Meta API. Por favor, tente novamente em alguns segundos.',
           is_transient: true
         }),
-        { status: 503, headers: { ...corsHeadersFor(req.headers.get('Origin')), 'Content-Type': 'application/json' } }
+        { status: 503, headers: { ...cors, 'Content-Type': 'application/json' } }
       );
     }
 
@@ -260,7 +260,7 @@ serve(async (req) => {
 
     return new Response(
       JSON.stringify({ success: false, error: errorMessage, details: error.message }),
-      { status: 500, headers: { ...corsHeadersFor(req.headers.get('Origin')), 'Content-Type': 'application/json' } }
+      { status: 500, headers: { ...cors, 'Content-Type': 'application/json' } }
     );
   }
 });

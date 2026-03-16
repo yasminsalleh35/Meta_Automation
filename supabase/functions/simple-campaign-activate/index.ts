@@ -1,6 +1,5 @@
 import { serve } from 'https://deno.land/std@0.190.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { toMessage, toObject } from '../_shared/errors.ts';
 import { corsHeadersFor, handlePreflight } from '../_shared/cors.ts';
 
 // Version: 7.0.0 - Shared CORS + cascade verification + status tracking (2026-03-15)
@@ -294,15 +293,23 @@ serve(async (req) => {
       }
     }
 
-    // Enqueue for metrics sync
-    await supabaseClient
-      .from('campaign_sync_queue')
-      .insert({
-        user_id: user.id,
-        meta_campaign_id: campaign.meta_campaign_id,
-        kind: 'metrics'
-      });
-    console.log(`📥 Enqueued metrics sync for ${campaign.meta_campaign_id}`);
+    // Enqueue for metrics sync (non-blocking — don't fail activation if queue insert fails)
+    try {
+      const { error: syncError } = await supabaseClient
+        .from('campaign_sync_queue')
+        .insert({
+          user_id: user.id,
+          meta_campaign_id: campaign.meta_campaign_id,
+          kind: 'metrics'
+        });
+      if (syncError) {
+        console.warn('⚠️ Sync queue insert failed (non-blocking):', syncError.message);
+      } else {
+        console.log(`📥 Enqueued metrics sync for ${campaign.meta_campaign_id}`);
+      }
+    } catch (syncErr) {
+      console.warn('⚠️ Sync queue error (non-blocking):', syncErr);
+    }
 
     const successMessage = hasCascadeIds
       ? 'Campanha, Conjunto de Anúncios e Anúncio ativados com sucesso!'
@@ -349,7 +356,7 @@ serve(async (req) => {
           error: 'Erro temporário na Meta API. Por favor, tente novamente em alguns segundos.',
           is_transient: true
         }),
-        { status: 503, headers: { ...corsHeadersFor(req.headers.get('Origin')), 'Content-Type': 'application/json' } }
+        { status: 503, headers: { ...cors, 'Content-Type': 'application/json' } }
       );
     }
 
@@ -362,7 +369,7 @@ serve(async (req) => {
 
     return new Response(
       JSON.stringify({ success: false, error: errorMessage, details: error.message }),
-      { status: 500, headers: { ...corsHeadersFor(req.headers.get('Origin')), 'Content-Type': 'application/json' } }
+      { status: 500, headers: { ...cors, 'Content-Type': 'application/json' } }
     );
   }
 });
