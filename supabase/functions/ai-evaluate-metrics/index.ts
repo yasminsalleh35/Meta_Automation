@@ -221,7 +221,7 @@ Analise estas métricas e gere sugestões de otimização.`;
       // Generate rule-based suggestions as fallback
       console.log('⚠️ [AI-EVAL] No AI key, using rule-based evaluation');
       const suggestions = generateRuleBasedSuggestions(metrics, campaign);
-      await saveSuggestions(supabaseClient, user.id, campaign, suggestions, 'rule-based', 'none');
+      await saveSuggestions(supabaseClient, user.id, campaign, suggestions, 'rule-based', 'none', metrics);
       return new Response(
         JSON.stringify({ success: true, suggestions, source: 'rule-based' }),
         { status: 200, headers: { ...cors, 'Content-Type': 'application/json' } }
@@ -256,7 +256,7 @@ Analise estas métricas e gere sugestões de otimização.`;
       console.error('❌ [AI-EVAL] AI API error:', err);
       // Fallback to rule-based
       const suggestions = generateRuleBasedSuggestions(metrics, campaign);
-      await saveSuggestions(supabaseClient, user.id, campaign, suggestions, 'rule-based', 'none');
+      await saveSuggestions(supabaseClient, user.id, campaign, suggestions, 'rule-based', 'none', metrics);
       return new Response(
         JSON.stringify({ success: true, suggestions, source: 'rule-based-fallback' }),
         { status: 200, headers: { ...cors, 'Content-Type': 'application/json' } }
@@ -305,8 +305,8 @@ Analise estas métricas e gere sugestões de otimização.`;
 
     console.log(`✅ [AI-EVAL] Generated ${suggestions.length} suggestions via ${provider}`);
 
-    // Save to DB
-    await saveSuggestions(supabaseClient, user.id, campaign, suggestions, model, provider);
+    // Save to DB (include metrics snapshot for audit)
+    await saveSuggestions(supabaseClient, user.id, campaign, suggestions, model, provider, metrics);
 
     return new Response(
       JSON.stringify({
@@ -335,7 +335,8 @@ async function saveSuggestions(
   campaign: any,
   suggestions: any[],
   aiModel: string,
-  aiProvider: string
+  aiProvider: string,
+  metrics: CampaignMetrics | null = null
 ) {
   // Expire old pending suggestions for this campaign
   await supabase
@@ -354,7 +355,7 @@ async function saveSuggestions(
     title: s.title,
     description: s.description,
     severity: s.severity,
-    metrics_snapshot: s.metrics_snapshot || {},
+    metrics_snapshot: metrics || s.metrics_snapshot || {},
     suggested_action: s.suggested_action || {},
     status: 'pending',
     ai_model: aiModel,

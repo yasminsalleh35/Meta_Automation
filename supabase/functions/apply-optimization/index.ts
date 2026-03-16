@@ -120,13 +120,15 @@ serve(async (req) => {
 
     try {
       switch (actionType) {
-        case 'update_budget': {
-          const objectId = action.meta_object_id || campaign.meta_campaign_id;
-          const budgetField = action.field || 'daily_budget';
-          const newValue = action.suggested_value;
+        case 'update_budget':
+        case 'increase_budget':
+        case 'decrease_budget': {
+          const objectId = action?.meta_object_id || campaign.meta_campaign_id;
+          const budgetField = action?.field || 'daily_budget';
+          const newValue = action?.suggested_value;
 
           if (!newValue || newValue <= 0) {
-            throw new Error('Valor de orçamento inválido');
+            throw new Error('Valor de orçamento inválido. Verifique a sugestão e tente novamente.');
           }
 
           // Fetch current budget from Meta

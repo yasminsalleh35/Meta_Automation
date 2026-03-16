@@ -24,6 +24,7 @@ interface EvaluateResult {
   suggestions: OptimizationSuggestion[];
   metrics?: Record<string, number>;
   source?: string;
+  error?: string;
 }
 
 export function useOptimizationSuggestions(campaignId: string) {
