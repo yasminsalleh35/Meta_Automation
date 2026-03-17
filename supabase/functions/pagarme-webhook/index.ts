@@ -222,6 +222,11 @@ async function processChargeEvent(supabase: any, event: any, environment: string
     await handlePaidCharge(supabase, charge, environment);
   }
 
+  // Phase 5: Handle payment failure with grace period
+  if (status === 'payment_failed' || status === 'failed') {
+    await handlePaymentFailure(supabase, charge, environment);
+  }
+
   // Handle refunded/chargedback - revoke entitlement
   if (status === 'refunded' || status === 'chargedback') {
     await handleFailedCharge(supabase, charge, environment);
@@ -354,12 +359,26 @@ async function handlePaidCharge(supabase: any, charge: any, environment: string)
     subscription_status: 'active',
     is_active: true,
     current_period_end: subscription.current_period_end,
+    // Phase 5: Reset failure tracking on successful payment
+    payment_failure_count: 0,
+    grace_period_ends_at: null,
+    last_payment_failure_at: null,
+    last_synced_at: new Date().toISOString(),
     updated_at: new Date().toISOString()
   }, {
     onConflict: 'user_id'
   });
 
-  logStep('✅ Subscribers table updated', { 
+  // Phase 5: Log status transition
+  await supabase.from('subscription_status_log').insert({
+    user_id: userId,
+    provider: 'pagarme',
+    previous_status: wasAlreadyActive ? 'active' : 'inactive',
+    new_status: 'active',
+    reason: 'charge.paid',
+  }).catch(() => {}); // Non-blocking
+
+  logStep('✅ Subscribers table updated', {
     user_id: userId,
     email: subscription.email,
     provider: 'pagarme'
@@ -429,6 +448,70 @@ function generateWebhookOnboardingEmail(email: string, planName: string, amount:
       </body>
     </html>
   `;
+}
+
+// Phase 5: Handle payment failure with grace period
+async function handlePaymentFailure(supabase: any, charge: any, environment: string) {
+  logStep('⚠️ Handling payment failure', { charge_id: charge.id });
+
+  const subscriptionId = charge.subscription_id?.toString();
+  if (!subscriptionId) return;
+
+  const { data: subscription } = await supabase
+    .from('pagarme_subscriptions')
+    .select('user_id, email')
+    .eq('pagarme_subscription_id', subscriptionId)
+    .eq('environment', environment)
+    .maybeSingle();
+
+  if (!subscription?.user_id) return;
+
+  // Get current failure count
+  const { data: sub } = await supabase
+    .from('subscribers')
+    .select('payment_failure_count, subscription_status')
+    .eq('user_id', subscription.user_id)
+    .maybeSingle();
+
+  const failureCount = (sub?.payment_failure_count || 0) + 1;
+  const graceDays = 5;
+  const gracePeriodEndsAt = new Date(Date.now() + graceDays * 24 * 60 * 60 * 1000).toISOString();
+
+  // After 3 failures, deactivate. Otherwise grace period with past_due status.
+  const newStatus = failureCount >= 3 ? 'inactive' : 'past_due';
+  const isActive = failureCount < 3;
+
+  await supabase
+    .from('subscribers')
+    .update({
+      subscription_status: newStatus,
+      is_active: isActive,
+      payment_failure_count: failureCount,
+      last_payment_failure_at: new Date().toISOString(),
+      grace_period_ends_at: isActive ? gracePeriodEndsAt : null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('user_id', subscription.user_id)
+    .eq('provider', 'pagarme');
+
+  // Log status transition
+  if (sub?.subscription_status !== newStatus) {
+    await supabase.from('subscription_status_log').insert({
+      user_id: subscription.user_id,
+      provider: 'pagarme',
+      previous_status: sub?.subscription_status || null,
+      new_status: newStatus,
+      reason: `charge.payment_failed (attempt ${failureCount})`,
+    }).catch(() => {});
+  }
+
+  logStep('⚠️ Payment failure tracked', {
+    user_id: subscription.user_id,
+    failureCount,
+    newStatus,
+    isActive,
+    gracePeriodEndsAt: isActive ? gracePeriodEndsAt : null,
+  });
 }
 
 async function handleFailedCharge(supabase: any, charge: any, environment: string) {

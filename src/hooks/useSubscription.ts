@@ -12,6 +12,10 @@ interface SubscriptionData {
   plan_limits?: any;
   is_admin?: boolean;
   provider?: string;
+  // Phase 5: Extended status info
+  status?: string;
+  is_past_due?: boolean;
+  grace_period_ends_at?: string | null;
 }
 
 export const useSubscription = () => {
@@ -87,6 +91,27 @@ export const useSubscription = () => {
     }
   };
 
+  // Phase 5: Trigger subscription sync with provider
+  const syncSubscription = async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const { error } = await supabase.functions.invoke('subscription-sync', {
+        body: { mode: 'sync_user', user_id: user.id }
+      });
+
+      if (error) {
+        console.error('Sync failed:', error);
+      } else {
+        // Refresh subscription data after sync
+        await checkSubscription();
+      }
+    } catch (error) {
+      console.error('Error syncing subscription:', error);
+    }
+  };
+
   // Auto-check subscription on mount
   useEffect(() => {
     checkSubscription();
@@ -98,6 +123,7 @@ export const useSubscription = () => {
     isCheckingOut,
     checkSubscription,
     createCheckoutSession,
-    openCustomerPortal
+    openCustomerPortal,
+    syncSubscription,
   };
 };

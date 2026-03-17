@@ -179,6 +179,11 @@ async function processWebhookEvent(
       await handleSubscriptionCanceled(supabase, payload, environment);
       break;
 
+    // Phase 5: Handle payment failures with grace period
+    case 'PAYMENT_OVERDUE':
+      await handlePaymentOverdue(supabase, payload, environment);
+      break;
+
     default:
       console.log(`[Asaas Webhook] Unhandled event type: ${eventType}`);
   }
@@ -223,6 +228,11 @@ async function handlePaymentConfirmed(supabase: any, payload: AsaasWebhookPayloa
       .update({
         subscription_status: 'active',
         is_active: true,
+        // Phase 5: Reset failure tracking on successful payment
+        payment_failure_count: 0,
+        grace_period_ends_at: null,
+        last_payment_failure_at: null,
+        last_synced_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       })
       .eq('asaas_subscription_id', payload.payment.subscription);
@@ -429,6 +439,60 @@ async function handleSubscriptionUpdated(supabase: any, payload: AsaasWebhookPay
     .from('asaas_webhook_events')
     .update({ processed: true, processed_at: new Date().toISOString() })
     .eq('external_id', payload.subscription.id);
+}
+
+// Phase 5: Handle overdue payments with grace period
+async function handlePaymentOverdue(supabase: any, payload: AsaasWebhookPayload, environment: string) {
+  if (!payload.payment) return;
+
+  console.log(`[Asaas Webhook] Payment overdue: ${payload.payment.id}`);
+
+  if (!payload.payment.subscription) return;
+
+  // Get current subscriber
+  const { data: sub } = await supabase
+    .from('subscribers')
+    .select('payment_failure_count, subscription_status, user_id')
+    .eq('asaas_subscription_id', payload.payment.subscription)
+    .maybeSingle();
+
+  if (!sub) return;
+
+  const failureCount = (sub.payment_failure_count || 0) + 1;
+  const graceDays = 5;
+  const gracePeriodEndsAt = new Date(Date.now() + graceDays * 24 * 60 * 60 * 1000).toISOString();
+  const newStatus = failureCount >= 3 ? 'inactive' : 'past_due';
+  const isActive = failureCount < 3;
+
+  await supabase
+    .from('subscribers')
+    .update({
+      subscription_status: newStatus,
+      is_active: isActive,
+      payment_failure_count: failureCount,
+      last_payment_failure_at: new Date().toISOString(),
+      grace_period_ends_at: isActive ? gracePeriodEndsAt : null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('asaas_subscription_id', payload.payment.subscription);
+
+  // Log status transition
+  if (sub.user_id && sub.subscription_status !== newStatus) {
+    await supabase.from('subscription_status_log').insert({
+      user_id: sub.user_id,
+      provider: 'asaas',
+      previous_status: sub.subscription_status,
+      new_status: newStatus,
+      reason: `PAYMENT_OVERDUE (attempt ${failureCount})`,
+    }).catch(() => {});
+  }
+
+  console.log(`[Asaas Webhook] Payment failure tracked: count=${failureCount}, status=${newStatus}`);
+
+  await supabase
+    .from('asaas_webhook_events')
+    .update({ processed: true, processed_at: new Date().toISOString() })
+    .eq('external_id', payload.payment.id);
 }
 
 async function handleSubscriptionCanceled(supabase: any, payload: AsaasWebhookPayload, environment: string) {

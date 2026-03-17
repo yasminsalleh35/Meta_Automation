@@ -11,6 +11,10 @@ interface TrialStatus {
   expiresAt: Date | null;
   hasSubscription: boolean;
   loading: boolean;
+  // Phase 5: Grace period awareness
+  isInGracePeriod: boolean;
+  gracePeriodEndsAt: Date | null;
+  subscriptionStatus: string | null;
 }
 
 export const useTrialPeriod = () => {
@@ -23,7 +27,10 @@ export const useTrialPeriod = () => {
     daysRemaining: 0,
     expiresAt: null,
     hasSubscription: false,
-    loading: true
+    loading: true,
+    isInGracePeriod: false,
+    gracePeriodEndsAt: null,
+    subscriptionStatus: null,
   });
 
   const checkTrialStatus = async () => {
@@ -40,21 +47,29 @@ export const useTrialPeriod = () => {
         daysRemaining: 0,
         expiresAt: null,
         hasSubscription: true, // Treat as having subscription
-        loading: false
+        loading: false,
+        isInGracePeriod: false,
+        gracePeriodEndsAt: null,
+        subscriptionStatus: 'active',
       });
       return;
     }
 
     try {
       // ✅ FASE 1.1: Check active subscription from subscribers table (unified source)
+      // Phase 5: Also fetch grace period and status info
       const { data: subscriberData, error: subscriberError } = await supabase
         .from('subscribers')
-        .select('is_active, subscription_status, plan_type')
+        .select('is_active, subscription_status, plan_type, grace_period_ends_at')
         .eq('user_id', user.id)
-        .eq('is_active', true)
         .single();
 
-      const hasActiveSubscription = !subscriberError && subscriberData?.is_active === true;
+      // Phase 5: past_due with grace period counts as active access
+      const subStatus = subscriberData?.subscription_status || null;
+      const isGracePeriod = subStatus === 'past_due' && !!subscriberData?.grace_period_ends_at;
+      const hasActiveSubscription = !subscriberError && (
+        subscriberData?.is_active === true || isGracePeriod
+      );
 
       // 🔍 STEP 2: Check Stripe subscription (LEGACY - only for admins/old users)
       const { data: stripeData, error: stripeError } = await supabase.functions.invoke('check-subscription');
@@ -85,7 +100,13 @@ export const useTrialPeriod = () => {
         daysRemaining: Math.max(0, daysRemaining),
         expiresAt: trialExpiresAt,
         hasSubscription: hasCombinedSubscription,
-        loading: false
+        loading: false,
+        // Phase 5: Grace period info
+        isInGracePeriod: isGracePeriod,
+        gracePeriodEndsAt: subscriberData?.grace_period_ends_at
+          ? new Date(subscriberData.grace_period_ends_at)
+          : null,
+        subscriptionStatus: subStatus,
       });
 
       // 🚫 NOTIFICAÇÕES DE TRIAL DESATIVADAS

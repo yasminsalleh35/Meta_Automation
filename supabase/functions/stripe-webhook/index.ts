@@ -139,7 +139,7 @@ serve(async (req) => {
         case 'customer.subscription.created':
         case 'customer.subscription.updated': {
           const subscription = event.data.object as Stripe.Subscription;
-          logStep("Processing subscription event", { 
+          logStep("Processing subscription event", {
             subscriptionId: subscription.id,
             customerId: subscription.customer,
             status: subscription.status
@@ -160,11 +160,10 @@ serve(async (req) => {
           if (isGuestCheckout && !userId) {
             const guestEmail = customerData.metadata?.guest_email || customerData.email;
             const guestName = customerData.metadata?.guest_name || customerData.name;
-            
+
             if (guestEmail) {
               logStep("Creating user for guest checkout", { guestEmail });
-              
-              // Create user in Supabase Auth with temporary password
+
               const temporaryPassword = `temp_${Math.random().toString(36).substring(2, 15)}`;
               const { data: authUser, error: authError } = await supabaseClient.auth.admin.createUser({
                 email: guestEmail,
@@ -184,16 +183,10 @@ serve(async (req) => {
 
               if (authUser?.user) {
                 userId = authUser.user.id;
-                
-                // Update customer with user_id
                 await stripe.customers.update(subscription.customer as string, {
-                  metadata: {
-                    ...customerData.metadata,
-                    user_id: userId
-                  }
+                  metadata: { ...customerData.metadata, user_id: userId }
                 });
-                
-                logStep("User created successfully with temporary password", { userId, email: guestEmail });
+                logStep("User created successfully", { userId, email: guestEmail });
               }
             }
           }
@@ -203,19 +196,42 @@ serve(async (req) => {
             break;
           }
 
-          // Update or create subscriber record
+          // Phase 5: Map all Stripe subscription statuses
+          // Stripe statuses: active, past_due, unpaid, canceled, incomplete, incomplete_expired, trialing, paused
+          const stripeStatus = subscription.status;
+          const isActiveAccess = ['active', 'trialing', 'past_due'].includes(stripeStatus);
+          const gracePeriodEndsAt = stripeStatus === 'past_due'
+            ? new Date(Date.now() + 5 * 24 * 60 * 60 * 1000).toISOString() // 5 days grace
+            : null;
+
+          // Fetch previous status for logging
+          const { data: prevSub } = await supabaseClient
+            .from('subscribers')
+            .select('subscription_status')
+            .eq('user_id', userId)
+            .maybeSingle();
+
           const { error } = await supabaseClient
             .from('subscribers')
             .upsert({
               user_id: userId,
               email: customerData.email,
               plan_type: 'premium',
+              provider: 'stripe',
               stripe_customer_id: subscription.customer,
               stripe_subscription_id: subscription.id,
-              subscription_status: subscription.status,
-              is_active: subscription.status === 'active',
-              plan_expires_at: subscription.current_period_end ? 
+              subscription_status: stripeStatus,
+              is_active: isActiveAccess,
+              plan_expires_at: subscription.current_period_end ?
                 new Date(subscription.current_period_end * 1000).toISOString() : null,
+              last_synced_at: new Date().toISOString(),
+              // Phase 5: Grace period for past_due
+              ...(gracePeriodEndsAt ? { grace_period_ends_at: gracePeriodEndsAt } : {}),
+              // Reset failure count on active/trialing
+              ...(stripeStatus === 'active' || stripeStatus === 'trialing'
+                ? { payment_failure_count: 0, grace_period_ends_at: null }
+                : {}),
+              updated_at: new Date().toISOString(),
             }, {
               onConflict: 'user_id'
             });
@@ -223,7 +239,19 @@ serve(async (req) => {
           if (error) {
             logStep("Error updating subscriber", { error: error.message, userId });
           } else {
-            logStep("Subscriber updated successfully", { userId, status: subscription.status });
+            logStep("Subscriber updated", { userId, status: stripeStatus, isActiveAccess });
+          }
+
+          // Phase 5: Log status transition
+          if (prevSub?.subscription_status !== stripeStatus) {
+            await supabaseClient.from('subscription_status_log').insert({
+              user_id: userId,
+              provider: 'stripe',
+              previous_status: prevSub?.subscription_status || null,
+              new_status: stripeStatus,
+              reason: event.type,
+              event_id: event.id,
+            });
           }
           break;
         }
@@ -232,7 +260,6 @@ serve(async (req) => {
         const subscription = event.data.object as Stripe.Subscription;
         logStep("Processing subscription cancellation", { subscriptionId: subscription.id });
 
-        // Get customer to find user_id
         const customer = await stripe.customers.retrieve(subscription.customer as string);
         if (!customer || customer.deleted) {
           logStep("Customer not found", { customerId: subscription.customer });
@@ -241,46 +268,119 @@ serve(async (req) => {
 
         const userId = (customer as Stripe.Customer).metadata?.user_id;
         if (!userId) {
-          logStep("User ID not found in customer metadata", { customerId: subscription.customer });
+          logStep("User ID not found", { customerId: subscription.customer });
           break;
         }
 
-        // Update subscriber record to inactive
+        const { data: prevSub } = await supabaseClient
+          .from('subscribers')
+          .select('subscription_status')
+          .eq('user_id', userId)
+          .maybeSingle();
+
         const { error } = await supabaseClient
           .from('subscribers')
           .update({
             subscription_status: 'canceled',
             is_active: false,
+            canceled_at: new Date().toISOString(),
+            grace_period_ends_at: null,
+            updated_at: new Date().toISOString(),
           })
           .eq('user_id', userId);
 
         if (error) {
-          logStep("Error updating canceled subscription", { error: error.message, userId });
+          logStep("Error canceling subscription", { error: error.message, userId });
         } else {
-          logStep("Subscription canceled successfully", { userId });
+          logStep("Subscription canceled", { userId });
         }
+
+        // Phase 5: Log cancellation
+        await supabaseClient.from('subscription_status_log').insert({
+          user_id: userId,
+          provider: 'stripe',
+          previous_status: prevSub?.subscription_status || null,
+          new_status: 'canceled',
+          reason: 'customer.subscription.deleted',
+          event_id: event.id,
+        });
         break;
       }
 
       case 'invoice.payment_succeeded': {
         const invoice = event.data.object as Stripe.Invoice;
-        logStep("Payment succeeded", { 
-          invoiceId: invoice.id,
-          customerId: invoice.customer,
-          amount: invoice.amount_paid
-        });
-        // Additional payment success handling can be added here
+        logStep("Payment succeeded", { invoiceId: invoice.id, customerId: invoice.customer });
+
+        // Phase 5: Reset failure count and clear grace period on successful payment
+        const customer = await stripe.customers.retrieve(invoice.customer as string);
+        const userId = !customer.deleted ? (customer as Stripe.Customer).metadata?.user_id : null;
+        if (userId) {
+          await supabaseClient
+            .from('subscribers')
+            .update({
+              payment_failure_count: 0,
+              grace_period_ends_at: null,
+              last_payment_failure_at: null,
+              subscription_status: 'active',
+              is_active: true,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('user_id', userId)
+            .eq('provider', 'stripe');
+        }
         break;
       }
 
       case 'invoice.payment_failed': {
         const invoice = event.data.object as Stripe.Invoice;
-        logStep("Payment failed", { 
-          invoiceId: invoice.id,
-          customerId: invoice.customer,
-          amount: invoice.amount_due
-        });
-        // Additional payment failure handling can be added here
+        logStep("Payment failed", { invoiceId: invoice.id, customerId: invoice.customer });
+
+        // Phase 5: Track payment failure, set grace period
+        const customer = await stripe.customers.retrieve(invoice.customer as string);
+        const userId = !customer.deleted ? (customer as Stripe.Customer).metadata?.user_id : null;
+        if (userId) {
+          // Get current failure count
+          const { data: sub } = await supabaseClient
+            .from('subscribers')
+            .select('payment_failure_count, subscription_status')
+            .eq('user_id', userId)
+            .maybeSingle();
+
+          const failureCount = (sub?.payment_failure_count || 0) + 1;
+          const graceDays = 5; // 5-day grace period
+          const gracePeriodEndsAt = new Date(Date.now() + graceDays * 24 * 60 * 60 * 1000).toISOString();
+
+          // After 3 failures, deactivate. Otherwise enter grace period.
+          const newStatus = failureCount >= 3 ? 'inactive' : 'past_due';
+          const isActive = failureCount < 3;
+
+          await supabaseClient
+            .from('subscribers')
+            .update({
+              subscription_status: newStatus,
+              is_active: isActive,
+              payment_failure_count: failureCount,
+              last_payment_failure_at: new Date().toISOString(),
+              grace_period_ends_at: isActive ? gracePeriodEndsAt : null,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('user_id', userId)
+            .eq('provider', 'stripe');
+
+          logStep("Payment failure tracked", { userId, failureCount, newStatus, isActive });
+
+          // Log status transition
+          if (sub?.subscription_status !== newStatus) {
+            await supabaseClient.from('subscription_status_log').insert({
+              user_id: userId,
+              provider: 'stripe',
+              previous_status: sub?.subscription_status || null,
+              new_status: newStatus,
+              reason: `invoice.payment_failed (attempt ${failureCount})`,
+              event_id: event.id,
+            });
+          }
+        }
         break;
       }
 
