@@ -9,17 +9,38 @@ import { useMetaAssetsContext } from '@/contexts/MetaAssetsContext';
 import { MetaAssetsErrorBoundary } from './MetaAssetsErrorBoundary';
 import { supabase } from '@/integrations/supabase/client';
 import { metaCache } from '@/lib/metaCache';
-import { 
-  Facebook, 
-  Instagram, 
-  CreditCard, 
-  CheckCircle2, 
-  Save, 
+import {
+  Facebook,
+  Instagram,
+  CreditCard,
+  CheckCircle2,
+  Save,
   Users,
   Sparkles,
   RefreshCw,
-  AlertCircle
+  AlertCircle,
+  MessageCircle,
+  Building2,
+  Smartphone
 } from 'lucide-react';
+
+interface WhatsAppPhoneNumber {
+  id: string;
+  display_phone_number: string;
+  verified_name: string;
+}
+
+interface WhatsAppWABA {
+  id: string;
+  name: string;
+  phone_numbers: WhatsAppPhoneNumber[];
+}
+
+interface WhatsAppBusiness {
+  id: string;
+  name: string;
+  wabas: WhatsAppWABA[];
+}
 
 interface PostAuthAssetSelectorProps {
   isOpen: boolean;
@@ -49,14 +70,64 @@ export const PostAuthAssetSelector: React.FC<PostAuthAssetSelectorProps> = ({
   const [selectedInstagram, setSelectedInstagram] = useState<string>('');
   const [isSaving, setSaving] = useState(false);
 
+  // WhatsApp state
+  const [whatsAppBusinesses, setWhatsAppBusinesses] = useState<WhatsAppBusiness[]>([]);
+  const [whatsAppLoading, setWhatsAppLoading] = useState(false);
+  const [selectedBusinessId, setSelectedBusinessId] = useState<string>('');
+  const [selectedWabaId, setSelectedWabaId] = useState<string>('');
+  const [selectedPhoneId, setSelectedPhoneId] = useState<string>('');
+  const [selectedPhoneDisplay, setSelectedPhoneDisplay] = useState<string>('');
+  const [selectedPhoneVerifiedName, setSelectedPhoneVerifiedName] = useState<string>('');
+
+  // Derived WhatsApp objects for cascading selectors
+  const selectedBusiness = whatsAppBusinesses.find(b => b.id === selectedBusinessId);
+  const selectedWaba = selectedBusiness?.wabas.find(w => w.id === selectedWabaId);
+
   const isLoading = assetsLoading || adAccountsLoading;
 
-  // ✅ CORREÇÃO 1: Remover fetchAllAssets para evitar race condition com save-asset-selection
+  // Fetch WhatsApp assets from edge function
+  const fetchWhatsAppAssets = async () => {
+    setWhatsAppLoading(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) return;
+
+      const response = await supabase.functions.invoke('meta-whatsapp-assets', {
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      });
+
+      if (response.error) throw new Error(response.error.message);
+      const businesses = response.data?.businesses || [];
+      setWhatsAppBusinesses(businesses);
+      console.log('[PostAuthAssetSelector] WhatsApp assets fetched:', businesses.length, 'businesses');
+
+      // Auto-select if only one business > one WABA > one phone
+      if (businesses.length === 1) {
+        setSelectedBusinessId(businesses[0].id);
+        if (businesses[0].wabas.length === 1) {
+          setSelectedWabaId(businesses[0].wabas[0].id);
+          if (businesses[0].wabas[0].phone_numbers.length === 1) {
+            const phone = businesses[0].wabas[0].phone_numbers[0];
+            setSelectedPhoneId(phone.id);
+            setSelectedPhoneDisplay(phone.display_phone_number);
+            setSelectedPhoneVerifiedName(phone.verified_name);
+          }
+        }
+      }
+    } catch (error) {
+      console.error('[PostAuthAssetSelector] Error fetching WhatsApp assets:', error);
+    } finally {
+      setWhatsAppLoading(false);
+    }
+  };
+
+  // Fetch WhatsApp assets when modal opens
   useEffect(() => {
     if (isOpen) {
-      console.log('[PostAuthAssetSelector] Modal opened - assets will be loaded from cache');
+      console.log('[PostAuthAssetSelector] Modal opened - fetching WhatsApp assets');
+      fetchWhatsAppAssets();
     }
-  }, [isOpen]); // Dependencies corretas
+  }, [isOpen]);
 
   // Auto-select single options
   useEffect(() => {
@@ -98,14 +169,37 @@ export const PostAuthAssetSelector: React.FC<PostAuthAssetSelectorProps> = ({
             selectedInstagram: selectedInstagram || null
           }
         });
-        
+
         clearTimeout(timeoutId);
 
         if (error) throw error;
 
         console.log('✅ Asset selection saved successfully');
 
-        // ✅ FASE 1 & 2: Resetar estado e fechar modal IMEDIATAMENTE
+        // Save WhatsApp selection if a phone is selected
+        if (selectedPhoneId) {
+          const { data: { session } } = await supabase.auth.getSession();
+          if (session?.access_token) {
+            const { error: waError } = await supabase.functions.invoke('meta-whatsapp-save-selection', {
+              body: {
+                business_id: selectedBusinessId,
+                waba_id: selectedWabaId,
+                phone_number_id: selectedPhoneId,
+                display_phone_number: selectedPhoneDisplay,
+                verified_name: selectedPhoneVerifiedName,
+              },
+              headers: { Authorization: `Bearer ${session.access_token}` },
+            });
+
+            if (waError) {
+              console.error('Error saving WhatsApp selection:', waError);
+              // Non-blocking — core assets already saved
+            } else {
+              console.log('✅ WhatsApp selection saved successfully');
+            }
+          }
+        }
+
         toast({
           title: "Ativos configurados!",
           description: "Sua seleção foi salva com sucesso.",
@@ -114,11 +208,11 @@ export const PostAuthAssetSelector: React.FC<PostAuthAssetSelectorProps> = ({
 
         // Reset saving state BEFORE closing to prevent re-renders during close
         setSaving(false);
-        
+
         // Close modal immediately to prevent any validation triggers
         onComplete();
-        
-        // ✅ CORREÇÃO 3: Invalidar cache DEPOIS do onComplete para evitar race condition
+
+        // Invalidar cache DEPOIS do onComplete para evitar race condition
         setTimeout(() => {
           metaCache.clear('unified-assets');
         }, 100);
@@ -357,17 +451,194 @@ export const PostAuthAssetSelector: React.FC<PostAuthAssetSelectorProps> = ({
             </div>
           )}
 
+          {/* WhatsApp Business Selection (Optional) */}
+          <div className="space-y-3">
+            <div className="flex items-center gap-2">
+              <MessageCircle className="h-4 w-4 text-green-600" />
+              <h3 className="font-semibold">WhatsApp Business (Opcional)</h3>
+            </div>
+
+            {whatsAppLoading ? (
+              <div className="space-y-2">
+                <Skeleton className="h-16 w-full rounded-lg" />
+              </div>
+            ) : whatsAppBusinesses.length === 0 ? (
+              <Card className="p-4 border-muted">
+                <div className="flex items-start gap-3">
+                  <AlertCircle className="h-5 w-5 text-muted-foreground flex-shrink-0 mt-0.5" />
+                  <div>
+                    <p className="text-muted-foreground text-sm">
+                      Nenhum negócio WhatsApp encontrado. Você pode configurar depois em "Editar Ativos".
+                    </p>
+                  </div>
+                </div>
+              </Card>
+            ) : (
+              <div className="space-y-2">
+                {/* No WhatsApp option */}
+                <Card
+                  className={`p-4 cursor-pointer transition-all ${
+                    selectedBusinessId === ''
+                      ? 'border-primary bg-primary/5'
+                      : 'hover:bg-muted/50'
+                  }`}
+                  onClick={() => {
+                    setSelectedBusinessId('');
+                    setSelectedWabaId('');
+                    setSelectedPhoneId('');
+                    setSelectedPhoneDisplay('');
+                    setSelectedPhoneVerifiedName('');
+                  }}
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="font-medium">Não usar WhatsApp</span>
+                    {selectedBusinessId === '' && (
+                      <CheckCircle2 className="h-4 w-4 text-primary" />
+                    )}
+                  </div>
+                </Card>
+
+                {/* Business options */}
+                {whatsAppBusinesses.map((biz) => (
+                  <Card
+                    key={biz.id}
+                    className={`p-4 cursor-pointer transition-all ${
+                      selectedBusinessId === biz.id
+                        ? 'border-primary bg-primary/5'
+                        : 'hover:bg-muted/50'
+                    }`}
+                    onClick={() => {
+                      setSelectedBusinessId(biz.id);
+                      setSelectedWabaId('');
+                      setSelectedPhoneId('');
+                      setSelectedPhoneDisplay('');
+                      setSelectedPhoneVerifiedName('');
+                      // Auto-select if single WABA
+                      if (biz.wabas.length === 1) {
+                        setSelectedWabaId(biz.wabas[0].id);
+                        if (biz.wabas[0].phone_numbers.length === 1) {
+                          const phone = biz.wabas[0].phone_numbers[0];
+                          setSelectedPhoneId(phone.id);
+                          setSelectedPhoneDisplay(phone.display_phone_number);
+                          setSelectedPhoneVerifiedName(phone.verified_name);
+                        }
+                      }
+                    }}
+                  >
+                    <div className="flex items-center gap-3">
+                      <Building2 className="h-5 w-5 text-green-600 flex-shrink-0" />
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium">{biz.name}</span>
+                          {selectedBusinessId === biz.id && (
+                            <CheckCircle2 className="h-4 w-4 text-primary" />
+                          )}
+                        </div>
+                        <p className="text-sm text-muted-foreground">
+                          {biz.wabas.length} conta{biz.wabas.length !== 1 ? 's' : ''} WhatsApp
+                        </p>
+                      </div>
+                    </div>
+                  </Card>
+                ))}
+
+                {/* WABA selection (when business selected with multiple WABAs) */}
+                {selectedBusiness && selectedBusiness.wabas.length > 1 && (
+                  <div className="ml-4 space-y-2">
+                    <p className="text-sm font-medium text-muted-foreground">Selecione a conta WhatsApp:</p>
+                    {selectedBusiness.wabas.map((waba) => (
+                      <Card
+                        key={waba.id}
+                        className={`p-3 cursor-pointer transition-all ${
+                          selectedWabaId === waba.id
+                            ? 'border-green-500 bg-green-50'
+                            : 'hover:bg-muted/50'
+                        }`}
+                        onClick={() => {
+                          setSelectedWabaId(waba.id);
+                          setSelectedPhoneId('');
+                          setSelectedPhoneDisplay('');
+                          setSelectedPhoneVerifiedName('');
+                          if (waba.phone_numbers.length === 1) {
+                            const phone = waba.phone_numbers[0];
+                            setSelectedPhoneId(phone.id);
+                            setSelectedPhoneDisplay(phone.display_phone_number);
+                            setSelectedPhoneVerifiedName(phone.verified_name);
+                          }
+                        }}
+                      >
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-medium">{waba.name}</span>
+                          <Badge variant="outline" className="text-xs">
+                            {waba.phone_numbers.length} número{waba.phone_numbers.length !== 1 ? 's' : ''}
+                          </Badge>
+                          {selectedWabaId === waba.id && (
+                            <CheckCircle2 className="h-4 w-4 text-green-600" />
+                          )}
+                        </div>
+                      </Card>
+                    ))}
+                  </div>
+                )}
+
+                {/* Phone number selection (when WABA selected with multiple phones) */}
+                {selectedWaba && selectedWaba.phone_numbers.length > 1 && (
+                  <div className="ml-4 space-y-2">
+                    <p className="text-sm font-medium text-muted-foreground">Selecione o número:</p>
+                    {selectedWaba.phone_numbers.map((phone) => (
+                      <Card
+                        key={phone.id}
+                        className={`p-3 cursor-pointer transition-all ${
+                          selectedPhoneId === phone.id
+                            ? 'border-green-500 bg-green-50'
+                            : 'hover:bg-muted/50'
+                        }`}
+                        onClick={() => {
+                          setSelectedPhoneId(phone.id);
+                          setSelectedPhoneDisplay(phone.display_phone_number);
+                          setSelectedPhoneVerifiedName(phone.verified_name);
+                        }}
+                      >
+                        <div className="flex items-center gap-2">
+                          <Smartphone className="h-4 w-4 text-green-600" />
+                          <span className="text-sm font-medium">{phone.display_phone_number}</span>
+                          {phone.verified_name && (
+                            <span className="text-xs text-muted-foreground">({phone.verified_name})</span>
+                          )}
+                          {selectedPhoneId === phone.id && (
+                            <CheckCircle2 className="h-4 w-4 text-green-600" />
+                          )}
+                        </div>
+                      </Card>
+                    ))}
+                  </div>
+                )}
+
+                {/* Show selected phone confirmation */}
+                {selectedPhoneId && selectedPhoneDisplay && (
+                  <div className="flex items-center gap-2 p-2 rounded-md bg-green-50 text-green-800 text-sm">
+                    <CheckCircle2 className="h-4 w-4" />
+                    <span>WhatsApp selecionado: <strong>{selectedPhoneDisplay}</strong></span>
+                    {selectedPhoneVerifiedName && (
+                      <span className="text-xs">({selectedPhoneVerifiedName})</span>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
           {/* Action Buttons */}
           <div className="flex gap-3 pt-4 border-t">
-            <Button 
-              variant="outline" 
+            <Button
+              variant="outline"
               onClick={onClose}
               disabled={isSaving}
               className="flex-1"
             >
               Pular por Agora
             </Button>
-            <Button 
+            <Button
               onClick={handleSave}
               disabled={!canSave}
               className="flex-1 flex items-center gap-2"

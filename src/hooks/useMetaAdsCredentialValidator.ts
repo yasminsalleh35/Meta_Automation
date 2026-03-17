@@ -125,53 +125,56 @@ export const useMetaAdsCredentialValidator = () => {
       return new Promise<{accessToken: string, grantedScopes: string[], integration?: any}>((resolve, reject) => {
         let checkClosedInterval: NodeJS.Timeout;
         let isResolved = false;
-        let userInteracted = false; // ✅ CORREÇÃO 4: Rastrear interação do usuário
+        let messageListenerActive = true;
 
         const cleanup = () => {
           if (checkClosedInterval) clearInterval(checkClosedInterval);
-          window.removeEventListener('message', messageListener);
+          if (messageListenerActive) {
+            window.removeEventListener('message', messageListener);
+            messageListenerActive = false;
+          }
           isResolved = true;
         };
 
-        // ✅ FASE 1: Detecção corrigida - não tratar fechamento como cancelamento
+        // When popup closes, DON'T remove message listener — keep listening for the success message
         checkClosedInterval = setInterval(() => {
           if (authWindow?.closed && !isResolved) {
-            cleanup();
-            
+            // Only stop the interval, keep the message listener active
+            if (checkClosedInterval) clearInterval(checkClosedInterval);
+
             const now = Date.now();
             const elapsedTime = now - startTime;
-            
+
             console.log(`🚪 OAuth window closed after ${elapsedTime}ms`);
-            
-            // ✅ CORREÇÃO CRÍTICA: Não assumir cancelamento - aguardar mensagem
-            console.log('💭 Window closed, waiting for background processing or result message...');
-            
-            // Aguardar um tempo para ver se chega mensagem de sucesso em background
+            console.log('💭 Window closed, keeping message listener active for background processing...');
+
+            // Give 30 seconds for the message to arrive (network latency, slow server, etc.)
             setTimeout(() => {
               if (!isResolved) {
-                console.log('⏰ No message received, treating as timeout');
-                
-                const userMessage = elapsedTime > 8000 
+                console.log('⏰ No message received after 30s, treating as timeout');
+                cleanup();
+
+                const userMessage = elapsedTime > 8000
                   ? 'O processo está demorando mais que o esperado. Tente novamente ou verifique se o app está em revisão no Meta.'
                   : 'Popup fechou sem retorno. Tente novamente.';
-                
+
                 toast({
                   title: "Processo Interrompido",
                   description: userMessage,
                   variant: "default"
                 });
-                
+
                 reject(new Error(userMessage));
               }
-            }, 5000); // Aguarda 5s para ver se chega mensagem
+            }, 30000); // 30s grace period for slow networks
           }
         }, 1000);
 
-        // ✅ CORREÇÃO: Listener de mensagens aprimorado
+        // Listen for BOTH message types (META_AUTH_SUCCESS and META_AUTH_SUCCESS_WITH_ASSETS)
         const messageListener = async (event: MessageEvent) => {
           if (event.origin !== window.location.origin || isResolved) return;
-          
-          if (event.data.type === 'META_AUTH_SUCCESS') {
+
+          if (event.data.type === 'META_AUTH_SUCCESS' || event.data.type === 'META_AUTH_SUCCESS_WITH_ASSETS') {
             cleanup();
             authWindow?.close();
             
