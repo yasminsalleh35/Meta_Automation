@@ -11,6 +11,7 @@ import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { SimpleCampaignFormData } from '@/types/simpleCampaign.types';
 import { cn } from '@/lib/utils';
+import { DaypartingSchedule } from './DaypartingSchedule';
 
 interface Step3OrcamentoProps {
   formData: SimpleCampaignFormData;
@@ -26,9 +27,9 @@ export const Step3Orcamento: React.FC<Step3OrcamentoProps> = ({ formData, update
   return (
     <Card className="w-full max-w-2xl mx-auto">
       <CardHeader>
-        <CardTitle className="text-2xl text-center">Orçamento e Data</CardTitle>
+        <CardTitle className="text-2xl text-center">Orçamento e Cronograma</CardTitle>
         <CardDescription className="text-center">
-          Defina seu investimento e quando começar
+          Defina seu investimento, datas e horários de exibição
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
@@ -125,6 +126,28 @@ export const Step3Orcamento: React.FC<Step3OrcamentoProps> = ({ formData, update
               : 'Sem data de término, a campanha roda continuamente até você pausar.'}
           </p>
         </div>
+
+        {/* Dayparting / Ad Schedule */}
+        <DaypartingSchedule
+          enabled={formData.enableDayparting || false}
+          startTime={formData.scheduleStartTime || null}
+          endTime={formData.scheduleEndTime || null}
+          selectedDays={formData.daypartingDays || [0, 1, 2, 3, 4, 5, 6]}
+          hasEndDate={!!formData.endDate}
+          onToggle={(enabled) => {
+            updateFormData('enableDayparting', enabled);
+            if (enabled) {
+              if (!formData.scheduleStartTime) updateFormData('scheduleStartTime', '08:00');
+              if (!formData.scheduleEndTime) updateFormData('scheduleEndTime', '22:00');
+              if (!formData.daypartingDays || formData.daypartingDays.length === 0) {
+                updateFormData('daypartingDays', [0, 1, 2, 3, 4, 5, 6]);
+              }
+            }
+          }}
+          onStartTimeChange={(time) => updateFormData('scheduleStartTime', time)}
+          onEndTimeChange={(time) => updateFormData('scheduleEndTime', time)}
+          onDaysChange={(days) => updateFormData('daypartingDays', days)}
+        />
       </CardContent>
     </Card>
   );

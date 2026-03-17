@@ -107,6 +107,10 @@ serve(async (req) => {
       // Scheduling — reset start_date to today
       start_date: today,
       end_date: original.end_date,
+      // Phase 4.4: Copy dayparting schedule
+      schedule_start_time: original.schedule_start_time,
+      schedule_end_time: original.schedule_end_time,
+      ad_schedule: original.ad_schedule,
       // Meta data
       ad_account_id: original.ad_account_id,
       meta_data: original.meta_data ? { ...original.meta_data, duplicated_from: campaignId } : null,

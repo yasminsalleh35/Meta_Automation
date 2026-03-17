@@ -40,6 +40,11 @@ export interface SimpleCampaignFormData {
     latitude?: number;
     longitude?: number;
   }>; // ✅ NOVO: localizações Meta estruturadas
+  // ✅ Phase 4.4: Scheduling — dayparting
+  scheduleStartTime?: string | null; // HH:MM format, e.g. "08:00"
+  scheduleEndTime?: string | null;   // HH:MM format, e.g. "22:00"
+  enableDayparting?: boolean;
+  daypartingDays?: number[];         // 0=Sunday..6=Saturday (Meta format)
 }
 
 export interface SimpleCampaignPayload {
@@ -106,6 +111,17 @@ export interface SimpleCampaignPayload {
     latitude?: number;
     longitude?: number;
   }>; // ✅ NOVO: localizações Meta estruturadas
+  // ✅ Phase 4.4: Scheduling — dayparting
+  scheduleStartTime?: string | null; // HH:MM format
+  scheduleEndTime?: string | null;   // HH:MM format
+  enableDayparting?: boolean;
+  daypartingDays?: number[];         // 0=Sunday..6=Saturday
+  adSchedule?: Array<{
+    start_minute: number;
+    end_minute: number;
+    days: number[];
+    timezone_type: string;
+  }> | null;
 }
 
 export interface SimpleCampaignWizardStep {

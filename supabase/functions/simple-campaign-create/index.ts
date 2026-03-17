@@ -58,6 +58,17 @@ interface SimpleCampaignPayload {
   useExistingInstagramPost?: boolean;
   selectedInstagramPostId?: string | null;
   instagramUserId?: string | null; // ✅ NOVO: para montar {IG_USER_ID}_{MEDIA_ID}
+  // ✅ Phase 4.4: Scheduling — dayparting
+  scheduleStartTime?: string | null; // HH:MM format
+  scheduleEndTime?: string | null;   // HH:MM format
+  enableDayparting?: boolean;
+  daypartingDays?: number[];         // 0=Sunday..6=Saturday
+  adSchedule?: Array<{
+    start_minute: number;
+    end_minute: number;
+    days: number[];
+    timezone_type: string;
+  }> | null;
   // ✅ NOVO: Dados do WhatsApp Business para campanhas nativas
   useWhatsAppNumberFromMeta?: boolean;
   whatsapp_meta?: {
@@ -1316,16 +1327,33 @@ serve(async (req) => {
     };
     const gendersArray = genderMap[payload.gender] || [0];
 
+    // ✅ Phase 4.4: Dayparting requires lifetime_budget + end_time (Meta API constraint)
+    const hasDayparting = payload.adSchedule && payload.adSchedule.length > 0 && payload.endDate;
+    const budgetInCents = Math.round(payload.dailyBudget * 100);
+
     const adSetPayload: any = {
       name: adSetName,
       campaign_id: campaignResult.id,
-      daily_budget: String(Math.round(payload.dailyBudget * 100)),
+      // When dayparting is active: use lifetime_budget (daily * days remaining)
+      // When no dayparting: use daily_budget as before
+      ...(hasDayparting
+        ? (() => {
+            const startMs = new Date(payload.startDate).getTime();
+            const endMs = new Date(payload.endDate!).getTime();
+            const days = Math.max(1, Math.ceil((endMs - startMs) / (1000 * 60 * 60 * 24)));
+            return { lifetime_budget: String(budgetInCents * days) };
+          })()
+        : { daily_budget: String(budgetInCents) }),
       billing_event: 'IMPRESSIONS',
       optimization_goal: 'CONVERSATIONS', // ✅ CTWA: sempre CONVERSATIONS
       destination_type: 'WHATSAPP', // ✅ CTWA: sempre WHATSAPP
       bid_strategy: 'LOWEST_COST_WITHOUT_CAP',
       start_time: payload.startDate,
       ...(payload.endDate ? { end_time: payload.endDate } : {}),
+      // ✅ Phase 4.4: Dayparting — ad delivery schedule (only with lifetime_budget + end_time)
+      ...(hasDayparting
+        ? { adset_schedule: JSON.stringify(payload.adSchedule) }
+        : {}),
       status: 'PAUSED',
       promoted_object: {
         page_id: pageId,
@@ -1816,7 +1844,6 @@ serve(async (req) => {
         name: payload.campaignName,
         objective: 'OUTCOME_ENGAGEMENT',
         status: 'PAUSED',
-        location_city: payload.city,
         budget_daily: payload.dailyBudget,
         ad_title: payload.adTitle,
         ad_text: payload.adText,
@@ -1835,6 +1862,10 @@ serve(async (req) => {
         },
         start_date: payload.startDate,
         ...(payload.endDate ? { end_date: payload.endDate } : {}),
+        // Phase 4.4: Scheduling fields
+        ...(payload.scheduleStartTime ? { schedule_start_time: payload.scheduleStartTime } : {}),
+        ...(payload.scheduleEndTime ? { schedule_end_time: payload.scheduleEndTime } : {}),
+        ...(payload.adSchedule ? { ad_schedule: payload.adSchedule } : {}),
         facebook_page: payload.fanpage,
         instagram_account: payload.instagram,
         location_city: payload.city,

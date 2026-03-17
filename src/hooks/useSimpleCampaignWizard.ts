@@ -25,6 +25,11 @@ const initialFormData: SimpleCampaignFormData = {
   selectedInstagramPost: null,
   useExistingInstagramPost: false,
   selectedInstagramPostId: null,
+  // Phase 4.4: Scheduling
+  scheduleStartTime: null,
+  scheduleEndTime: null,
+  enableDayparting: false,
+  daypartingDays: [0, 1, 2, 3, 4, 5, 6],
 };
 
 const steps: SimpleCampaignWizardStep[] = [
@@ -33,6 +38,36 @@ const steps: SimpleCampaignWizardStep[] = [
   { id: 3, title: 'Orçamento', description: 'Investimento e cronograma', isComplete: false, isActive: false },
   { id: 4, title: 'Localização', description: 'Público e região', isComplete: false, isActive: false }
 ];
+
+// ✅ Phase 4.4: Build Meta adset_schedule from dayparting config
+const buildAdSchedule = (
+  enabled: boolean,
+  startTime: string | null,
+  endTime: string | null,
+  days: number[]
+): Array<{ start_minute: number; end_minute: number; days: number[]; timezone_type: string }> | null => {
+  if (!enabled || !startTime || !endTime || !days.length) return null;
+
+  const startHour = parseInt(startTime.split(':')[0], 10);
+  const endHour = parseInt(endTime.split(':')[0], 10);
+
+  // Meta API uses minutes from midnight (0-1439)
+  const startMinute = startHour * 60;
+  const endMinute = endHour * 60;
+
+  // If start >= end, it means the schedule wraps around midnight — not supported in simple mode
+  if (startMinute >= endMinute) return null;
+
+  // If all day (0:00-23:00) and all days, no schedule needed
+  if (startMinute === 0 && endMinute >= 23 * 60 && days.length === 7) return null;
+
+  return [{
+    start_minute: startMinute,
+    end_minute: endMinute,
+    days,
+    timezone_type: 'USER',
+  }];
+};
 
 // ✅ NOVO: Função utilitária para canonizar WhatsApp link
 const buildWhatsappLink = (input: string): string | null => {
@@ -150,14 +185,44 @@ export const useSimpleCampaignWizard = () => {
           isValid: step2Valid
         });
         return step2Valid;
-      case 3:
-        // Step 3: Validate budget
-        const step3Valid = formData.dailyBudget >= 30;
+      case 3: {
+        // Step 3: Validate budget + scheduling
+        const budgetOk = formData.dailyBudget >= 30;
+
+        // Phase 4.4: Dayparting validation
+        let scheduleOk = true;
+        if (formData.enableDayparting) {
+          // Meta API requires end_time when using adset_schedule
+          if (!formData.endDate) {
+            scheduleOk = false;
+            console.log('[VALIDATION] Dayparting requires end date');
+          }
+          // Validate start < end time
+          if (formData.scheduleStartTime && formData.scheduleEndTime) {
+            const startH = parseInt(formData.scheduleStartTime.split(':')[0], 10);
+            const endH = parseInt(formData.scheduleEndTime.split(':')[0], 10);
+            if (startH >= endH) {
+              scheduleOk = false;
+              console.log('[VALIDATION] Schedule start time must be before end time');
+            }
+          }
+          // Must have at least 1 day selected
+          if (!formData.daypartingDays || formData.daypartingDays.length === 0) {
+            scheduleOk = false;
+            console.log('[VALIDATION] Dayparting requires at least 1 day');
+          }
+        }
+
+        const step3Valid = budgetOk && scheduleOk;
         console.log('[VALIDATION] Step 3 validation:', {
           dailyBudget: formData.dailyBudget,
+          budgetOk,
+          enableDayparting: formData.enableDayparting,
+          scheduleOk,
           isValid: step3Valid
         });
         return step3Valid;
+      }
       case 4:
         // Step 4: Validate location
         const step4Valid = !!(formData.city && formData.cityCoordinates);
@@ -384,7 +449,20 @@ export const useSimpleCampaignWizard = () => {
         specialCategories: [],
         // ✅ NOVO: Localização internacional
         countryCode: formData.countryCode || 'BR',
-        selected_locations: formData.selected_locations || []
+        selected_locations: formData.selected_locations || [],
+        // ✅ Phase 4.4: Scheduling — dayparting
+        scheduleStartTime: formData.enableDayparting ? formData.scheduleStartTime : null,
+        scheduleEndTime: formData.enableDayparting ? formData.scheduleEndTime : null,
+        enableDayparting: formData.enableDayparting || false,
+        daypartingDays: formData.enableDayparting ? (formData.daypartingDays || [0,1,2,3,4,5,6]) : undefined,
+        adSchedule: formData.endDate
+          ? buildAdSchedule(
+              formData.enableDayparting || false,
+              formData.scheduleStartTime || null,
+              formData.scheduleEndTime || null,
+              formData.daypartingDays || [0,1,2,3,4,5,6]
+            )
+          : null, // Meta API requires end_time for adset_schedule
         // ✅ Removidos: billing_event, optimization_goal, devices, platforms, placements
         // A Edge força esses valores para ROTA A
       };
