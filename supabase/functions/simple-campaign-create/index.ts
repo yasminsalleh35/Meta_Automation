@@ -1777,7 +1777,7 @@ serve(async (req) => {
         uploadResult,
         payload.adText,
         payload.adTitle,
-        `https://wa.me/${pageId}`, // ✅ CTWA: Link WhatsApp formatado corretamente (Meta API exige URL válida)
+        payload.whatsappLink || `https://wa.me/${pageId}`, // ✅ CTWA: Use actual wa.me link when available
         accessToken,
         'whatsapp_native' // ✅ CTWA: sempre usar WHATSAPP_MESSAGE CTA
       );
