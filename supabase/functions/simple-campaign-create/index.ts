@@ -1356,9 +1356,8 @@ serve(async (req) => {
         : {}),
       status: 'PAUSED',
       promoted_object: {
-        page_id: pageId,
-        ...(whatsappPhoneId ? { whatsapp_phone_number_id: whatsappPhoneId } : {})
-      }, // ✅ CTWA: page_id obrigatório + whatsapp_phone_number_id quando disponível
+        page_id: pageId
+      }, // ✅ CTWA v23.0: only page_id in promoted_object — WhatsApp resolved from Page's linked WABA
       targeting: {},
       access_token: accessToken
     };
@@ -1589,14 +1588,11 @@ serve(async (req) => {
     // ✅ Log detalhado do promoted_object antes da criação
     logger('info', 'ADSET-CTWA-CONFIG', '📱 Configuração CTWA do Ad Set', {
       page_id: pageId,
-      whatsapp_phone_number_id: whatsappPhoneId ?? 'não encontrado — Meta tentará via page_id',
+      whatsapp_phone_id_available: whatsappPhoneId ?? 'none',
       whatsapp_display: integration.selected_whatsapp_display ?? null,
-      whatsapp_provided_manually: !!payload.whatsappLink,
       destination_type: 'WHATSAPP',
       optimization_goal: 'CONVERSATIONS',
-      note: whatsappPhoneId
-        ? 'whatsapp_phone_number_id incluído no promoted_object'
-        : 'AVISO: sem phone_number_id — pode falhar para usuários não-admin'
+      note: 'promoted_object contains only page_id — WhatsApp resolved from Page linked WABA'
     });
 
     // ✅ CREATE AD SET - CTWA SIMPLES (com tratamento de erro específico para WhatsApp)
