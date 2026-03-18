@@ -9,6 +9,7 @@ import { SimpleCampaignFormData } from '@/types/simpleCampaign.types';
 import { useAISuggestions } from '@/hooks/useAISuggestions';
 import { useToast } from '@/hooks/use-toast';
 import { useAILoadingProgress } from '@/hooks/useAILoadingProgress';
+import { AISuggestionsCard } from '@/components/campaign/AISuggestionsCard';
 
 interface Step1InfoProps {
   formData: SimpleCampaignFormData;
@@ -19,27 +20,27 @@ export const Step1Info: React.FC<Step1InfoProps> = ({ formData, updateFormData }
   const { toast } = useToast();
   const {
     isAILoading,
+    aiSuggestions,
     handleAISuggestion
   } = useAISuggestions();
-  
+
   const { progress, currentStage, isInFinalStage } = useAILoadingProgress(isAILoading);
 
   const onClickCamplyIA = async () => {
     try {
       await handleAISuggestion("gerar leads via WhatsApp", (suggestions) => {
         if (suggestions) {
-          // Usar adTitle diretamente da IA
+          // Apply ad title and text immediately
           if (suggestions.adTitle) {
             updateFormData('adTitle', suggestions.adTitle);
           }
-          
           if (suggestions.adText) {
             updateFormData('adText', suggestions.adText);
           }
-          
+
           toast({
-            title: "Sugestões aplicadas com sucesso!",
-            description: "Título e texto do anúncio foram gerados pela Camply IA.",
+            title: "Sugestões geradas com sucesso!",
+            description: "Título e texto aplicados. Veja abaixo as sugestões completas de público, orçamento e localização.",
           });
         } else {
           toast({
@@ -57,6 +58,21 @@ export const Step1Info: React.FC<Step1InfoProps> = ({ formData, updateFormData }
         variant: "destructive"
       });
     }
+  };
+
+  const handleApplyAllSuggestions = (suggestions: any) => {
+    // Apply budget
+    if (suggestions.budget?.daily) {
+      updateFormData('dailyBudget', suggestions.budget.daily);
+    }
+    // Apply end date
+    if (suggestions.duration?.endDate) {
+      updateFormData('endDate', new Date(suggestions.duration.endDate));
+    }
+    toast({
+      title: "Sugestões completas aplicadas!",
+      description: "Orçamento e duração foram atualizados. Revise nas próximas etapas.",
+    });
   };
 
   return (
@@ -147,6 +163,17 @@ export const Step1Info: React.FC<Step1InfoProps> = ({ formData, updateFormData }
             )}
           </div>
         </Button>
+
+        {/* AI Full Suggestions Card — shows audience, budget, location after generation */}
+        {aiSuggestions && (
+          <AISuggestionsCard
+            isLoading={isAILoading}
+            suggestions={aiSuggestions}
+            hasObjective={true}
+            onGenerateSuggestions={onClickCamplyIA}
+            onApplySuggestions={handleApplyAllSuggestions}
+          />
+        )}
       </CardContent>
     </Card>
   );
