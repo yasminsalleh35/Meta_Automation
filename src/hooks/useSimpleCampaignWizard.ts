@@ -30,6 +30,9 @@ const initialFormData: SimpleCampaignFormData = {
   scheduleEndTime: null,
   enableDayparting: false,
   daypartingDays: [0, 1, 2, 3, 4, 5, 6],
+  // AI targeting toggle
+  useAISuggestions: false,
+  aiTargeting: null,
 };
 
 const steps: SimpleCampaignWizardStep[] = [
