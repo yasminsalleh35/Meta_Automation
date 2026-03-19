@@ -455,6 +455,9 @@ export const useSimpleCampaignWizard = () => {
         scheduleEndTime: formData.enableDayparting ? formData.scheduleEndTime : null,
         enableDayparting: formData.enableDayparting || false,
         daypartingDays: formData.enableDayparting ? (formData.daypartingDays || [0,1,2,3,4,5,6]) : undefined,
+        // AI targeting toggle
+        useAISuggestions: formData.useAISuggestions || false,
+        aiTargeting: formData.aiTargeting || null,
         adSchedule: formData.endDate
           ? buildAdSchedule(
               formData.enableDayparting || false,

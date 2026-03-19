@@ -1533,9 +1533,36 @@ serve(async (req) => {
       genders: gendersArray
     };
 
-    // [TARGETING-OVERLAY] — ADICIONAR (aplicar perfil, se existir)
+    // [TARGETING-OVERLAY] — Apply AI targeting OR profile overlay
     try {
-      if (campaignProfile) {
+      if (payload.useAISuggestions && payload.aiTargeting) {
+        // ✅ AI TARGETING MODE: Use AI-generated targeting instead of profile
+        const { resolveInterestNames, sanitizeInterests, mapGenders, clampAge } = await import('./utils.ts');
+
+        // Resolve AI interest names to Meta IDs
+        const resolvedInterests = await resolveInterestNames(
+          payload.aiTargeting.interests || [],
+          accessToken
+        );
+
+        const sanitized = sanitizeInterests(resolvedInterests);
+
+        targeting.age_min = clampAge(payload.aiTargeting.ageMin, 13, 65);
+        targeting.age_max = clampAge(payload.aiTargeting.ageMax, 13, 65);
+        targeting.genders = mapGenders(payload.aiTargeting.genders);
+
+        if (sanitized.length > 0) {
+          targeting.flexible_spec = [{ interests: sanitized }];
+        }
+
+        logger('info', 'AI-TARGETING-APPLIED', 'AI suggestions applied to targeting (profile overlay skipped)', {
+          interests_resolved: sanitized.length,
+          age_min: targeting.age_min,
+          age_max: targeting.age_max,
+          genders: targeting.genders,
+        });
+      } else if (campaignProfile) {
+        // ✅ PROFILE MODE: Apply profile overlay (existing behavior)
         const { applyProfileOverlayOnTargeting } = await import('./utils.ts');
         const targetingBefore = targeting;
         targeting = applyProfileOverlayOnTargeting(targeting, campaignProfile);
@@ -1547,7 +1574,7 @@ serve(async (req) => {
         logger('info', 'PROFILE-SKIPPED', 'No campaign profile found; using defaults');
       }
     } catch (err) {
-      logger('warn', 'PROFILE-APPLY-ERROR', 'Failed to apply campaign profile', { message: (err as Error).message });
+      logger('warn', 'TARGETING-APPLY-ERROR', 'Failed to apply targeting overlay', { message: (err as Error).message });
     }
 
     // Apply targeting to adSetPayload

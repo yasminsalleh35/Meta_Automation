@@ -45,6 +45,14 @@ export interface SimpleCampaignFormData {
   scheduleEndTime?: string | null;   // HH:MM format, e.g. "22:00"
   enableDayparting?: boolean;
   daypartingDays?: number[];         // 0=Sunday..6=Saturday (Meta format)
+  // AI targeting toggle
+  useAISuggestions?: boolean;
+  aiTargeting?: {
+    interests: Array<{ id: string; name: string }>;
+    ageMin: number;
+    ageMax: number;
+    genders: 'all' | 'male' | 'female';
+  } | null;
 }
 
 export interface SimpleCampaignPayload {

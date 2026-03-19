@@ -203,3 +203,47 @@ export function applyProfileOverlayOnTargeting(
 
   return targeting;
 }
+
+// ==== [ADD] Resolve AI interest names to Meta IDs ============================
+
+const META_API_VERSION = 'v23.0';
+
+/**
+ * Takes an array of interests (possibly with empty IDs from AI suggestions)
+ * and resolves any missing IDs by searching the Meta targeting API.
+ */
+export async function resolveInterestNames(
+  interests: Array<{ id: string; name: string }>,
+  accessToken: string
+): Promise<Array<{ id: string; name: string }>> {
+  const resolved: Array<{ id: string; name: string }> = [];
+
+  for (const interest of interests) {
+    // If already has a valid numeric ID (5+ digits), keep as-is
+    if (interest.id && /^\d{5,}$/.test(interest.id)) {
+      resolved.push(interest);
+      continue;
+    }
+
+    // Otherwise, search Meta API for this interest name
+    if (!interest.name) continue;
+
+    try {
+      const url = `https://graph.facebook.com/${META_API_VERSION}/search?type=adinterest&q=${encodeURIComponent(interest.name)}&limit=1&locale=pt_BR&access_token=${encodeURIComponent(accessToken)}`;
+      const resp = await fetch(url);
+      if (resp.ok) {
+        const data = await resp.json();
+        if (data.data?.[0]?.id) {
+          resolved.push({
+            id: String(data.data[0].id),
+            name: data.data[0].name || interest.name,
+          });
+        }
+      }
+    } catch (err) {
+      console.warn(`[resolveInterestNames] Failed to resolve "${interest.name}":`, err);
+    }
+  }
+
+  return resolved;
+}

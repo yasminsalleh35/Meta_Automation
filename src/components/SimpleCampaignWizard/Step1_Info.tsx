@@ -69,10 +69,32 @@ export const Step1Info: React.FC<Step1InfoProps> = ({ formData, updateFormData }
     if (suggestions.duration?.endDate) {
       updateFormData('endDate', new Date(suggestions.duration.endDate));
     }
-    toast({
-      title: "Sugestões completas aplicadas!",
-      description: "Orçamento e duração foram atualizados. Revise nas próximas etapas.",
+    // Auto-enable AI targeting mode and store targeting data
+    updateFormData('useAISuggestions', true);
+    updateFormData('aiTargeting', {
+      interests: (suggestions.interests || []).map((name: string) => ({ id: '', name })),
+      ageMin: suggestions.audience?.ageMin || 25,
+      ageMax: suggestions.audience?.ageMax || 55,
+      genders: suggestions.audience?.gender || 'all',
     });
+    toast({
+      title: "Sugestões da IA aplicadas!",
+      description: "Segmentação, orçamento e duração atualizados. A IA será usada para o público-alvo desta campanha.",
+    });
+  };
+
+  const handleToggleTargeting = (useAI: boolean) => {
+    updateFormData('useAISuggestions', useAI);
+    if (!useAI) {
+      updateFormData('aiTargeting', null);
+    } else if (aiSuggestions) {
+      updateFormData('aiTargeting', {
+        interests: (aiSuggestions.interests || []).map((name: string) => ({ id: '', name })),
+        ageMin: aiSuggestions.audience?.ageMin || 25,
+        ageMax: aiSuggestions.audience?.ageMax || 55,
+        genders: aiSuggestions.audience?.gender || 'all',
+      });
+    }
   };
 
   return (
@@ -166,13 +188,65 @@ export const Step1Info: React.FC<Step1InfoProps> = ({ formData, updateFormData }
 
         {/* AI Full Suggestions Card — shows audience, budget, location after generation */}
         {aiSuggestions && (
-          <AISuggestionsCard
-            isLoading={isAILoading}
-            suggestions={aiSuggestions}
-            hasObjective={true}
-            onGenerateSuggestions={onClickCamplyIA}
-            onApplySuggestions={handleApplyAllSuggestions}
-          />
+          <>
+            <AISuggestionsCard
+              isLoading={isAILoading}
+              suggestions={aiSuggestions}
+              hasObjective={true}
+              onGenerateSuggestions={onClickCamplyIA}
+              onApplySuggestions={handleApplyAllSuggestions}
+            />
+
+            {/* AI vs Profile targeting toggle */}
+            <div className="rounded-lg border p-4 space-y-3">
+              <Label className="text-sm font-medium">Segmentação do Público</Label>
+              <div className="flex flex-col gap-2">
+                <label
+                  className={`flex items-center gap-3 p-3 rounded-md border cursor-pointer transition-all ${
+                    formData.useAISuggestions
+                      ? 'border-green-500 bg-green-50'
+                      : 'border-muted hover:border-muted-foreground/30'
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="targetingMode"
+                    checked={formData.useAISuggestions === true}
+                    onChange={() => handleToggleTargeting(true)}
+                    className="accent-green-600"
+                  />
+                  <div>
+                    <span className="font-medium text-sm">Usar sugestões da IA</span>
+                    <p className="text-xs text-muted-foreground">
+                      Interesses, idade e gênero gerados pela IA para esta campanha
+                    </p>
+                  </div>
+                </label>
+
+                <label
+                  className={`flex items-center gap-3 p-3 rounded-md border cursor-pointer transition-all ${
+                    !formData.useAISuggestions
+                      ? 'border-blue-500 bg-blue-50'
+                      : 'border-muted hover:border-muted-foreground/30'
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="targetingMode"
+                    checked={!formData.useAISuggestions}
+                    onChange={() => handleToggleTargeting(false)}
+                    className="accent-blue-600"
+                  />
+                  <div>
+                    <span className="font-medium text-sm">Usar perfil padrão</span>
+                    <p className="text-xs text-muted-foreground">
+                      Segmentação do perfil de campanha configurado em "Meu Negócio"
+                    </p>
+                  </div>
+                </label>
+              </div>
+            </div>
+          </>
         )}
       </CardContent>
     </Card>

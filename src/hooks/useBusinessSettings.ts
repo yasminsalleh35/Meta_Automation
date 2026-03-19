@@ -182,6 +182,31 @@ export const useBusinessSettings = () => {
           title: "Configurações salvas!",
           description: "Suas configurações foram salvas com sucesso.",
         });
+
+        // Auto-generate AI campaign profile (fire-and-forget)
+        const hasMinimumData = dataToSave.name || dataToSave.category || dataToSave.mainProduct;
+        if (hasMinimumData) {
+          console.log('[useBusinessSettings] 🤖 Triggering AI profile generation...');
+          supabase.functions.invoke('ai-generate-profile', {
+            headers: {
+              Authorization: `Bearer ${session.access_token}`,
+            },
+          }).then(({ data: profileData, error: profileError }) => {
+            if (profileError) {
+              console.warn('[useBusinessSettings] AI profile generation failed (non-blocking):', profileError);
+            } else if (profileData?.profile_id) {
+              console.log('[useBusinessSettings] ✅ AI profile generated:', profileData.profile_id);
+              // Update local state with new profile ID
+              setBusinessData(prev => ({ ...prev, campaign_profile_id: profileData.profile_id }));
+              toast({
+                title: "Perfil de campanha IA gerado!",
+                description: `Segmentação otimizada automaticamente com ${profileData.interests_resolved || 0} interesses.`,
+              });
+            }
+          }).catch(err => {
+            console.warn('[useBusinessSettings] AI profile generation error (non-blocking):', err);
+          });
+        }
       }
 
       return true;
