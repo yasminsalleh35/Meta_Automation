@@ -136,7 +136,7 @@ export const useBusinessSettings = () => {
         category: dataToSave.category,
         target_audience: dataToSave.targetAudience,
         business_goals: dataToSave.businessGoals,
-        campaign_profile_id: dataToSave.campaign_profile_id,
+        campaign_profile_id: dataToSave.campaign_profile_id || null, // sanitize '' to null for UUID FK
         odont_specialties: dataToSave.odontSpecialties,
         target_age_min: dataToSave.targetAgeMin,
         target_age_max: dataToSave.targetAgeMax,

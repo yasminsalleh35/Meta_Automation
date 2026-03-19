@@ -65,9 +65,10 @@ const MyBusiness: React.FC = () => {
     return profiles.find(p => p.id === businessData.campaign_profile_id) || null;
   }, [businessData.campaign_profile_id, profiles]);
 
-  // Update form when businessData changes
+  // Update form when businessData changes — only when NOT actively editing (viewMode)
+  // or on initial load. Do NOT reset form during saves to prevent wiping user input.
   useEffect(() => {
-    if (businessData) {
+    if (businessData && (viewMode || isLoading)) {
       form.reset({
         name: businessData.name || '',
         description: businessData.description || '',
@@ -83,7 +84,7 @@ const MyBusiness: React.FC = () => {
         strategic_notes: businessData.strategic_notes || '',
       });
     }
-  }, [businessData, form]);
+  }, [businessData, viewMode, isLoading]);
 
   // Load ticket values when businessData changes
   useEffect(() => {

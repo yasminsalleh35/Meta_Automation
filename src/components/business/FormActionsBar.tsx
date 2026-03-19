@@ -76,10 +76,9 @@ const FormActionsBar: React.FC<FormActionsBarProps> = ({
         )}
 
         {/* Botão Salvar - Direita */}
-        <Button 
-          type="submit" 
+        <Button
+          type="submit"
           disabled={isSaving || isClearing}
-          onClick={onSubmit}
           className="bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white shadow-xl hover:shadow-2xl transition-all duration-300 hover:scale-105 px-8 py-3 text-lg sm:ml-auto"
         >
           {isSaving ? (
