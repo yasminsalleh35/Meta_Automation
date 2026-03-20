@@ -34,7 +34,8 @@ const MyBusiness: React.FC = () => {
   
   // Initialize viewMode as false — will be set after data loads
   const [viewMode, setViewMode] = useState(false);
-  const [initialLoadDone, setInitialLoadDone] = useState(false);
+  const [dataPopulated, setDataPopulated] = useState(false);
+  const [isEditing, setIsEditing] = useState(false); // tracks if user is actively editing
 
   // Form setup for controlled inputs
   const form = useForm({
@@ -62,36 +63,32 @@ const MyBusiness: React.FC = () => {
     return profiles.find(p => p.id === businessData.campaign_profile_id) || null;
   }, [businessData.campaign_profile_id, profiles]);
 
-  // After initial data load: set viewMode and populate form
+  // Populate form and set viewMode whenever businessData loads from DB
+  // Key logic: only reset form when user is NOT actively editing
   useEffect(() => {
-    if (!isLoading && !initialLoadDone) {
-      setInitialLoadDone(true);
-      const hasData = !!(businessData.name || businessData.description || businessData.mainProduct);
-      const hasProfile = !!businessData.campaign_profile_id;
-      if (hasData && hasProfile) {
-        setViewMode(true);
-      }
-      // Always populate form with loaded data
-      form.reset({
-        name: businessData.name || '',
-        description: businessData.description || '',
-        mainProduct: businessData.mainProduct || '',
-        category: businessData.category || '',
-        targetAudience: businessData.targetAudience || '',
-        businessGoals: businessData.businessGoals || '',
-        campaign_profile_id: businessData.campaign_profile_id || '',
-        odontSpecialties: businessData.odontSpecialties || [],
-        targetAgeMin: businessData.targetAgeMin || 18,
-        targetAgeMax: businessData.targetAgeMax || 65,
-        specialtyTickets: businessData.specialtyTickets || {},
-        strategic_notes: businessData.strategic_notes || '',
-      });
-    }
-  }, [isLoading, initialLoadDone, businessData]);
+    const hasData = !!(businessData.name || businessData.description || businessData.mainProduct);
+    const hasProfile = !!businessData.campaign_profile_id;
 
-  // Update form when businessData changes in viewMode (e.g., AI profile callback)
-  useEffect(() => {
-    if (businessData && viewMode && initialLoadDone) {
+    if (hasData && !dataPopulated) {
+      // First time we have real data from DB — populate form and show view mode
+      setDataPopulated(true);
+      setViewMode(true);
+      form.reset({
+        name: businessData.name || '',
+        description: businessData.description || '',
+        mainProduct: businessData.mainProduct || '',
+        category: businessData.category || '',
+        targetAudience: businessData.targetAudience || '',
+        businessGoals: businessData.businessGoals || '',
+        campaign_profile_id: businessData.campaign_profile_id || '',
+        odontSpecialties: businessData.odontSpecialties || [],
+        targetAgeMin: businessData.targetAgeMin || 18,
+        targetAgeMax: businessData.targetAgeMax || 65,
+        specialtyTickets: businessData.specialtyTickets || {},
+        strategic_notes: businessData.strategic_notes || '',
+      });
+    } else if (hasData && dataPopulated && !isEditing) {
+      // Data changed while NOT editing (e.g., AI profile callback, or returning to view mode)
       form.reset({
         name: businessData.name || '',
         description: businessData.description || '',
@@ -107,7 +104,8 @@ const MyBusiness: React.FC = () => {
         strategic_notes: businessData.strategic_notes || '',
       });
     }
-  }, [businessData, viewMode, initialLoadDone]);
+    // When isEditing === true: do NOT touch the form — user is typing
+  }, [businessData, dataPopulated, isEditing]);
 
   // Load ticket values when businessData changes
   useEffect(() => {
@@ -144,6 +142,7 @@ const MyBusiness: React.FC = () => {
     const success = await saveBusinessSettings(formData, { origin: 'manual' });
     if (success) {
       console.log('MY_BUSINESS_SAVED', new Date().toISOString());
+      setIsEditing(false);
       setViewMode(true);
     }
   };
@@ -160,6 +159,7 @@ const MyBusiness: React.FC = () => {
   };
 
   const onEdit = () => {
+    setIsEditing(true);
     setViewMode(false);
   };
 
