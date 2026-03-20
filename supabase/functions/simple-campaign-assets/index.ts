@@ -135,28 +135,35 @@ async function handleGetInstagramPosts(userId: string, body: any) {
 
     logger('info', 'validation', 'Vínculo página-Instagram validado com sucesso', { page_id, instagram_user_id });
 
-    // Chamar /media com USER TOKEN (correção conforme especificado)
-    const mediaUrl = `https://graph.facebook.com/v23.0/${instagram_user_id}/media?fields=id,caption,media_type,media_url,thumbnail_url,timestamp,permalink&limit=20&access_token=${userAccessToken}`;
-    
-    logger('info', 'media-fetch', 'Buscando posts do Instagram', { 
+    // Reels Support: fetch all post types with pagination
+    const afterCursor = body.after || ''; // Pagination cursor from frontend
+    const limit = body.limit || 30;
+    let mediaEndpoint = `https://graph.facebook.com/v23.0/${instagram_user_id}/media?fields=id,caption,media_type,media_url,thumbnail_url,timestamp,permalink&limit=${limit}&access_token=${userAccessToken}`;
+    if (afterCursor) {
+      mediaEndpoint += `&after=${afterCursor}`;
+    }
+
+    logger('info', 'media-fetch', 'Buscando posts do Instagram (todos os tipos)', {
       instagram_user_id,
       api_version: 'v23.0',
       token_type: 'user_access_token',
+      limit,
+      has_cursor: !!afterCursor,
       url_truncated: `/v23.0/${instagram_user_id}/media`
     });
-    
-    const mediaRes = await fetch(mediaUrl);
+
+    const mediaRes = await fetch(mediaEndpoint);
 
     if (!mediaRes.ok) {
       const err = await mediaRes.json().catch(() => ({}));
       const fbtrace_id = mediaRes.headers.get('x-fb-trace-id');
-      
-      logger('error', 'media-fetch', 'Erro ao buscar posts do Instagram', { 
-        status: mediaRes.status, 
+
+      logger('error', 'media-fetch', 'Erro ao buscar posts do Instagram', {
+        status: mediaRes.status,
         error: err,
         fbtrace_id
       });
-      
+
       // Tratamento específico do erro #10 conforme especificado
       if (err?.error?.code === 10) {
         return jsonError({
@@ -167,22 +174,30 @@ async function handleGetInstagramPosts(userId: string, body: any) {
           token_type_expected: 'user_access_token'
         }, 403);
       }
-      
-      return jsonError({ 
-        error: 'META_API_ERROR', 
+
+      return jsonError({
+        error: 'META_API_ERROR',
         details: err,
         fbtrace_id
       }, mediaRes.status);
     }
 
-    // Sucesso
+    // Sucesso — include pagination cursor for "Load more"
     const media = await mediaRes.json();
+    const nextCursor = media?.paging?.cursors?.after || null;
+    const hasNextPage = !!media?.paging?.next;
+
     logger('info', 'media-fetch', 'Posts do Instagram recuperados com sucesso', {
       quantidade: media?.data?.length || 0,
+      has_next_page: hasNextPage,
       fbtrace_id: mediaRes.headers.get('x-fb-trace-id')
     });
 
-    return jsonOk({ success: true, data: media?.data || [] });
+    return jsonOk({
+      success: true,
+      data: media?.data || [],
+      pagination: { after: nextCursor, has_next_page: hasNextPage }
+    });
 
   } catch (error) {
     logger('error', 'critical', 'Erro inesperado ao buscar posts do Instagram', error);

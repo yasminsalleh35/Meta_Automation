@@ -1725,33 +1725,88 @@ serve(async (req) => {
           object_story_id: objectStoryId
         });
         
-        // ✅ FASE 4.2: Dark post fallback — se object_story_id falhar, criar creative link com a mídia do post
-        logger('warn', 'CREATIVE-EXISTING-POST-FALLBACK', '⚠️ object_story_id falhou, tentando dark post fallback via link creative', {
+        // ✅ Reels Support: Proactive dark post fallback with media type detection
+        logger('warn', 'CREATIVE-EXISTING-POST-FALLBACK', '⚠️ object_story_id falhou, tentando dark post fallback', {
           original_error: errorData.error?.message
         });
 
-        // Fallback: create a standard link creative using the post image as a regular ad
-        const fallbackPayload: Record<string, any> = {
-          name: `${payload.campaignName} - Creative (fallback)`,
-          object_story_spec: {
-            page_id: pageId,
-            link_data: {
-              message: payload.adText,
-              link: payload.whatsappLink || `https://wa.me/${payload.whatsappNumber || ''}`,
-              name: payload.adTitle,
-              call_to_action: {
-                type: 'WHATSAPP_MESSAGE',
-                value: { link: payload.whatsappLink || `https://wa.me/${payload.whatsappNumber || ''}` }
-              }
-            }
-          },
-          access_token: accessToken
+        // Step 1: Fetch the original post's media type and URL from Meta API
+        let postMediaType = 'IMAGE';
+        let postMediaUrl = '';
+        let postThumbnailUrl = '';
+
+        try {
+          const mediaCheckUrl = `https://graph.facebook.com/v23.0/${mediaId}?fields=media_type,media_url,thumbnail_url&access_token=${accessToken}`;
+          const mediaCheckRes = await fetch(mediaCheckUrl);
+          if (mediaCheckRes.ok) {
+            const mediaInfo = await mediaCheckRes.json();
+            postMediaType = mediaInfo.media_type || 'IMAGE'; // IMAGE, VIDEO, CAROUSEL_ALBUM
+            postMediaUrl = mediaInfo.media_url || '';
+            postThumbnailUrl = mediaInfo.thumbnail_url || '';
+            logger('info', 'FALLBACK-MEDIA-CHECK', 'Post media info fetched', {
+              media_type: postMediaType,
+              has_media_url: !!postMediaUrl,
+              has_thumbnail: !!postThumbnailUrl
+            });
+          }
+        } catch (mediaCheckErr) {
+          logger('warn', 'FALLBACK-MEDIA-CHECK-FAILED', 'Could not fetch post media info', {
+            error: (mediaCheckErr as Error).message
+          });
+        }
+
+        // Step 2: Build dark post creative based on media type
+        const fallbackSpec: Record<string, any> = {
+          page_id: pageId,
         };
 
-        // Add Instagram actor if available
         if (instagramUserId) {
-          fallbackPayload.object_story_spec.instagram_actor_id = instagramUserId;
+          fallbackSpec.instagram_user_id = instagramUserId;
         }
+
+        if (postMediaType === 'VIDEO' || postMediaType === 'REELS') {
+          // ✅ VIDEO/REELS: Use video_data with source_instagram_media_id
+          fallbackSpec.video_data = {
+            source_instagram_media_id: mediaId,
+            message: payload.adText || ' ',
+            call_to_action: { type: 'WHATSAPP_MESSAGE' },
+          };
+          if (postThumbnailUrl) {
+            fallbackSpec.video_data.image_url = postThumbnailUrl;
+          }
+          logger('info', 'FALLBACK-VIDEO-DARK-POST', 'Building video dark post from Reel/Video', {
+            source_instagram_media_id: mediaId,
+            has_thumbnail: !!postThumbnailUrl
+          });
+        } else if (postMediaType === 'IMAGE' && postMediaUrl) {
+          // ✅ IMAGE: Use photo_data with image_url (dark post)
+          fallbackSpec.photo_data = {
+            image_url: postMediaUrl,
+            message: payload.adText || ' ',
+            call_to_action: { type: 'WHATSAPP_MESSAGE' },
+          };
+          logger('info', 'FALLBACK-IMAGE-DARK-POST', 'Building image dark post', {
+            has_image_url: !!postMediaUrl
+          });
+        } else {
+          // ✅ GENERIC FALLBACK: link_data (text-based, no media)
+          fallbackSpec.link_data = {
+            message: payload.adText,
+            link: payload.whatsappLink || `https://wa.me/${pageId}`,
+            name: payload.adTitle,
+            call_to_action: {
+              type: 'WHATSAPP_MESSAGE',
+              value: { link: payload.whatsappLink || `https://wa.me/${pageId}` }
+            }
+          };
+          logger('info', 'FALLBACK-LINK-DARK-POST', 'Building generic link dark post (no media available)');
+        }
+
+        const fallbackPayload = {
+          name: `${payload.campaignName} - Creative (fallback)`,
+          object_story_spec: fallbackSpec,
+          access_token: accessToken
+        };
 
         const fallbackResponse = await fetch(`https://graph.facebook.com${creativeEndpoint}`, {
           method: 'POST',
@@ -1762,14 +1817,21 @@ serve(async (req) => {
         if (!fallbackResponse.ok) {
           const fallbackError = await fallbackResponse.json();
           logger('error', 'CREATIVE-FALLBACK-FAILED', '❌ Dark post fallback also failed', {
-            error: fallbackError.error?.message
+            error: fallbackError.error?.message,
+            media_type: postMediaType,
           });
           throw new Error(`Creative creation failed (original: ${errorData.error?.message}, fallback: ${fallbackError.error?.message})`);
         }
 
         const fallbackResult = await fallbackResponse.json();
         creativeId = fallbackResult.id;
-        logger('info', 'CREATIVE-FALLBACK-SUCCESS', '✅ Dark post fallback creative criado', { creative_id: creativeId });
+        logger('info', 'CREATIVE-FALLBACK-SUCCESS', '✅ Dark post fallback creative criado', {
+          creative_id: creativeId,
+          media_type: postMediaType,
+          method: postMediaType === 'VIDEO' || postMediaType === 'REELS'
+            ? 'video_data.source_instagram_media_id'
+            : postMediaType === 'IMAGE' ? 'photo_data.image_url' : 'link_data'
+        });
       }
 
       if (!creativeId) {
