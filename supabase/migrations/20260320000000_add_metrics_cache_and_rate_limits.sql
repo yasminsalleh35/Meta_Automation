@@ -28,10 +28,8 @@ CREATE POLICY "Users can view own campaign metrics cache"
   ON campaign_metrics_cache FOR SELECT
   USING (user_id = auth.uid());
 
-CREATE POLICY "Service role can manage campaign metrics cache"
-  ON campaign_metrics_cache FOR ALL
-  USING (true)
-  WITH CHECK (true);
+-- Service role bypasses RLS, so no explicit policy needed for writes.
+-- INSERT/UPDATE/DELETE are only done via edge functions using service_role_key.
 
 COMMENT ON TABLE campaign_metrics_cache IS 'Server-side cache for individual campaign metrics from Meta API';
 
@@ -56,10 +54,7 @@ CREATE POLICY "Users can view own API usage"
   ON meta_api_usage FOR SELECT
   USING (user_id = auth.uid());
 
-CREATE POLICY "Service role can manage API usage"
-  ON meta_api_usage FOR ALL
-  USING (true)
-  WITH CHECK (true);
+-- Service role bypasses RLS for writes (edge functions use service_role_key).
 
 -- ── 6.2 Performance Alerts Table ────────────────────────────────────────────
 
@@ -92,9 +87,6 @@ CREATE POLICY "Users can update own alerts"
   ON performance_alerts FOR UPDATE
   USING (user_id = auth.uid());
 
-CREATE POLICY "Service role can manage alerts"
-  ON performance_alerts FOR ALL
-  USING (true)
-  WITH CHECK (true);
+-- Service role bypasses RLS for inserts (edge functions use service_role_key).
 
 COMMENT ON TABLE performance_alerts IS 'AI-generated performance alerts for campaign anomalies';

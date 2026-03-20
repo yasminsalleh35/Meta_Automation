@@ -141,8 +141,8 @@ async function refreshUserMetrics(supabase: any, userId: string, datePreset: str
     return { refreshed: 0, rate_limited: true, calls_this_hour: currentCalls };
   }
 
-  // Get user's Meta integration
-  const { data: integration } = await supabase
+  // Get user's Meta integration (try 'meta_ads' first, then 'meta')
+  let { data: integration } = await supabase
     .from('integrations')
     .select('access_token, ad_account_id')
     .eq('user_id', userId)
@@ -150,7 +150,6 @@ async function refreshUserMetrics(supabase: any, userId: string, datePreset: str
     .maybeSingle();
 
   if (!integration?.access_token || !integration?.ad_account_id) {
-    // Try 'meta' provider
     const { data: metaInt } = await supabase
       .from('integrations')
       .select('access_token, ad_account_id')
@@ -158,15 +157,15 @@ async function refreshUserMetrics(supabase: any, userId: string, datePreset: str
       .eq('provider', 'meta')
       .maybeSingle();
 
-    if (!metaInt?.access_token) {
+    if (!metaInt?.access_token || !metaInt?.ad_account_id) {
       return { refreshed: 0, error: 'No Meta integration found' };
     }
 
-    Object.assign(integration || {}, metaInt);
+    integration = metaInt;
   }
 
-  const accessToken = integration!.access_token;
-  const adAccountId = integration!.ad_account_id;
+  const accessToken = integration.access_token;
+  const adAccountId = integration.ad_account_id;
   const actId = adAccountId.startsWith('act_') ? adAccountId : `act_${adAccountId}`;
 
   // Get active campaigns that need refresh
@@ -355,7 +354,16 @@ async function checkPerformanceAlerts(supabase: any) {
   let alertsGenerated = 0;
 
   for (const entry of cached) {
-    const m = entry.metrics;
+    const raw = entry.metrics;
+    // Ensure numeric values (JSONB may store as strings in edge cases)
+    const m = {
+      frequency: Number(raw.frequency) || 0,
+      ctr: Number(raw.ctr) || 0,
+      cpa: Number(raw.cpa) || 0,
+      spend: Number(raw.spend) || 0,
+      impressions: Number(raw.impressions) || 0,
+      conversations: Number(raw.conversations) || 0,
+    };
     const alerts: Array<{ type: string; severity: string; title: string; description: string; metric: string; value: number; threshold: number }> = [];
 
     // High frequency (>3 = ad fatigue)
