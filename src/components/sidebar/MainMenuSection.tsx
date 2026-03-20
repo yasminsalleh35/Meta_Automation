@@ -1,11 +1,12 @@
 
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { 
-  LayoutDashboard, 
+import {
+  LayoutDashboard,
   Target,
   Image,
-  Building
+  Building,
+  Activity
 } from 'lucide-react';
 import { 
   SidebarGroup, 
@@ -32,6 +33,11 @@ const menuItems = [
     title: 'Criativos',
     url: '/dashboard/media',
     icon: Image,
+  },
+  {
+    title: 'Monitoramento',
+    url: '/dashboard/monitoring',
+    icon: Activity,
   },
   {
     title: 'Meu Negócio',

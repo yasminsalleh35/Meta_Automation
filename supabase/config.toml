@@ -237,5 +237,8 @@ verify_jwt = false
 [functions.subscription-sync]
 verify_jwt = false
 
+[functions.metrics-cache-refresh]
+verify_jwt = false
+
 [functions.meta-campaigns-discover]
 verify_jwt = true
