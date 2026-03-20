@@ -32,12 +32,9 @@ const MyBusiness: React.FC = () => {
   const [specialization, setSpecialization] = useState<string>('');
   const [ticketValues, setTicketValues] = useState<Record<string, number>>({});
   
-  // Initialize viewMode based on existing data
-  const [viewMode, setViewMode] = useState(() => {
-    const hasData = !!(businessData.name || businessData.description || businessData.mainProduct);
-    const hasProfile = !!businessData.campaign_profile_id;
-    return hasData && hasProfile;
-  });
+  // Initialize viewMode as false — will be set after data loads
+  const [viewMode, setViewMode] = useState(false);
+  const [initialLoadDone, setInitialLoadDone] = useState(false);
 
   // Form setup for controlled inputs
   const form = useForm({
@@ -65,10 +62,16 @@ const MyBusiness: React.FC = () => {
     return profiles.find(p => p.id === businessData.campaign_profile_id) || null;
   }, [businessData.campaign_profile_id, profiles]);
 
-  // Update form when businessData changes — only when NOT actively editing (viewMode)
-  // or on initial load. Do NOT reset form during saves to prevent wiping user input.
+  // After initial data load: set viewMode and populate form
   useEffect(() => {
-    if (businessData && (viewMode || isLoading)) {
+    if (!isLoading && !initialLoadDone) {
+      setInitialLoadDone(true);
+      const hasData = !!(businessData.name || businessData.description || businessData.mainProduct);
+      const hasProfile = !!businessData.campaign_profile_id;
+      if (hasData && hasProfile) {
+        setViewMode(true);
+      }
+      // Always populate form with loaded data
       form.reset({
         name: businessData.name || '',
         description: businessData.description || '',
@@ -84,7 +87,27 @@ const MyBusiness: React.FC = () => {
         strategic_notes: businessData.strategic_notes || '',
       });
     }
-  }, [businessData, viewMode, isLoading]);
+  }, [isLoading, initialLoadDone, businessData]);
+
+  // Update form when businessData changes in viewMode (e.g., AI profile callback)
+  useEffect(() => {
+    if (businessData && viewMode && initialLoadDone) {
+      form.reset({
+        name: businessData.name || '',
+        description: businessData.description || '',
+        mainProduct: businessData.mainProduct || '',
+        category: businessData.category || '',
+        targetAudience: businessData.targetAudience || '',
+        businessGoals: businessData.businessGoals || '',
+        campaign_profile_id: businessData.campaign_profile_id || '',
+        odontSpecialties: businessData.odontSpecialties || [],
+        targetAgeMin: businessData.targetAgeMin || 18,
+        targetAgeMax: businessData.targetAgeMax || 65,
+        specialtyTickets: businessData.specialtyTickets || {},
+        strategic_notes: businessData.strategic_notes || '',
+      });
+    }
+  }, [businessData, viewMode, initialLoadDone]);
 
   // Load ticket values when businessData changes
   useEffect(() => {
