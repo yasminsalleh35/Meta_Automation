@@ -146,15 +146,23 @@ export const useBusinessSettings = () => {
         updated_at: new Date().toISOString()
       };
 
-      // ✅ Single UPSERT operation - much faster and more reliable
-      const { data, error } = await supabase
+      // ✅ Single UPSERT operation with timeout protection
+      // When user takes a long time filling the form, the HTTP connection can go stale
+      // causing fetch to hang indefinitely. Race with a 15s timeout to prevent spinner lock.
+      const upsertPromise = supabase
         .from('business_settings')
-        .upsert(dbSettings, { 
+        .upsert(dbSettings, {
           onConflict: 'user_id',
-          ignoreDuplicates: false 
+          ignoreDuplicates: false
         })
         .select()
         .single();
+
+      const timeoutPromise = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('SAVE_TIMEOUT')), 15000)
+      );
+
+      const { data, error } = await Promise.race([upsertPromise, timeoutPromise]);
 
       console.log('[useBusinessSettings] ⏱️ UPSERT completed in:', Date.now() - startTime, 'ms');
       
@@ -219,24 +227,25 @@ export const useBusinessSettings = () => {
       });
       
       // Handle timeout errors with retry
-      if (error?.name === 'AbortError' && retryCount < 2) {
+      const isTimeout = error?.name === 'AbortError' || error?.message === 'SAVE_TIMEOUT';
+      if (isTimeout && retryCount < 2) {
         console.log('[useBusinessSettings] ⏰ Timeout - retrying...', {
           attempt: retryCount + 2,
           maxRetries: 3
         });
-        
+
         setIsSaving(false);
-        
+
         toast({
           title: "Tentando novamente...",
           description: `Conexão lenta detectada. Tentativa ${retryCount + 2} de 3.`,
         });
-        
+
         await new Promise(resolve => setTimeout(resolve, 1000));
         return saveBusinessSettings(values, opts, retryCount + 1);
       }
-      
-      const errorMessage = error?.name === 'AbortError' 
+
+      const errorMessage = isTimeout
         ? "A conexão demorou muito tempo. Verifique sua internet e tente novamente."
         : error instanceof Error ? error.message : "Erro desconhecido ao salvar. Tente novamente.";
       
