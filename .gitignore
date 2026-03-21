@@ -38,5 +38,5 @@ Thumbs.db
 # Supabase CLI temp/cache files
 supabase/.temp/
 
-# Internal documentation (development plans, notes)
-docs/
+# Internal documentation — plan.md only (public docs are committed)
+docs/plan.md

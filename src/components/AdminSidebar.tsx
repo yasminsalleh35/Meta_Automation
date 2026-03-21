@@ -38,7 +38,8 @@ import {
   FlaskConical,
   AlertTriangle,
   FileBarChart,
-  ClipboardList
+  ClipboardList,
+  ScrollText
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useUserRole } from '@/hooks/useUserRole';
@@ -182,6 +183,11 @@ export function AdminSidebar() {
   ];
 
   const configurationItems = [
+    {
+      title: 'Logs de Sistema',
+      url: '/admin/edge-logs',
+      icon: ScrollText,
+    },
     {
       title: 'Configurações Gerais',
       url: '/admin/settings',

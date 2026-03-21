@@ -35,8 +35,9 @@ import Notifications from '@/pages/dashboard/Notifications';
 import Settings from '@/pages/dashboard/Settings';
 import { CampaignPage } from '@/pages/CampaignPage';
 
-// ── Phase 6: Lazy loaded pages (monitoring + admin) ─────────────────────────
+// ── Phase 6+7: Lazy loaded pages (monitoring + admin) ───────────────────────
 const Monitoring = React.lazy(() => import('@/pages/dashboard/Monitoring'));
+const AdminEdgeLogs = React.lazy(() => import('@/pages/admin/AdminEdgeLogs'));
 
 // Onboarding Pages
 import Welcome from '@/pages/onboarding/Welcome';
@@ -160,6 +161,7 @@ const PrivateRoutes: React.FC = () => {
           <Route path="quizzes/:id/edit" element={<AdminQuizBuilder />} />
           <Route path="quizzes/:quizId/leads" element={<AdminQuizLeads />} />
           <Route path="quizzes/:quizId/leads/:leadId" element={<AdminQuizLeadDetail />} />
+          <Route path="edge-logs" element={<AdminEdgeLogs />} />
           <Route path="settings" element={<AdminSettings />} />
           <Route path="settings/mapbox" element={<MapboxSettings />} />
         </Route>
