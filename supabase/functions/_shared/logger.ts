@@ -31,9 +31,6 @@ export function createLogger(functionName: string) {
       duration_ms: elapsed,
     };
 
-    // Structured JSON for Supabase log drain / Logflare
-    const structured = JSON.stringify(entry);
-
     switch (level) {
       case 'error':
         console.error(`${prefix} ${message}`, data ? JSON.stringify(data) : '');

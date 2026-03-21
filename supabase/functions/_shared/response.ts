@@ -2,7 +2,7 @@
 // Use these instead of raw `new Response()` in edge functions
 
 import { corsHeadersFor } from './cors.ts';
-import { buildErrorBody, toMessage } from './errors.ts';
+import { buildErrorBody } from './errors.ts';
 
 function makeHeaders(origin: string | null, extra?: Record<string, string>): Headers {
   const h = new Headers();

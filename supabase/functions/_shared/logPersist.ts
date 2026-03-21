@@ -46,6 +46,9 @@ export function persistLog(params: PersistLogParams): void {
       if (error) {
         console.warn('[logPersist] Failed to persist log:', error.message);
       }
+    })
+    .catch((err) => {
+      console.warn('[logPersist] Unexpected error:', err instanceof Error ? err.message : String(err));
     });
 }
 
