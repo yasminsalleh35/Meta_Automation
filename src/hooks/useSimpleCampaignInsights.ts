@@ -140,9 +140,18 @@ export const useSimpleCampaignInsights = (campaignId: string) => {
         loadCachedMetrics(campaignData);
       }
 
-      // Step 3: Fetch daily historical insights
-      if (campaignData.meta_campaign_id) {
-        await fetchDailyInsights(campaignData.meta_campaign_id);
+      // Step 3: Fetch daily historical insights (only if stale or force refresh)
+      // Daily data changes slowly — cache for 15 minutes to avoid burning API calls
+      const dailyAge = campaignData.last_daily_insights_at
+        ? Date.now() - new Date(campaignData.last_daily_insights_at).getTime()
+        : Infinity;
+      const dailyIsStale = dailyAge > 15 * 60 * 1000; // 15 minutes
+
+      if (campaignData.meta_campaign_id && (forceRefresh || dailyIsStale)) {
+        await fetchDailyInsights(campaignData.meta_campaign_id, campaignData.id);
+      } else if (campaignData.daily_insights && Array.isArray(campaignData.daily_insights)) {
+        // Use cached daily insights from DB
+        setDailyInsights(campaignData.daily_insights);
       }
 
     } catch (err) {
@@ -173,7 +182,7 @@ export const useSimpleCampaignInsights = (campaignId: string) => {
     }
   };
 
-  const fetchDailyInsights = async (metaCampaignId: string) => {
+  const fetchDailyInsights = async (metaCampaignId: string, campaignDbId: string) => {
     try {
       const response = await fetch(
         `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/meta-campaign-daily-insights`,
@@ -195,6 +204,18 @@ export const useSimpleCampaignInsights = (campaignId: string) => {
         const result = await response.json();
         if (result.daily_data && Array.isArray(result.daily_data)) {
           setDailyInsights(result.daily_data);
+
+          // Cache daily insights in DB to avoid redundant API calls
+          supabase
+            .from('campaigns')
+            .update({
+              daily_insights: result.daily_data,
+              last_daily_insights_at: new Date().toISOString()
+            })
+            .eq('id', campaignDbId)
+            .then(() => {
+              console.log('Daily insights cached to DB');
+            });
         }
       } else {
         console.warn('Daily insights fetch failed');

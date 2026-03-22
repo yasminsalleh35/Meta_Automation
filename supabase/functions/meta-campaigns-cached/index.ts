@@ -48,7 +48,7 @@ serve(async (req) => {
     // Build query
     let query = admin
       .from("campaigns")
-      .select("id, name, objective, status, meta_campaign_id, metrics, last_metrics_sync_at, meta_data_cached_at, media_preview_url, meta_data", { count: 'exact' })
+      .select("id, name, objective, status, meta_campaign_id, metrics, last_metrics_sync_at, meta_data_cached_at, media_preview_url, meta_data, created_at", { count: 'exact' })
       .eq("user_id", user.id)
       .eq("ad_account_id", ad_account_id)
       .not("meta_campaign_id", "is", null);
@@ -68,8 +68,10 @@ serve(async (req) => {
     const to = from + page_size - 1;
     query = query.range(from, to);
 
-    // Order by creation date descending (most recent first)
-    query = query.order("created_at", { ascending: false });
+    // Order: active campaigns first, then by creation date descending
+    query = query
+      .order("status", { ascending: true })  // 'active' comes before 'paused' alphabetically
+      .order("created_at", { ascending: false });
 
     const { data: campaigns, error, count } = await query;
 
@@ -80,8 +82,27 @@ serve(async (req) => {
 
     console.log(`📊 Returned ${campaigns?.length || 0} campaigns (total: ${count})`);
 
+    // Sort: active first, then paused, then draft, then rest — within same status, newest first
+    const statusOrder: Record<string, number> = {
+      active: 0,
+      paused: 1,
+      draft: 2,
+      archived: 3,
+      deleted: 4,
+      finished: 5,
+      rejected: 6,
+    };
+
+    const sorted = (campaigns || []).sort((a, b) => {
+      const aOrder = statusOrder[a.status?.toLowerCase()] ?? 99;
+      const bOrder = statusOrder[b.status?.toLowerCase()] ?? 99;
+      if (aOrder !== bOrder) return aOrder - bOrder;
+      // Same status: newest first
+      return new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime();
+    });
+
     // Transform data for frontend
-    const items = (campaigns || []).map(c => ({
+    const items = sorted.map(c => ({
       id: c.id,
       metaCampaignId: c.meta_campaign_id,
       name: c.name,
