@@ -1684,53 +1684,28 @@ serve(async (req) => {
       // ✅ FASE 4: Criar creative com post existente do Instagram
       const mediaId = payload.selectedInstagramPostId;
       const igUserId = payload.instagramUserId || instagramUserId;
-      
+
       if (!igUserId || !mediaId) {
         throw new Error('Instagram User ID e Media ID são obrigatórios para promover post existente');
       }
-      
+
       const objectStoryId = `${igUserId}_${mediaId}`;
-      
+      const creativeEndpoint = `/v23.0/${toAccountPath(adAccountId)}/adcreatives`;
+      const isCTWA = !!payload.whatsappLink;
+
       logger('info', 'CREATIVE-EXISTING-POST', '🔄 Criando creative com post existente do Instagram (V23)', {
         instagram_user_id: igUserId,
         media_id: mediaId,
-        object_story_id: objectStoryId
-      });
-      
-      const creativePayload = {
-        name: `${payload.campaignName} - Creative`,
         object_story_id: objectStoryId,
-        access_token: accessToken
-      };
-      
-      const creativeEndpoint = `/v23.0/${toAccountPath(adAccountId)}/adcreatives`;
-      logger('info', 'FB-ENDPOINT', 'Calling Creative endpoint for existing post', { endpoint: creativeEndpoint });
-      
-      const creativeResponse = await fetch(`https://graph.facebook.com${creativeEndpoint}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(creativePayload)
+        is_ctwa: isCTWA
       });
-      
-      if (!creativeResponse.ok) {
-        const errorData = await creativeResponse.json();
-        const fbTraceId = creativeResponse.headers.get('x-fb-trace-id');
-        
-        logger('error', 'CREATIVE-EXISTING-POST-ERROR', '❌ Erro ao criar creative com post existente', {
-          status: creativeResponse.status,
-          error_code: errorData.error?.code,
-          error_subcode: errorData.error?.error_subcode,
-          error_message: errorData.error?.message,
-          fb_trace_id: fbTraceId,
-          object_story_id: objectStoryId
-        });
-        
-        // ✅ Reels Support: Proactive dark post fallback with media type detection
-        logger('warn', 'CREATIVE-EXISTING-POST-FALLBACK', '⚠️ object_story_id falhou, tentando dark post fallback', {
-          original_error: errorData.error?.message
-        });
 
-        // Step 1: Fetch the original post's media type and URL from Meta API
+      // ✅ CTWA campaigns MUST use dark post with WHATSAPP_MESSAGE CTA
+      // object_story_id alone does NOT include CTA, causing ad creation to fail
+      if (isCTWA) {
+        logger('info', 'CREATIVE-CTWA-DARK-POST', '🔄 CTWA campaign: creating dark post with WHATSAPP_MESSAGE CTA (object_story_id incompatible with CTWA)');
+
+        // Step 1: Fetch the original post's media type and URL
         let postMediaType = 'IMAGE';
         let postMediaUrl = '';
         let postThumbnailUrl = '';
@@ -1740,101 +1715,133 @@ serve(async (req) => {
           const mediaCheckRes = await fetch(mediaCheckUrl);
           if (mediaCheckRes.ok) {
             const mediaInfo = await mediaCheckRes.json();
-            postMediaType = mediaInfo.media_type || 'IMAGE'; // IMAGE, VIDEO, CAROUSEL_ALBUM
+            postMediaType = mediaInfo.media_type || 'IMAGE';
             postMediaUrl = mediaInfo.media_url || '';
             postThumbnailUrl = mediaInfo.thumbnail_url || '';
-            logger('info', 'FALLBACK-MEDIA-CHECK', 'Post media info fetched', {
+            logger('info', 'CTWA-MEDIA-CHECK', 'Post media info fetched', {
               media_type: postMediaType,
               has_media_url: !!postMediaUrl,
               has_thumbnail: !!postThumbnailUrl
             });
           }
         } catch (mediaCheckErr) {
-          logger('warn', 'FALLBACK-MEDIA-CHECK-FAILED', 'Could not fetch post media info', {
+          logger('warn', 'CTWA-MEDIA-CHECK-FAILED', 'Could not fetch post media info', {
             error: (mediaCheckErr as Error).message
           });
         }
 
-        // Step 2: Build dark post creative based on media type
-        const fallbackSpec: Record<string, any> = {
+        // Step 2: Build dark post creative with WHATSAPP_MESSAGE CTA
+        const darkPostSpec: Record<string, any> = {
           page_id: pageId,
         };
 
         if (instagramUserId) {
-          fallbackSpec.instagram_user_id = instagramUserId;
+          darkPostSpec.instagram_user_id = instagramUserId;
         }
 
         if (postMediaType === 'VIDEO' || postMediaType === 'REELS') {
-          // ✅ VIDEO/REELS: Use video_data with source_instagram_media_id
-          fallbackSpec.video_data = {
+          darkPostSpec.video_data = {
             source_instagram_media_id: mediaId,
             message: payload.adText || ' ',
             call_to_action: { type: 'WHATSAPP_MESSAGE' },
           };
           if (postThumbnailUrl) {
-            fallbackSpec.video_data.image_url = postThumbnailUrl;
+            darkPostSpec.video_data.image_url = postThumbnailUrl;
           }
-          logger('info', 'FALLBACK-VIDEO-DARK-POST', 'Building video dark post from Reel/Video', {
+          logger('info', 'CTWA-VIDEO-DARK-POST', 'Building video dark post from Reel/Video for CTWA', {
             source_instagram_media_id: mediaId,
             has_thumbnail: !!postThumbnailUrl
           });
         } else if (postMediaType === 'IMAGE' && postMediaUrl) {
-          // ✅ IMAGE: Use photo_data with image_url (dark post)
-          fallbackSpec.photo_data = {
-            image_url: postMediaUrl,
+          darkPostSpec.link_data = {
+            image_hash: undefined,
+            picture: postMediaUrl,
             message: payload.adText || ' ',
-            call_to_action: { type: 'WHATSAPP_MESSAGE' },
+            link: payload.whatsappLink,
+            name: payload.adTitle || 'Saiba mais',
+            call_to_action: {
+              type: 'WHATSAPP_MESSAGE',
+              value: { link: payload.whatsappLink }
+            }
           };
-          logger('info', 'FALLBACK-IMAGE-DARK-POST', 'Building image dark post', {
+          // Remove undefined keys
+          if (!darkPostSpec.link_data.image_hash) delete darkPostSpec.link_data.image_hash;
+          logger('info', 'CTWA-IMAGE-DARK-POST', 'Building image dark post for CTWA', {
             has_image_url: !!postMediaUrl
           });
         } else {
-          // ✅ GENERIC FALLBACK: link_data (text-based, no media)
-          fallbackSpec.link_data = {
-            message: payload.adText,
-            link: payload.whatsappLink || `https://wa.me/${pageId}`,
-            name: payload.adTitle,
+          darkPostSpec.link_data = {
+            message: payload.adText || ' ',
+            link: payload.whatsappLink,
+            name: payload.adTitle || 'Saiba mais',
             call_to_action: {
               type: 'WHATSAPP_MESSAGE',
-              value: { link: payload.whatsappLink || `https://wa.me/${pageId}` }
+              value: { link: payload.whatsappLink }
             }
           };
-          logger('info', 'FALLBACK-LINK-DARK-POST', 'Building generic link dark post (no media available)');
+          logger('info', 'CTWA-LINK-DARK-POST', 'Building generic link dark post for CTWA (no media available)');
         }
 
-        const fallbackPayload = {
-          name: `${payload.campaignName} - Creative (fallback)`,
-          object_story_spec: fallbackSpec,
+        const darkPostPayload = {
+          name: `${payload.campaignName} - Creative`,
+          object_story_spec: darkPostSpec,
           access_token: accessToken
         };
 
-        const fallbackResponse = await fetch(`https://graph.facebook.com${creativeEndpoint}`, {
+        logger('info', 'FB-ENDPOINT', 'Calling Creative endpoint for CTWA dark post', { endpoint: creativeEndpoint });
+
+        const darkPostResponse = await fetch(`https://graph.facebook.com${creativeEndpoint}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(fallbackPayload)
+          body: JSON.stringify(darkPostPayload)
         });
 
-        if (!fallbackResponse.ok) {
-          const fallbackError = await fallbackResponse.json();
-          logger('error', 'CREATIVE-FALLBACK-FAILED', '❌ Dark post fallback also failed', {
-            error: fallbackError.error?.message,
+        if (!darkPostResponse.ok) {
+          const darkPostError = await darkPostResponse.json();
+          logger('error', 'CTWA-DARK-POST-FAILED', '❌ CTWA dark post creative failed', {
+            error: darkPostError.error?.message,
+            error_code: darkPostError.error?.code,
             media_type: postMediaType,
           });
-          throw new Error(`Creative creation failed (original: ${errorData.error?.message}, fallback: ${fallbackError.error?.message})`);
+          throw new Error(`CTWA dark post creative failed: ${darkPostError.error?.message}`);
         }
 
-        const fallbackResult = await fallbackResponse.json();
-        creativeId = fallbackResult.id;
-        logger('info', 'CREATIVE-FALLBACK-SUCCESS', '✅ Dark post fallback creative criado', {
+        const darkPostResult = await darkPostResponse.json();
+        creativeId = darkPostResult.id;
+        logger('info', 'CTWA-DARK-POST-SUCCESS', '✅ CTWA dark post creative criado com sucesso', {
           creative_id: creativeId,
           media_type: postMediaType,
           method: postMediaType === 'VIDEO' || postMediaType === 'REELS'
             ? 'video_data.source_instagram_media_id'
-            : postMediaType === 'IMAGE' ? 'photo_data.image_url' : 'link_data'
+            : 'link_data'
         });
-      }
 
-      if (!creativeId) {
+      } else {
+        // Non-CTWA: Use object_story_id directly (no CTA needed)
+        const creativePayload = {
+          name: `${payload.campaignName} - Creative`,
+          object_story_id: objectStoryId,
+          access_token: accessToken
+        };
+
+        logger('info', 'FB-ENDPOINT', 'Calling Creative endpoint for existing post (non-CTWA)', { endpoint: creativeEndpoint });
+
+        const creativeResponse = await fetch(`https://graph.facebook.com${creativeEndpoint}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(creativePayload)
+        });
+
+        if (!creativeResponse.ok) {
+          const errorData = await creativeResponse.json();
+          logger('error', 'CREATIVE-EXISTING-POST-ERROR', '❌ Erro ao criar creative com post existente', {
+            status: creativeResponse.status,
+            error_message: errorData.error?.message,
+            object_story_id: objectStoryId
+          });
+          throw new Error(`Creative creation failed: ${errorData.error?.message}`);
+        }
+
         const creativeResult = await creativeResponse.json();
         creativeId = creativeResult.id;
 
@@ -1887,7 +1894,7 @@ serve(async (req) => {
       throw new Error('Creative não foi criado. Verifique se mídia foi enviada ou post do Instagram foi selecionado.');
     }
 
-    // Create ad - ROUTE A
+    // Create ad - ROUTE A (with retry for transient Meta errors)
     const adPayload: any = {
       name: `${payload.campaignName} - Ad`,
       adset_id: adSetResult.id,
@@ -1897,28 +1904,51 @@ serve(async (req) => {
     };
 
     const adEndpoint = `/v23.0/${toAccountPath(adAccountId)}/ads`;
-    logger('info', 'FB-ENDPOINT', 'Calling Ad endpoint (v23.0)', { 
+    logger('info', 'FB-ENDPOINT', 'Calling Ad endpoint (v23.0)', {
       endpoint: adEndpoint,
       creative_id: creativeId,
       adset_id: adSetResult.id
     });
-    
-    const adResponse = await fetch(`https://graph.facebook.com${adEndpoint}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(adPayload)
-    });
 
-    if (!adResponse.ok) {
+    let adCreationAttempts = 0;
+    const maxAdAttempts = 2;
+
+    while (adCreationAttempts < maxAdAttempts) {
+      adCreationAttempts++;
+
+      const adResponse = await fetch(`https://graph.facebook.com${adEndpoint}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(adPayload)
+      });
+
+      if (adResponse.ok) {
+        adResult = await adResponse.json();
+        logger('info', 'ad-created', 'Anúncio criado com sucesso', {
+          adId: adResult.id,
+          creativeId: creativeId,
+          attempt: adCreationAttempts
+        });
+        break;
+      }
+
       const errorData = await adResponse.json();
-      throw new Error(`Ad creation failed: ${errorData.error?.message || 'Unknown error'}`);
-    }
+      const errorMsg = errorData.error?.message || 'Unknown error';
 
-    adResult = await adResponse.json(); // ✅ ATRIBUIR (não declarar)
-    logger('info', 'ad-created', 'Anúncio criado com sucesso', {
-      adId: adResult.id,
-      creativeId: creativeId 
-    });
+      if (adCreationAttempts < maxAdAttempts) {
+        logger('warn', 'AD-CREATION-RETRY', `⚠️ Ad creation failed (attempt ${adCreationAttempts}/${maxAdAttempts}), retrying after delay`, {
+          error: errorMsg,
+          error_code: errorData.error?.code
+        });
+        await smartDelay(2000, 'ad-creation-retry');
+      } else {
+        logger('error', 'AD-CREATION-FAILED', `❌ Ad creation failed after ${maxAdAttempts} attempts`, {
+          error: errorMsg,
+          error_code: errorData.error?.code
+        });
+        throw new Error(`Ad creation failed: ${errorMsg}`);
+      }
+    }
 
     // Save to database
     const { error: dbError } = await supabaseClient
