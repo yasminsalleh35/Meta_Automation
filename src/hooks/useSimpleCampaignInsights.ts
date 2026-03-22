@@ -1,5 +1,5 @@
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useSupabase } from '@/hooks/useSupabase';
 import { useAuth } from '@/contexts/AuthContext';
 
@@ -10,28 +10,44 @@ interface Campaign {
   createdAt: string;
   metaCampaignId?: string;
   metaAdId?: string;
+  lastMetricsSyncAt?: string;
 }
 
-interface Insights {
+export interface Insights {
   impressions: number;
   clicks: number;
   ctr: number;
   spend: number;
   reach: number;
-  leads: number;
-  cpl: number;
+  conversations: number;
+  costPerConversation: number;
+  cpm: number;
+  cpc: number;
+}
+
+export interface DailyInsight {
+  date: string;
+  impressions: number;
+  clicks: number;
+  ctr: number;
+  spend: number;
+  reach: number;
+  conversations: number;
 }
 
 export const useSimpleCampaignInsights = (campaignId: string) => {
   const supabase = useSupabase();
   const { session } = useAuth();
-  
+
   const [campaign, setCampaign] = useState<Campaign | null>(null);
   const [insights, setInsights] = useState<Insights | null>(null);
+  const [dailyInsights, setDailyInsights] = useState<DailyInsight[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [lastSyncAt, setLastSyncAt] = useState<string | null>(null);
 
-  const fetchCampaignData = async () => {
+  const fetchCampaignData = useCallback(async (forceRefresh = false) => {
     if (!session?.user?.id) {
       setError('Usuário não autenticado');
       setIsLoading(false);
@@ -39,10 +55,14 @@ export const useSimpleCampaignInsights = (campaignId: string) => {
     }
 
     try {
-      setIsLoading(true);
+      if (forceRefresh) {
+        setIsRefreshing(true);
+      } else {
+        setIsLoading(true);
+      }
       setError(null);
 
-      // Buscar dados da campanha
+      // Step 1: Fetch campaign from DB
       const { data: campaignData, error: campaignError } = await supabase
         .from('campaigns')
         .select('*')
@@ -54,24 +74,75 @@ export const useSimpleCampaignInsights = (campaignId: string) => {
         throw new Error('Campanha não encontrada ou você não tem acesso a ela');
       }
 
-      // Mapear dados da campanha
       const mappedCampaign: Campaign = {
         id: campaignData.id,
         name: campaignData.name || 'Campanha sem nome',
         status: mapStatus(campaignData.status),
         createdAt: campaignData.created_at,
         metaCampaignId: campaignData.meta_campaign_id,
-        metaAdId: campaignData.meta_ad_id
+        metaAdId: campaignData.meta_ad_id,
+        lastMetricsSyncAt: campaignData.last_metrics_sync_at,
       };
 
       setCampaign(mappedCampaign);
+      setLastSyncAt(campaignData.last_metrics_sync_at);
 
-      // Buscar insights se tiver Meta Ad ID (token é buscado server-side)
-      if (campaignData.meta_ad_id) {
-        await fetchInsights(campaignData.meta_ad_id);
+      // Step 2: If force refresh or metrics are stale (>5 min), fetch fresh from Meta
+      const metricsAge = campaignData.last_metrics_sync_at
+        ? Date.now() - new Date(campaignData.last_metrics_sync_at).getTime()
+        : Infinity;
+      const isStale = metricsAge > 5 * 60 * 1000; // 5 minutes
+
+      if (campaignData.meta_campaign_id && (forceRefresh || isStale)) {
+        try {
+          const response = await fetch(
+            `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/meta-campaign-refresh-one`,
+            {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${session.access_token}`,
+                'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY
+              },
+              body: JSON.stringify({
+                meta_campaign_id: campaignData.meta_campaign_id
+              })
+            }
+          );
+
+          if (response.ok) {
+            const result = await response.json();
+            if (result.metrics) {
+              const m = result.metrics;
+              setInsights({
+                impressions: m.impressions || 0,
+                clicks: m.clicks || 0,
+                ctr: Number(m.ctr) || 0,
+                spend: Number(m.spend) || 0,
+                reach: m.reach || 0,
+                conversations: m.conversations || 0,
+                costPerConversation: Number(m.cost_per_messaging_conversation_started_7d) || 0,
+                cpm: Number(m.cpm) || 0,
+                cpc: Number(m.cpc) || 0,
+              });
+              setLastSyncAt(new Date().toISOString());
+            }
+          } else {
+            console.warn('Fresh metrics fetch failed, using cached data');
+            loadCachedMetrics(campaignData);
+          }
+        } catch (fetchErr) {
+          console.warn('Error fetching fresh metrics:', fetchErr);
+          loadCachedMetrics(campaignData);
+        }
       } else {
-        console.warn('Meta Ad ID não disponível para insights');
-        setInsights(null);
+        // Use cached metrics from DB
+        loadCachedMetrics(campaignData);
+      }
+
+      // Step 3: Fetch daily historical insights
+      if (campaignData.meta_campaign_id) {
+        await fetchDailyInsights(campaignData.meta_campaign_id);
       }
 
     } catch (err) {
@@ -79,45 +150,57 @@ export const useSimpleCampaignInsights = (campaignId: string) => {
       setError(err instanceof Error ? err.message : 'Erro desconhecido');
     } finally {
       setIsLoading(false);
+      setIsRefreshing(false);
+    }
+  }, [campaignId, session?.user?.id, session?.access_token, supabase]);
+
+  const loadCachedMetrics = (campaignData: any) => {
+    const m = campaignData.metrics;
+    if (m) {
+      setInsights({
+        impressions: Number(m.impressions) || 0,
+        clicks: Number(m.clicks) || 0,
+        ctr: Number(m.ctr) || 0,
+        spend: Number(m.spend) || 0,
+        reach: Number(m.reach) || 0,
+        conversations: Number(m.conversations) || 0,
+        costPerConversation: Number(m.cost_per_messaging_conversation_started_7d) || 0,
+        cpm: Number(m.cpm) || 0,
+        cpc: Number(m.cpc) || 0,
+      });
+    } else {
+      setInsights(null);
     }
   };
 
-  const fetchInsights = async (adId: string) => {
+  const fetchDailyInsights = async (metaCampaignId: string) => {
     try {
-      console.log('Buscando insights para Ad ID:', adId);
-
-      const { data, error } = await supabase.functions.invoke('meta-campaigns-insights', {
-        body: {
-          campaignId: campaignId,
-          adId: adId
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/meta-campaign-daily-insights`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${session!.access_token}`,
+            'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY
+          },
+          body: JSON.stringify({
+            meta_campaign_id: metaCampaignId,
+            date_preset: 'last_7d'
+          })
         }
-      });
+      );
 
-      if (error) {
-        throw new Error(error.message || 'Erro ao buscar insights');
-      }
-
-      if (data?.success && data?.metrics) {
-        setInsights(data.metrics);
-        console.log('Insights carregados com sucesso:', data.metrics);
-      } else if (data?.impressions !== undefined) {
-        // Direct response format from single campaign mode
-        setInsights({
-          impressions: data.impressions || 0,
-          clicks: data.clicks || 0,
-          ctr: data.ctr || 0,
-          spend: data.spend || 0,
-          reach: data.reach || 0,
-          leads: 0,
-          cpl: data.cpa || 0,
-        });
+      if (response.ok) {
+        const result = await response.json();
+        if (result.daily_data && Array.isArray(result.daily_data)) {
+          setDailyInsights(result.daily_data);
+        }
       } else {
-        throw new Error(data?.error || 'Dados de insights não disponíveis');
+        console.warn('Daily insights fetch failed');
       }
-
     } catch (err) {
-      console.error('Erro ao buscar insights:', err);
-      setInsights(null);
+      console.warn('Error fetching daily insights:', err);
     }
   };
 
@@ -137,13 +220,16 @@ export const useSimpleCampaignInsights = (campaignId: string) => {
 
   useEffect(() => {
     fetchCampaignData();
-  }, [campaignId, session?.user?.id]);
+  }, [fetchCampaignData]);
 
   return {
     campaign,
     insights,
+    dailyInsights,
     isLoading,
+    isRefreshing,
     error,
-    refetch: fetchCampaignData
+    lastSyncAt,
+    refetch: () => fetchCampaignData(true)
   };
 };

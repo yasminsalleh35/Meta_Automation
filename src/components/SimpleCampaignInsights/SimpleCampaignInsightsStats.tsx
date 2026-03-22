@@ -2,26 +2,17 @@
 import React from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { 
-  Eye, 
-  MousePointer, 
-  TrendingUp, 
-  DollarSign, 
-  Users, 
-  Target,
+import {
+  Eye,
+  MousePointer,
+  TrendingUp,
+  DollarSign,
+  Users,
+  MessageCircle,
   CreditCard,
   Info
 } from 'lucide-react';
-
-interface Insights {
-  impressions: number;
-  clicks: number;
-  ctr: number;
-  spend: number;
-  reach: number;
-  leads: number;
-  cpl: number;
-}
+import type { Insights } from '@/hooks/useSimpleCampaignInsights';
 
 interface SimpleCampaignInsightsStatsProps {
   insights: Insights | null;
@@ -42,21 +33,29 @@ export const SimpleCampaignInsightsStats: React.FC<SimpleCampaignInsightsStatsPr
   };
 
   const formatPercentage = (num: number) => {
-    return `${num.toFixed(2)}%`;
+    return `${Number(num).toFixed(2)}%`;
   };
 
   const stats = [
     {
       title: 'Impressões',
-      value: insights ? formatNumber(insights.impressions) : '0',
+      value: insights ? formatNumber(insights.impressions) : '-',
       icon: Eye,
       color: 'text-blue-600',
       bgColor: 'bg-blue-50',
       tooltip: 'Número total de vezes que seu anúncio foi exibido'
     },
     {
+      title: 'Alcance',
+      value: insights ? formatNumber(insights.reach) : '-',
+      icon: Users,
+      color: 'text-orange-600',
+      bgColor: 'bg-orange-50',
+      tooltip: 'Número de pessoas únicas que viram seu anúncio'
+    },
+    {
       title: 'Cliques',
-      value: insights ? formatNumber(insights.clicks) : '0',
+      value: insights ? formatNumber(insights.clicks) : '-',
       icon: MousePointer,
       color: 'text-green-600',
       bgColor: 'bg-green-50',
@@ -64,43 +63,35 @@ export const SimpleCampaignInsightsStats: React.FC<SimpleCampaignInsightsStatsPr
     },
     {
       title: 'CTR',
-      value: insights ? formatPercentage(insights.ctr) : '0%',
+      value: insights ? formatPercentage(insights.ctr) : '-',
       icon: TrendingUp,
       color: 'text-purple-600',
       bgColor: 'bg-purple-50',
-      tooltip: 'Taxa de cliques (Clicks ÷ Impressões × 100)'
+      tooltip: 'Taxa de cliques (Cliques ÷ Impressões × 100)'
     },
     {
-      title: 'Alcance',
-      value: insights ? formatNumber(insights.reach) : '0',
-      icon: Users,
-      color: 'text-orange-600',
-      bgColor: 'bg-orange-50',
-      tooltip: 'Número de pessoas únicas que viram seu anúncio'
-    },
-    {
-      title: 'Leads Gerados',
-      value: insights ? formatNumber(insights.leads) : '0',
-      icon: Target,
+      title: 'Conversas',
+      value: insights ? formatNumber(insights.conversations) : '-',
+      icon: MessageCircle,
       color: 'text-indigo-600',
       bgColor: 'bg-indigo-50',
-      tooltip: 'Número total de leads capturados pela campanha'
+      tooltip: 'Conversas iniciadas via WhatsApp nos últimos 7 dias'
     },
     {
-      title: 'Custo por Lead',
-      value: insights ? formatCurrency(insights.cpl) : 'R$ 0,00',
+      title: 'Custo/Conversa',
+      value: insights ? formatCurrency(insights.costPerConversation) : '-',
       icon: CreditCard,
       color: 'text-cyan-600',
       bgColor: 'bg-cyan-50',
-      tooltip: 'Custo médio para gerar cada lead (Gasto Total ÷ Leads)'
+      tooltip: 'Custo médio para iniciar cada conversa no WhatsApp'
     },
     {
-      title: 'Custo Total',
-      value: insights ? formatCurrency(insights.spend) : 'R$ 0,00',
+      title: 'Gasto Total',
+      value: insights ? formatCurrency(insights.spend) : '-',
       icon: DollarSign,
       color: 'text-red-600',
       bgColor: 'bg-red-50',
-      tooltip: 'Valor total gasto na campanha até o momento'
+      tooltip: 'Valor total gasto na campanha (últimos 30 dias)'
     }
   ];
 
