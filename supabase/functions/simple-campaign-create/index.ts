@@ -1767,17 +1767,16 @@ serve(async (req) => {
           // Wait for video processing
           await smartDelay(3000, 'video-processing-wait');
 
+          if (!postThumbnailUrl) {
+            logger('warn', 'CTWA-VIDEO-NO-THUMB', 'No thumbnail available for video, Meta may reject creative');
+          }
+
           darkPostSpec.video_data = {
             video_id: videoUploadResult.video_id,
             message: payload.adText || ' ',
-            call_to_action: {
-              type: 'WHATSAPP_MESSAGE',
-              value: { link: payload.whatsappLink }
-            },
+            call_to_action: { type: 'WHATSAPP_MESSAGE' },
+            ...(postThumbnailUrl ? { image_url: postThumbnailUrl } : {}),
           };
-          if (postThumbnailUrl) {
-            darkPostSpec.video_data.image_url = postThumbnailUrl;
-          }
         } else if (postMediaType === 'IMAGE' && postMediaUrl) {
           darkPostSpec.link_data = {
             image_hash: undefined,
