@@ -161,12 +161,12 @@ Deno.serve(async (req) => {
     const spend = Number(cachedData.spend || 0);
     const cpa = conversations > 0 ? spend / conversations : 0;
 
-    // Get active campaigns count
+    // Get active campaigns count (case-insensitive: 'active', 'ACTIVE', 'Active')
     const { count: activeCampaignsCount } = await supabase
       .from('campaigns')
       .select('*', { count: 'exact', head: true })
       .eq('user_id', userId)
-      .eq('status', 'ACTIVE');
+      .ilike('status', 'active');
 
     return new Response(
       JSON.stringify({

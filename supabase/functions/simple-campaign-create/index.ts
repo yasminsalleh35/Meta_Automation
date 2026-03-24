@@ -798,14 +798,15 @@ async function uploadMediaToMeta(params: {
   fileUrl: string;
   accessToken: string;
   apiVersion?: string;
+  forceVideo?: boolean;
 }): Promise<{ hash?: string; video_id?: string; file_type: string }> {
-  const { adAccountId, fileUrl, accessToken, apiVersion = "v20.0" } = params;
-  
-  const accountPath = toAccountPath(adAccountId);
-  logger('info', 'upload-start', 'Iniciando upload de mídia', { fileUrl, accountPath });
+  const { adAccountId, fileUrl, accessToken, apiVersion = "v20.0", forceVideo = false } = params;
 
-  // Detect file type from URL or content-type
-  const isVideo = fileUrl.includes('.mp4') || fileUrl.includes('.mov') || fileUrl.includes('.avi');
+  const accountPath = toAccountPath(adAccountId);
+  logger('info', 'upload-start', 'Iniciando upload de mídia', { fileUrl, accountPath, forceVideo });
+
+  // Detect file type from URL or content-type (forceVideo overrides for Instagram Reels)
+  const isVideo = forceVideo || fileUrl.includes('.mp4') || fileUrl.includes('.mov') || fileUrl.includes('.avi');
 
   if (isVideo) {
     const url = `https://graph.facebook.com/v23.0/${accountPath}/advideos`;
@@ -1739,19 +1740,44 @@ serve(async (req) => {
           darkPostSpec.instagram_user_id = instagramUserId;
         }
 
-        if (postMediaType === 'VIDEO' || postMediaType === 'REELS') {
+        if ((postMediaType === 'VIDEO' || postMediaType === 'REELS') && postMediaUrl) {
+          // For Reels/Videos: download the video and upload to ad account to get video_id
+          logger('info', 'CTWA-VIDEO-DARK-POST', 'Uploading Reel/Video to ad account for CTWA dark post', {
+            media_id: mediaId,
+            has_media_url: !!postMediaUrl,
+            has_thumbnail: !!postThumbnailUrl
+          });
+
+          const videoUploadResult = await uploadMediaToMeta({
+            adAccountId: accountPath,
+            fileUrl: postMediaUrl,
+            accessToken,
+            apiVersion: 'v23.0',
+            forceVideo: true
+          });
+
+          if (!videoUploadResult.video_id) {
+            throw new Error('Video upload succeeded but no video_id returned');
+          }
+
+          logger('info', 'CTWA-VIDEO-UPLOADED', 'Video uploaded to ad account', {
+            video_id: videoUploadResult.video_id
+          });
+
+          // Wait for video processing
+          await smartDelay(3000, 'video-processing-wait');
+
           darkPostSpec.video_data = {
-            source_instagram_media_id: mediaId,
+            video_id: videoUploadResult.video_id,
             message: payload.adText || ' ',
-            call_to_action: { type: 'WHATSAPP_MESSAGE' },
+            call_to_action: {
+              type: 'WHATSAPP_MESSAGE',
+              value: { link: payload.whatsappLink }
+            },
           };
           if (postThumbnailUrl) {
             darkPostSpec.video_data.image_url = postThumbnailUrl;
           }
-          logger('info', 'CTWA-VIDEO-DARK-POST', 'Building video dark post from Reel/Video for CTWA', {
-            source_instagram_media_id: mediaId,
-            has_thumbnail: !!postThumbnailUrl
-          });
         } else if (postMediaType === 'IMAGE' && postMediaUrl) {
           darkPostSpec.link_data = {
             image_hash: undefined,
@@ -1812,7 +1838,7 @@ serve(async (req) => {
           creative_id: creativeId,
           media_type: postMediaType,
           method: postMediaType === 'VIDEO' || postMediaType === 'REELS'
-            ? 'video_data.source_instagram_media_id'
+            ? 'video_data.video_id (uploaded)'
             : 'link_data'
         });
 
