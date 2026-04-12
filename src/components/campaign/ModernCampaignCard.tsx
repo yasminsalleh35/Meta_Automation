@@ -4,7 +4,7 @@ import { Switch } from '@/components/ui/switch';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { 
+import {
   MessageCircle,
   DollarSign,
   Wallet,
@@ -14,8 +14,10 @@ import {
   RotateCw,
   Info,
   Clock,
-  AlertTriangle
+  AlertTriangle,
+  ExternalLink
 } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import type { LiveCampaign } from '@/types/liveCampaign';
 import { getObjectiveFriendlyName } from '@/utils/objectiveNames';
 import { CampaignPreviewImage } from '@/components/common/CampaignPreviewImage';
@@ -285,6 +287,21 @@ export const ModernCampaignCard: React.FC<ModernCampaignCardProps> = ({
                   {asCompactNumber(campaign.metrics?.clicks)}
                 </p>
               </div>
+            </div>
+
+            {/* Ver Detalhes Button */}
+            <div className="flex justify-end pt-2 border-t">
+              <Button
+                variant="default"
+                size="sm"
+                asChild
+                className="gap-1.5"
+              >
+                <Link to={`/dashboard/simple-campaign-insights/${campaign.id}`}>
+                  Ver Detalhes
+                  <ExternalLink className="w-3.5 h-3.5" />
+                </Link>
+              </Button>
             </div>
           </div>
         </div>
