@@ -130,9 +130,17 @@ Deno.serve(async (req) => {
       throw cacheError;
     }
 
-    // No data in cache - return stale with zeros
+    // No data in cache - still return active campaigns count from DB
     if (!cachedData) {
       console.log('[Read] No cached data found');
+
+      // Even with stale data, count active campaigns directly from DB
+      const { count: staleActiveCount } = await supabase
+        .from('campaigns')
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', userId)
+        .ilike('status', 'active');
+
       return new Response(
         JSON.stringify({
           stale: true,
@@ -143,7 +151,7 @@ Deno.serve(async (req) => {
           spend: 0,
           conversations: 0,
           cpa: 0,
-          activeCampaigns: 0,
+          activeCampaigns: staleActiveCount || 0,
           updatedAt: null,
         }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
