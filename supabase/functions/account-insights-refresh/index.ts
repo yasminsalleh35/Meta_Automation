@@ -11,6 +11,7 @@
  */
 
 import { createClient } from 'jsr:@supabase/supabase-js@2';
+import { trackApiCall } from '../_shared/trackApiCall.ts';
 
 const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
 const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -35,8 +36,9 @@ async function fetchAccountInsights(params: {
   actId: string;
   accessToken: string;
   period: Period;
+  userId?: string;
 }) {
-  const { actId, accessToken, period } = params;
+  const { actId, accessToken, period, userId } = params;
 
   // Campos mínimos para cards do dashboard
   const fields = [
@@ -65,6 +67,7 @@ async function fetchAccountInsights(params: {
   let allActions: any[] = [];
 
   for (;;) {
+    if (userId) trackApiCall(supabase, userId, `account_insights:${period}`);
     const res = await fetch(url, { method: 'GET' });
     if (!res.ok) {
       const txt = await res.text().catch(() => '');
@@ -172,7 +175,7 @@ Deno.serve(async (req) => {
       let data;
       try {
         console.log(`[Refresh] Fetching ${p} for account ${actId}`);
-        data = await fetchAccountInsights({ actId, accessToken: access_token, period: p });
+        data = await fetchAccountInsights({ actId, accessToken: access_token, period: p, userId });
       } catch (e: any) {
         console.error('[account-insights-refresh] fetch error', { 
           period: p, 

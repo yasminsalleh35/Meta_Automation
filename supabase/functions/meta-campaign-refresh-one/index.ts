@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
+import { trackApiCall } from "../_shared/trackApiCall.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -83,6 +84,7 @@ serve(async (req) => {
     for (let attempt = 1; attempt <= 3; attempt++) {
       try {
         console.log(`📡 Attempt ${attempt}/3 - Fetching data from Meta API...`);
+        trackApiCall(admin, user.id, 'campaign_refresh_one');
         const metaRes = await fetch(metaUrl);
         
         if (!metaRes.ok) {

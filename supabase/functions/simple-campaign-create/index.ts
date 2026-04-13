@@ -1983,7 +1983,7 @@ serve(async (req) => {
         ad_account_id: adAccountId,
         name: payload.campaignName,
         objective: 'OUTCOME_ENGAGEMENT',
-        status: 'PAUSED',
+        status: 'paused',
         budget_daily: payload.dailyBudget,
         ad_title: payload.adTitle,
         ad_text: payload.adText,
