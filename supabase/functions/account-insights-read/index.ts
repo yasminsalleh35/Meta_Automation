@@ -135,7 +135,7 @@ Deno.serve(async (req) => {
       console.log('[Read] No cached data found');
 
       // Even with stale data, count active campaigns directly from DB
-      const { count: staleActiveCount } = await supabase
+      const { count: staleActiveCount } = await supabaseAdmin
         .from('campaigns')
         .select('*', { count: 'exact', head: true })
         .eq('user_id', userId)
@@ -170,7 +170,8 @@ Deno.serve(async (req) => {
     const cpa = conversations > 0 ? spend / conversations : 0;
 
     // Get active campaigns count (case-insensitive: 'active', 'ACTIVE', 'Active')
-    const { count: activeCampaignsCount } = await supabase
+    // Use admin client to bypass RLS (same pattern as integration/cache queries above)
+    const { count: activeCampaignsCount } = await supabaseAdmin
       .from('campaigns')
       .select('*', { count: 'exact', head: true })
       .eq('user_id', userId)
