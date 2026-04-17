@@ -74,7 +74,8 @@ serve(async (req) => {
     console.log(`🔄 [meta-campaign-refresh-one] Refreshing campaign ${campaign.name} (${meta_campaign_id})`);
 
     // Fetch fresh data from Meta including creative with retry logic
-    const fields = `effective_status,insights.date_preset(last_30d){impressions,reach,clicks,spend,actions,cost_per_action_type,cpm,cpc,ctr}${campaign.meta_ad_id ? ',ads{creative{thumbnail_url,object_story_spec}}' : ''}`;
+    // Always request ads creative fields — don't gate on meta_ad_id
+    const fields = `effective_status,insights.date_preset(last_30d){impressions,reach,clicks,spend,actions,cost_per_action_type,cpm,cpc,ctr},ads.limit(1){creative{thumbnail_url,image_url,effective_image_url,object_story_spec}}`;
     const metaUrl = `https://graph.facebook.com/${API_VERSION}/${meta_campaign_id}?fields=${fields}&access_token=${integ.access_token}`;
 
     // Retry logic for Meta API (3 attempts with 2s delay)
@@ -148,27 +149,37 @@ serve(async (req) => {
       cost_per_messaging_conversation_started_7d: costPerConversation
     };
 
-    // Extract media preview URL from creative
-    let mediaPreviewUrl: string | undefined = undefined;
+    // Extract media preview URL from creative — check multiple sources
+    let mediaPreviewUrl: string | undefined = campaign.media_preview_url || undefined;
     if (metaData.ads?.data?.[0]) {
       const ad = metaData.ads.data[0];
-      mediaPreviewUrl = 
-        ad.creative?.thumbnail_url ||
-        ad.creative?.object_story_spec?.link_data?.picture ||
+      const creative = ad.creative || {};
+      const freshUrl =
+        creative.effective_image_url ||       // Best: resolved image URL
+        creative.image_url ||                 // Image creatives
+        creative.thumbnail_url ||             // Video/Reel creatives
+        creative.object_story_spec?.link_data?.picture ||   // Link-based creatives
+        creative.object_story_spec?.link_data?.image_hash ? undefined : // Skip hash-only
+        creative.object_story_spec?.video_data?.image_url || // Video data thumbnail
         undefined;
-      
-      if (mediaPreviewUrl) {
-        console.log(`🖼️ Media preview found for campaign ${meta_campaign_id}`);
+
+      if (freshUrl) {
+        mediaPreviewUrl = freshUrl;
+        console.log(`🖼️ Media preview found for campaign ${meta_campaign_id}: ${freshUrl.substring(0, 80)}...`);
+      } else {
+        console.log(`⚠️ No media preview extracted for campaign ${meta_campaign_id}, keeping existing: ${mediaPreviewUrl ? 'yes' : 'none'}`);
       }
     }
 
-    // Update in DB with retry logic
+    // Update in DB with retry logic — only update media_preview_url if we have a value (don't overwrite existing with null)
     const updateData: any = {
       metrics,
-      media_preview_url: mediaPreviewUrl,
       last_metrics_sync_at: new Date().toISOString(),
       status_at_sync: effectiveStatus
     };
+    if (mediaPreviewUrl) {
+      updateData.media_preview_url = mediaPreviewUrl;
+    }
 
     if (effectiveStatus) {
       updateData.status = effectiveStatus.toLowerCase();

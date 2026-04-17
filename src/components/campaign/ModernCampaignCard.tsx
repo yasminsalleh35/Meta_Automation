@@ -133,8 +133,8 @@ export const ModernCampaignCard: React.FC<ModernCampaignCardProps> = ({
     <Card className="hover:shadow-lg transition-all duration-300 border border-border hover:border-primary/50 bg-card">
       <CardContent className="p-2 sm:p-3 md:p-4">
         <div className="flex gap-2 sm:gap-3 md:gap-4">
-          {/* Media Preview */}
-          <div className="w-16 h-16 sm:w-20 sm:h-20 md:w-24 md:h-24 rounded-lg overflow-hidden flex-shrink-0 bg-muted transition-transform duration-300 hover:scale-105">
+          {/* Media Preview — Increased size for better visibility */}
+          <div className="w-20 h-20 sm:w-28 sm:h-28 md:w-32 md:h-32 rounded-lg overflow-hidden flex-shrink-0 bg-muted transition-transform duration-300 hover:scale-105">
             <CampaignPreviewImage
               src={campaign.mediaPreviewUrl}
               alt={campaign.name}
