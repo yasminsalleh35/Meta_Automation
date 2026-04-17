@@ -75,7 +75,7 @@ serve(async (req) => {
 
     // Fetch fresh data from Meta including creative with retry logic
     // Always request ads creative fields — don't gate on meta_ad_id
-    const fields = `effective_status,insights.date_preset(last_30d){impressions,reach,clicks,spend,actions,cost_per_action_type,cpm,cpc,ctr},ads.limit(1){creative{thumbnail_url,image_url,effective_image_url,object_story_spec}}`;
+    const fields = `effective_status,insights.date_preset(last_30d){impressions,reach,clicks,spend,actions,cost_per_action_type,cpm,cpc,ctr},ads.limit(1){creative{thumbnail_url,image_url,object_story_spec}}`;
     const metaUrl = `https://graph.facebook.com/${API_VERSION}/${meta_campaign_id}?fields=${fields}&access_token=${integ.access_token}`;
 
     // Retry logic for Meta API (3 attempts with 2s delay)
@@ -158,7 +158,6 @@ serve(async (req) => {
 
       // Try each source in priority order
       const freshUrl =
-        creative.effective_image_url ||                // Best: Meta-resolved image URL
         creative.image_url ||                          // Image creatives
         creative.thumbnail_url ||                      // Video/Reel creatives
         spec.link_data?.picture ||                     // Link-based creatives
