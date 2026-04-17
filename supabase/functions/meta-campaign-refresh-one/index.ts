@@ -149,18 +149,20 @@ serve(async (req) => {
       cost_per_messaging_conversation_started_7d: costPerConversation
     };
 
-    // Extract media preview URL from creative — check multiple sources
+    // Extract media preview URL from creative — check multiple sources in priority order
     let mediaPreviewUrl: string | undefined = campaign.media_preview_url || undefined;
     if (metaData.ads?.data?.[0]) {
       const ad = metaData.ads.data[0];
       const creative = ad.creative || {};
+      const spec = creative.object_story_spec || {};
+
+      // Try each source in priority order
       const freshUrl =
-        creative.effective_image_url ||       // Best: resolved image URL
-        creative.image_url ||                 // Image creatives
-        creative.thumbnail_url ||             // Video/Reel creatives
-        creative.object_story_spec?.link_data?.picture ||   // Link-based creatives
-        creative.object_story_spec?.link_data?.image_hash ? undefined : // Skip hash-only
-        creative.object_story_spec?.video_data?.image_url || // Video data thumbnail
+        creative.effective_image_url ||                // Best: Meta-resolved image URL
+        creative.image_url ||                          // Image creatives
+        creative.thumbnail_url ||                      // Video/Reel creatives
+        spec.link_data?.picture ||                     // Link-based creatives
+        spec.video_data?.image_url ||                  // Video data thumbnail
         undefined;
 
       if (freshUrl) {
