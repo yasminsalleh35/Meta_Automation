@@ -1692,13 +1692,29 @@ serve(async (req) => {
 
       const objectStoryId = `${igUserId}_${mediaId}`;
       const creativeEndpoint = `/v23.0/${toAccountPath(adAccountId)}/adcreatives`;
-      const isCTWA = !!payload.whatsappLink;
+
+      // This function only creates CTWA campaigns (destination_type: WHATSAPP).
+      // The campaign is ALWAYS CTWA — don't gate on payload.whatsappLink, which is only
+      // present when the user provides a manual wa.me link. In "auto" mode the WhatsApp
+      // is resolved from the Page's linked WABA, but the creative still needs the
+      // WHATSAPP_MESSAGE CTA, so we treat it as CTWA either way.
+      const isCTWA = true;
+
+      // Build the wa.me link for the CTA value. Priority:
+      //   1. Manual link from payload (user provided)
+      //   2. Constructed from integration's selected WhatsApp display number
+      //   3. null — Meta will resolve from page's linked WABA via promoted_object.page_id
+      const whatsappDisplay = integration.selected_whatsapp_display ?? null;
+      const ctwaLink = payload.whatsappLink
+        || (whatsappDisplay ? `https://wa.me/${whatsappDisplay.replace(/\D/g, '')}` : null);
 
       logger('info', 'CREATIVE-EXISTING-POST', '🔄 Criando creative com post existente do Instagram (V23)', {
         instagram_user_id: igUserId,
         media_id: mediaId,
         object_story_id: objectStoryId,
-        is_ctwa: isCTWA
+        is_ctwa: isCTWA,
+        ctwa_link_source: payload.whatsappLink ? 'manual' : (whatsappDisplay ? 'derived_from_display' : 'auto_from_page'),
+        has_ctwa_link: !!ctwaLink
       });
 
       // ✅ CTWA campaigns MUST use dark post with WHATSAPP_MESSAGE CTA
@@ -1778,33 +1794,33 @@ serve(async (req) => {
             ...(postThumbnailUrl ? { image_url: postThumbnailUrl } : {}),
           };
         } else if (postMediaType === 'IMAGE' && postMediaUrl) {
-          darkPostSpec.link_data = {
-            image_hash: undefined,
+          const linkData: Record<string, any> = {
             picture: postMediaUrl,
             message: payload.adText || ' ',
-            link: payload.whatsappLink,
             name: payload.adTitle || 'Saiba mais',
-            call_to_action: {
-              type: 'WHATSAPP_MESSAGE',
-              value: { link: payload.whatsappLink }
-            }
+            call_to_action: ctwaLink
+              ? { type: 'WHATSAPP_MESSAGE', value: { link: ctwaLink } }
+              : { type: 'WHATSAPP_MESSAGE' }
           };
-          // Remove undefined keys
-          if (!darkPostSpec.link_data.image_hash) delete darkPostSpec.link_data.image_hash;
+          if (ctwaLink) linkData.link = ctwaLink;
+          darkPostSpec.link_data = linkData;
           logger('info', 'CTWA-IMAGE-DARK-POST', 'Building image dark post for CTWA', {
-            has_image_url: !!postMediaUrl
+            has_image_url: !!postMediaUrl,
+            has_ctwa_link: !!ctwaLink
           });
         } else {
-          darkPostSpec.link_data = {
+          const linkData: Record<string, any> = {
             message: payload.adText || ' ',
-            link: payload.whatsappLink,
             name: payload.adTitle || 'Saiba mais',
-            call_to_action: {
-              type: 'WHATSAPP_MESSAGE',
-              value: { link: payload.whatsappLink }
-            }
+            call_to_action: ctwaLink
+              ? { type: 'WHATSAPP_MESSAGE', value: { link: ctwaLink } }
+              : { type: 'WHATSAPP_MESSAGE' }
           };
-          logger('info', 'CTWA-LINK-DARK-POST', 'Building generic link dark post for CTWA (no media available)');
+          if (ctwaLink) linkData.link = ctwaLink;
+          darkPostSpec.link_data = linkData;
+          logger('info', 'CTWA-LINK-DARK-POST', 'Building generic link dark post for CTWA (no media available)', {
+            has_ctwa_link: !!ctwaLink
+          });
         }
 
         const darkPostPayload = {
