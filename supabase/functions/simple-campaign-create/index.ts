@@ -1790,7 +1790,9 @@ serve(async (req) => {
           darkPostSpec.video_data = {
             video_id: videoUploadResult.video_id,
             message: payload.adText || ' ',
-            call_to_action: { type: 'WHATSAPP_MESSAGE' },
+            call_to_action: ctwaLink
+              ? { type: 'WHATSAPP_MESSAGE', value: { link: ctwaLink } }
+              : { type: 'WHATSAPP_MESSAGE' },
             ...(postThumbnailUrl ? { image_url: postThumbnailUrl } : {}),
           };
         } else if (postMediaType === 'IMAGE' && postMediaUrl) {
