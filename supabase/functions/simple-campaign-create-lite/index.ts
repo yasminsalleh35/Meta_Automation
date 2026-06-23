@@ -112,6 +112,8 @@ serve(async (req) => {
       objective: "OUTCOME_TRAFFIC",
       status: "PAUSED",
       special_ad_categories: [],
+      // ✅ Meta API v23.0 (subcode 4834011): orçamento no Ad Set (sem CBO) → flag obrigatória.
+      is_adset_budget_sharing_enabled: false,
     };
     const cRes = await fetch(`https://graph.facebook.com/${META_API_VERSION}/${actId}/campaigns?access_token=${accessToken}`, {
       method: "POST",

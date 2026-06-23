@@ -16,7 +16,10 @@ export class CampaignCreationService {
       name: campaignName,
       objective: 'OUTCOME_TRAFFIC',
       status: 'PAUSED',
-      special_ad_categories: [] // manter vazio quando aplicável
+      special_ad_categories: [], // manter vazio quando aplicável
+      // Meta API v23.0 (subcode 4834011): orçamento fica no Ad Set (sem CBO), então é obrigatório
+      // declarar is_adset_budget_sharing_enabled. false = sem compartilhamento entre Ad Sets.
+      is_adset_budget_sharing_enabled: false
     };
 
     logMetaApiRequest('CAMPAIGN-CREATION-REQUEST', {

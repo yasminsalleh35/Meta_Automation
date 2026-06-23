@@ -1,11 +1,29 @@
 // 🔧 CTWA v23.0.1 - Video creative fix: link field removed from video_data
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { corsHeadersFor, handlePreflight } from '../_shared/cors.ts';
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-};
+// Build a Bearer auth header for Meta Graph GET/POST calls so the access token never
+// appears in a URL query string (which can leak into request logs).
+export function metaAuthHeaders(accessToken: string, extra: Record<string, string> = {}): Record<string, string> {
+  return { Authorization: `Bearer ${accessToken}`, ...extra };
+}
+
+// Strip the query string before logging a URL so tokens/secrets are never persisted to logs.
+export function safeUrlForLog(url: string): string {
+  return url.split('?')[0];
+}
+
+// Test seam: the handler builds its service-role Supabase client through this factory so tests can
+// inject a mock without touching production behavior (default = real service-role client).
+type SupabaseFactory = () => any;
+let _supabaseFactory: SupabaseFactory = () => createClient(
+  Deno.env.get('SUPABASE_URL') ?? '',
+  Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+);
+export function __setSupabaseFactoryForTests(factory: SupabaseFactory): void {
+  _supabaseFactory = factory;
+}
 
 interface SimpleCampaignPayload {
   campaignName: string;
@@ -35,7 +53,9 @@ interface SimpleCampaignPayload {
     distance_unit?: 'kilometer' | 'mile';
     latitude?: number;
     longitude?: number;
+    source?: string; // origin of the location (e.g. 'meta_api' | 'mapbox') — used in targeting logs
   }>;
+  interests?: Array<{ id: string; name?: string }>; // persisted to campaigns.interests
   campaignType: string;
   status: string;
   optimization: string;
@@ -78,31 +98,30 @@ interface SimpleCampaignPayload {
     display_phone_number: string;
     verified_name?: string;
   } | null;
+  // ✅ AI targeting: when set, AI-generated targeting overrides the profile overlay (see handler)
+  useAISuggestions?: boolean;
+  aiTargeting?: {
+    interests?: Array<{ id: string; name: string }>;
+    ageMin?: number;
+    ageMax?: number;
+    genders?: 'all' | 'male' | 'female' | number[];
+  } | null;
 }
 
 // Garante o formato "act_123..." exatamente uma vez para qualquer entrada.
-function toAccountPath(adAccountId: string): string {
+export function toAccountPath(adAccountId: string): string {
   const raw = String(adAccountId || '');
-  // strip de qualquer prefixo "act_" repetido: "act_act_123" -> "123"
-  const numeric = raw.replace(/^act_+/i, '');
+  // strip de qualquer prefixo "act_" repetido: "act_act_123" -> "123" (note o grupo (act_)+,
+  // necessário para colapsar prefixos duplicados — /^act_+/ removia só um segmento).
+  const numeric = raw.replace(/^(act_)+/i, '');
   return `act_${numeric}`;
 }
 
-// Sanitiza interesses antes da criação do Ad Set
-function sanitizeInterests(interests: Array<{id:string,name:string}> = []) {
-  const seen = new Set<string>();
-  const clean = [];
-  for (const it of interests) {
-    if (!it?.id || !/^\d+$/.test(it.id) || !it?.name) continue;
-    if (seen.has(it.id)) continue;
-    seen.add(it.id);
-    clean.push({ id: it.id, name: it.name });
-  }
-  return clean;
-}
+// NOTE: interest sanitization lives in ./utils.ts (sanitizeInterests) and is imported at the
+// call site. The previous module-level copy here was dead (shadowed by the import) and was removed.
 
 // Parser robusto para extrair IDs inválidos do erro 1487079
-function extractInvalidInterestIds(msg?: string): string[] {
+export function extractInvalidInterestIds(msg?: string): string[] {
   if (!msg) return [];
   // captura qualquer sequência numérica longa (IDs de interesse costumam ser números grandes)
   const ids = (msg.match(/\b\d{7,}\b/g) || []).map(s => s.trim());
@@ -127,6 +146,46 @@ function logger(level: 'info' | 'error' | 'warn', stage: string, message: string
   }
 }
 
+// 🧹 ROLLBACK: best-effort deletion of a partially-created Meta campaign.
+// Meta cascades a campaign DELETE to its ad sets and ads, so deleting the campaign id is enough
+// to avoid leaving orphaned paused objects in the user's ad account when creation fails midway.
+// This NEVER throws — it is cleanup, and the caller's primary error must propagate.
+async function rollbackMetaObjects(params: {
+  campaignId?: string | null;
+  accessToken?: string | null;
+}): Promise<boolean> {
+  const { campaignId, accessToken } = params;
+  if (!campaignId || !accessToken) return false;
+
+  try {
+    logger('warn', 'ROLLBACK-START', '🧹 Removendo campanha Meta parcial para evitar órfãos', { campaignId });
+    const res = await fetch(`https://graph.facebook.com/v23.0/${campaignId}`, {
+      method: 'DELETE',
+      headers: metaAuthHeaders(accessToken, { 'Content-Type': 'application/json' })
+    });
+
+    if (res.ok) {
+      logger('info', 'ROLLBACK-OK', '✅ Campanha Meta parcial removida (cascata: adset/ad)', { campaignId });
+      return true;
+    }
+
+    let body: any = null;
+    try { body = await res.json(); } catch {}
+    logger('error', 'ROLLBACK-FAILED', '❌ Falha ao remover campanha Meta parcial', {
+      campaignId,
+      status: res.status,
+      error: body?.error?.message
+    });
+    return false;
+  } catch (e) {
+    logger('error', 'ROLLBACK-EXCEPTION', '❌ Exceção ao remover campanha Meta parcial', {
+      campaignId,
+      error: e instanceof Error ? e.message : String(e)
+    });
+    return false;
+  }
+}
+
 // 🛡️ CONTINGENCY: Função para salvar campanhas em modo contingência
 async function saveToContingency(
   supabaseClient: any,
@@ -136,11 +195,15 @@ async function saveToContingency(
   error: any,
   errorStage: string,
   partialIds: {
-    campaignId?: string;
-    adSetId?: string;
-    creativeId?: string;
-    adId?: string;
-  } = {}
+    campaignId?: string | null;
+    adSetId?: string | null;
+    creativeId?: string | null;
+    adId?: string | null;
+  } = {},
+  // Extra recovery metadata so the async retry / reconciliation knows the exact state:
+  //  - rolledBack:        the partial Meta campaign was deleted (safe to recreate from scratch)
+  //  - needsDbReconcile:  all Meta objects exist & are valid; only the local DB row is missing
+  extra: { rolledBack?: boolean; needsDbReconcile?: boolean } = {}
 ): Promise<void> {
   logger('warn', 'CONTINGENCY-SAVE', '💾 Salvando campanha em modo contingência', {
     userId,
@@ -189,7 +252,10 @@ async function saveToContingency(
         // Metadados adicionais
         timestamp: new Date().toISOString(),
         user_agent: 'simple-campaign-create-v23.0',
-        api_version: 'v23.0'
+        api_version: 'v23.0',
+        // Recovery state (D1/D2) — read by contingency-auto-retry / reconciliation
+        rolled_back: extra.rolledBack === true,
+        needs_db_reconcile: extra.needsDbReconcile === true
       },
       error_message: error instanceof Error ? error.message : String(error),
       error_stack: error instanceof Error ? error.stack : null,
@@ -434,7 +500,7 @@ async function createAdSetWithInterestRetries({
 // 🏷️ Special Ad Categories Normalization
 type SpecialAdCategory = "NONE" | "CREDIT" | "EMPLOYMENT" | "HOUSING" | "ISSUES_ELECTIONS_POLITICS";
 
-function normalizeSpecialAdCategories(input?: string | string[]) {
+export function normalizeSpecialAdCategories(input?: string | string[]) {
   const allowed = new Set<SpecialAdCategory>([
     "NONE","CREDIT","EMPLOYMENT","HOUSING","ISSUES_ELECTIONS_POLITICS"
   ]);
@@ -455,8 +521,8 @@ function normalizeSpecialAdCategories(input?: string | string[]) {
 
 // 🎥 Get Best Video Thumbnail
 async function getBestVideoThumb(videoId: string, accessToken: string): Promise<string | null> {
-  const url = `https://graph.facebook.com/v23.0/${videoId}/thumbnails?fields=uri,is_preferred,height,width&limit=25&access_token=${accessToken}`;
-  const res = await fetch(url);
+  const url = `https://graph.facebook.com/v23.0/${videoId}/thumbnails?fields=uri,is_preferred,height,width&limit=25`;
+  const res = await fetch(url, { headers: metaAuthHeaders(accessToken) });
   let data: any = null;
   try { data = await res.json(); } catch {}
   if (!res.ok) {
@@ -490,12 +556,21 @@ async function getBestVideoThumb(videoId: string, accessToken: string): Promise<
 }
 
 // 🎥 Wait for Video Ready with thumbnails endpoint (more reliable)
+// Hard ceiling on how long we block the request waiting for Meta to process an uploaded video.
+// This MUST stay safely under the edge-function wall-clock limit, otherwise the whole function is
+// killed mid-flight, leaving orphaned Meta objects. Configurable via VIDEO_WAIT_TIMEOUT_MS.
+const VIDEO_WAIT_TIMEOUT_MS = (() => {
+  const raw = Number(Deno.env.get('VIDEO_WAIT_TIMEOUT_MS'));
+  return Number.isFinite(raw) && raw > 0 ? raw : 120_000; // default 120s (was 300s — unsafe)
+})();
+
 async function waitVideoReady(
   videoId: string,
   accessToken: string,
   opts: { timeoutMs?: number; pollMs?: number } = {}
 ): Promise<{ ready: boolean; thumbUrl?: string }> {
-  const timeoutMs = opts.timeoutMs ?? 300_000; // 5 minutes default
+  // Clamp any caller-supplied timeout to the safe ceiling so it can never exceed the budget.
+  const timeoutMs = Math.min(opts.timeoutMs ?? VIDEO_WAIT_TIMEOUT_MS, VIDEO_WAIT_TIMEOUT_MS);
   const pollMs = opts.pollMs ?? 3_000; // 3 seconds between checks
   const start = Date.now();
 
@@ -504,7 +579,7 @@ async function waitVideoReady(
   while (Date.now() - start < timeoutMs) {
     try {
       // ✅ RELIABLE METHOD: Check thumbnails endpoint
-      const thumbsResponse = await fetch(`https://graph.facebook.com/v23.0/${videoId}/thumbnails?limit=1&fields=uri&access_token=${accessToken}`);
+      const thumbsResponse = await fetch(`https://graph.facebook.com/v23.0/${videoId}/thumbnails?limit=1&fields=uri`, { headers: metaAuthHeaders(accessToken) });
       
       if (thumbsResponse.ok) {
         const thumbsData = await thumbsResponse.json();
@@ -523,8 +598,8 @@ async function waitVideoReady(
 
       // Best-effort status logging (don't depend on these fields)
       try {
-        const statusUrl = `https://graph.facebook.com/v23.0/${videoId}?fields=status&access_token=${accessToken}`;
-        const statusResponse = await fetch(statusUrl);
+        const statusUrl = `https://graph.facebook.com/v23.0/${videoId}?fields=status`;
+        const statusResponse = await fetch(statusUrl, { headers: metaAuthHeaders(accessToken) });
         if (statusResponse.ok) {
           const statusData = await statusResponse.json();
           logger('info', 'video-status', 'Status do processamento do vídeo', {
@@ -704,7 +779,7 @@ async function fetchWithBackoff(
   
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
-      logger('info', 'FETCH-ATTEMPT', `Tentativa ${attempt + 1}/${maxRetries + 1}`, { url: url.substring(0, 80) });
+      logger('info', 'FETCH-ATTEMPT', `Tentativa ${attempt + 1}/${maxRetries + 1}`, { url: safeUrlForLog(url).substring(0, 80) });
       
       const response = await fetch(url, options);
       
@@ -800,7 +875,7 @@ async function uploadMediaToMeta(params: {
   apiVersion?: string;
   forceVideo?: boolean;
 }): Promise<{ hash?: string; video_id?: string; file_type: string }> {
-  const { adAccountId, fileUrl, accessToken, apiVersion = "v20.0", forceVideo = false } = params;
+  const { adAccountId, fileUrl, accessToken, apiVersion = "v23.0", forceVideo = false } = params;
 
   const accountPath = toAccountPath(adAccountId);
   logger('info', 'upload-start', 'Iniciando upload de mídia', { fileUrl, accountPath, forceVideo });
@@ -809,15 +884,16 @@ async function uploadMediaToMeta(params: {
   const isVideo = forceVideo || fileUrl.includes('.mp4') || fileUrl.includes('.mov') || fileUrl.includes('.avi');
 
   if (isVideo) {
-    const url = `https://graph.facebook.com/v23.0/${accountPath}/advideos`;
+    const url = `https://graph.facebook.com/${apiVersion}/${accountPath}/advideos`;
     
     const formData = new FormData();
     formData.set("file_url", fileUrl);
     // Optional: add name/description
     // formData.set("name", "campaign-video.mp4");
 
-    const res = await fetchWithBackoff(url + `?access_token=${encodeURIComponent(accessToken)}`, {
+    const res = await fetchWithBackoff(url, {
       method: "POST",
+      headers: metaAuthHeaders(accessToken),
       body: formData
     }, 3);
 
@@ -858,7 +934,7 @@ async function uploadMediaToMeta(params: {
     formData.append('source', fileBlob, 'image.jpg');
     formData.append('name', 'Campaign Image');
     
-    const uploadUrl = `https://graph.facebook.com/v23.0/${accountPath}/adimages`;
+    const uploadUrl = `https://graph.facebook.com/${apiVersion}/${accountPath}/adimages`;
     const uploadResponse = await fetchWithBackoff(uploadUrl, {
       method: 'POST',
       headers: {
@@ -904,7 +980,7 @@ async function createAdCreativeWithRetries(
   if (uploadResult.video_id) {
     logger('info', 'video-processing', 'Aguardando processamento do vídeo', { videoId: uploadResult.video_id });
     
-    const { ready, thumbUrl: videoThumb } = await waitVideoReady(uploadResult.video_id, accessToken, { timeoutMs: 300000 }); // 5 minutes timeout
+    const { ready, thumbUrl: videoThumb } = await waitVideoReady(uploadResult.video_id, accessToken); // bounded by VIDEO_WAIT_TIMEOUT_MS
     
     if (!ready) {
       throw new Error('Video processing failed or timed out');
@@ -933,12 +1009,17 @@ async function createAdCreativeWithRetries(
     { includeIG: false, includeCTA: false, name: 'minimal' }
   ];
 
+  // Once a WHATSAPP_MESSAGE creative attempt is rejected, drop to LEARN_MORE for all later
+  // attempts. Without this flag the loop kept retrying WHATSAPP_MESSAGE (ctaType was recomputed
+  // purely from config.includeCTA), so the advertised "fallback to LEARN_MORE" never happened.
+  let dropWhatsAppCta = false;
+
   for (const config of retryConfigs) {
     try {
       logger('info', 'creative-attempt', `Tentativa de criação do creative: ${config.name}`, config);
 
-      // ✅ Determinar CTA baseado no modo usado
-      const ctaType = (usedMode === 'whatsapp_native' && config.includeCTA) ? 'WHATSAPP_MESSAGE' : 'LEARN_MORE';
+      // ✅ Determinar CTA baseado no modo usado (degrada para LEARN_MORE após falha do WhatsApp CTA)
+      const ctaType = (usedMode === 'whatsapp_native' && config.includeCTA && !dropWhatsAppCta) ? 'WHATSAPP_MESSAGE' : 'LEARN_MORE';
 
       let payload;
       if (uploadResult.video_id) {
@@ -995,12 +1076,12 @@ async function createAdCreativeWithRetries(
 
       const errorData = await response.json();
       
-      // ✅ Fallback automático: se WhatsApp CTA falhar, tentar LEARN_MORE
+      // ✅ Fallback automático: se WhatsApp CTA falhar, degradar para LEARN_MORE nas próximas tentativas
       if (ctaType === 'WHATSAPP_MESSAGE' && waLink) {
-        logger('warn', 'WHATSAPP-CREATIVE-FALLBACK', 'CTA WhatsApp falhou, tentando LEARN_MORE', {
+        dropWhatsAppCta = true; // garante que a próxima iteração realmente use LEARN_MORE
+        logger('warn', 'WHATSAPP-CREATIVE-FALLBACK', 'CTA WhatsApp falhou, degradando para LEARN_MORE', {
           error: errorData?.error?.message?.substring(0, 100)
         });
-        // Próxima iteração do loop tentará sem WhatsApp CTA
         continue;
       }
 
@@ -1054,20 +1135,21 @@ async function createAdCreativeWithRetries(
 }
 
 // 🚀 Main Handler
-serve(async (req) => {
+export async function handleRequest(req: Request): Promise<Response> {
   logger('info', 'startup', '🚀 Iniciando processamento da requisição');
-  
+
+  // Origin-aware CORS headers (shared allow-list module) — replaces the old wildcard.
+  const origin = req.headers.get('Origin');
+  const corsHeaders = corsHeadersFor(origin);
+
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
     logger('info', 'cors', 'Processando requisição OPTIONS (CORS preflight)');
-    return new Response('ok', { headers: corsHeaders });
+    return handlePreflight(req);
   }
 
   // ✅ MOVER DECLARAÇÕES PARA FORA DO TRY-CATCH (disponível no catch para contingência)
-  const supabaseClient = createClient(
-    Deno.env.get('SUPABASE_URL') ?? '',
-    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
-  );
+  const supabaseClient = _supabaseFactory();
 
   // ✅ DECLARAR VARIÁVEIS DE RESULTADO (antes do try)
   let user: any = null;
@@ -1082,7 +1164,13 @@ serve(async (req) => {
   try {
     // Get request body
     payload = await req.json();
-    logger('info', 'payload-received', 'Payload da campanha recebido', { 
+    // Narrow once: every happy-path access below assumes a non-null payload. This guard both
+    // validates the request and lets the type-checker treat `payload` as non-null hereafter
+    // (the outer `let payload | null` is kept so the catch block can still inspect it).
+    if (!payload) {
+      throw new Error('Empty or invalid campaign payload');
+    }
+    logger('info', 'payload-received', 'Payload da campanha recebido', {
       campaignName: payload.campaignName,
       creativeType: payload.creativeType,
       hasMedia: !!payload.selectedMediaMeta 
@@ -1187,8 +1275,8 @@ serve(async (req) => {
     if (!whatsappPhoneId) {
       try {
         const pageCheckRes = await fetch(
-          `https://graph.facebook.com/v23.0/${pageId}?fields=whatsapp_number{display_phone_number}&access_token=${accessToken}`,
-          { signal: AbortSignal.timeout(8000) }
+          `https://graph.facebook.com/v23.0/${pageId}?fields=whatsapp_number{display_phone_number}`,
+          { headers: metaAuthHeaders(accessToken), signal: AbortSignal.timeout(8000) }
         );
 
         if (pageCheckRes.ok) {
@@ -1249,6 +1337,10 @@ serve(async (req) => {
       objective: 'OUTCOME_ENGAGEMENT', // ✅ Meta API v23.0 usa "OUTCOME_ENGAGEMENT" para Click-to-WhatsApp
       status: 'PAUSED',
       special_ad_categories: categories.length === 1 && categories[0] === 'NONE' ? [] : categories,
+      // ✅ Meta API v23.0 (subcode 4834011): quando a campanha NÃO usa orçamento de campanha (CBO)
+      // e o orçamento fica no Ad Set, é obrigatório declarar is_adset_budget_sharing_enabled.
+      // false = cada Ad Set usa o próprio orçamento (sem compartilhamento) — comportamento atual.
+      is_adset_budget_sharing_enabled: false,
       access_token: accessToken
       // ❌ NÃO incluir promoted_object aqui - vai no AdSet
     };
@@ -1523,7 +1615,9 @@ serve(async (req) => {
       });
     }
     
-    let targeting = {
+    // Record<string, any> so dynamic Meta targeting fields (flexible_spec, targeting_automation,
+    // languages) can be assigned without `as any` casts further down.
+    let targeting: Record<string, any> = {
       publisher_platforms: ['facebook', 'instagram'],
       facebook_positions: ['feed', 'video_feeds', 'story'],
       instagram_positions: ['stream', 'story', 'reels'],
@@ -1728,8 +1822,8 @@ serve(async (req) => {
         let postThumbnailUrl = '';
 
         try {
-          const mediaCheckUrl = `https://graph.facebook.com/v23.0/${mediaId}?fields=media_type,media_url,thumbnail_url&access_token=${accessToken}`;
-          const mediaCheckRes = await fetch(mediaCheckUrl);
+          const mediaCheckUrl = `https://graph.facebook.com/v23.0/${mediaId}?fields=media_type,media_url,thumbnail_url`;
+          const mediaCheckRes = await fetch(mediaCheckUrl, { headers: metaAuthHeaders(accessToken) });
           if (mediaCheckRes.ok) {
             const mediaInfo = await mediaCheckRes.json();
             postMediaType = mediaInfo.media_type || 'IMAGE';
@@ -2042,14 +2136,56 @@ serve(async (req) => {
       });
 
     if (dbError) {
-      logger('error', 'database-save', 'Erro ao salvar no banco', { error: dbError });
-    } else {
-      logger('info', 'database-saved', 'Campanha salva no banco com sucesso');
+      // D2: All four Meta objects exist and are valid, but the local mirror row failed to save.
+      // Do NOT silently report success — that causes permanent Meta/DB drift (the campaign runs
+      // but never appears in the user's dashboard). Persist a contingency row carrying the REAL
+      // Meta IDs flagged for DB reconciliation (the ads are kept — only the local row is missing).
+      logger('error', 'database-save', '❌ Campanha criada na Meta mas falhou ao salvar no banco — marcando para reconciliação', {
+        error: dbError,
+        meta_campaign_id: campaignResult.id,
+        meta_adset_id: adSetResult.id,
+        meta_ad_id: adResult.id
+      });
+
+      await saveToContingency(
+        supabaseClient,
+        user.id,
+        payload,
+        integration,
+        dbError,
+        'db_save_error',
+        {
+          campaignId: campaignResult.id,
+          adSetId: adSetResult.id,
+          creativeId: creativeId || undefined,
+          adId: adResult.id
+        },
+        { needsDbReconcile: true }
+      );
+
+      return new Response(
+        JSON.stringify({
+          success: true,
+          status: 'contingency',
+          contingency_mode: true,
+          reason: 'db_save_error',
+          message: 'Campanha criada! Estamos finalizando o registro — ela aparecerá no seu painel em instantes.',
+          campaignId: campaignResult.id,
+          adSetId: adSetResult.id,
+          adId: adResult.id,
+          creativeId
+        }),
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
     }
 
+    logger('info', 'database-saved', 'Campanha salva no banco com sucesso');
+
     return new Response(
-      JSON.stringify({ 
-        success: true, 
+      JSON.stringify({
+        success: true,
+        status: 'created',
+        contingency_mode: false,
         message: 'Campaign created successfully!',
         campaignId: campaignResult.id,
         adSetId: adSetResult.id,
@@ -2065,7 +2201,18 @@ serve(async (req) => {
       stack: error.stack 
     });
 
-    // 🛡️ MODO CONTINGÊNCIA: Salvar dados para criação manual
+    // 🧹 D1: Roll back any partially-created Meta campaign FIRST, so we don't leave orphaned
+    // paused objects in the user's ad account and so the async retry can recreate cleanly.
+    // Token/account come from `integration` (the only scope-safe source inside this catch).
+    let rolledBack = false;
+    if (campaignResult?.id && integration?.access_token) {
+      rolledBack = await rollbackMetaObjects({
+        campaignId: campaignResult.id,
+        accessToken: integration.access_token
+      });
+    }
+
+    // 🛡️ MODO CONTINGÊNCIA: Salvar dados para criação manual / retry automático
     try {
       // ✅ VALIDAR se temos dados mínimos antes de salvar
       if (user?.id && payload && integration) {
@@ -2077,15 +2224,19 @@ serve(async (req) => {
           error,
           'campaign_creation_error',
           {
-            campaignId: campaignResult?.id || null,
-            adSetId: adSetResult?.id || null,
-            creativeId: creativeId || null,
-            adId: adResult?.id || null
-          }
+            // If we rolled the campaign back, the partial IDs no longer exist on Meta — clear them
+            // so a retry won't try to reuse deleted objects.
+            campaignId: rolledBack ? null : (campaignResult?.id || null),
+            adSetId: rolledBack ? null : (adSetResult?.id || null),
+            creativeId: rolledBack ? null : (creativeId || null),
+            adId: rolledBack ? null : (adResult?.id || null)
+          },
+          { rolledBack }
         );
-        
+
         logger('info', 'CONTINGENCY-SAVED', '✅ Campanha salva em modo contingência', {
           user_id: user.id,
+          rolled_back: rolledBack,
           has_campaign_id: !!campaignResult?.id,
           has_adset_id: !!adSetResult?.id
         });
@@ -2097,30 +2248,40 @@ serve(async (req) => {
         });
       }
     } catch (contingencyError) {
-      logger('error', 'CONTINGENCY-CRITICAL', '❌ Falha ao salvar contingência', { 
+      logger('error', 'CONTINGENCY-CRITICAL', '❌ Falha ao salvar contingência', {
         error: contingencyError instanceof Error ? contingencyError.message : String(contingencyError)
       });
     }
 
-    // ✅ IMPORTANTE: Retornar HTTP 200 (sucesso) para o cliente
-    logger('info', 'CONTINGENCY-MODE', '🛡️ Retornando sucesso para cliente (modo contingência ativo)');
-    
+    // ✅ Product decision: still return HTTP 200 so the client never sees a hard error, but the
+    // payload is HONEST — `status: 'contingency'` + `contingency_mode: true` let the frontend
+    // distinguish this from a true creation. Partial IDs were rolled back, so we report 'pending'.
+    logger('info', 'CONTINGENCY-MODE', '🛡️ Retornando contingência para o cliente (HTTP 200)', { rolledBack });
+
     return new Response(
-      JSON.stringify({ 
-        success: true, 
-        status: 'success',
+      JSON.stringify({
+        success: true,
+        status: 'contingency',
+        contingency_mode: true,
+        reason: 'campaign_creation_error',
         message: 'Campanha em processamento! Nossa equipe irá finalizar a configuração em breve.',
-        campaignId: campaignResult?.id || 'pending',
+        campaignId: 'pending',
         adSetId: 'pending',
         adId: 'pending',
         creativeId: 'pending',
-        contingency_mode: true,
-        note: 'Esta campanha será processada manualmente pela equipe'
+        note: 'Esta campanha será processada automaticamente. Você será notificado quando estiver pronta.'
       }),
-      { 
+      {
         status: 200, // ✅ HTTP 200, não 500!
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       }
     );
   }
-});
+}
+
+// Start the HTTP server in production exactly as before. Tests set SCC_DISABLE_SERVE=1 before
+// importing this module so they can call `handleRequest` directly without binding a port.
+// (Default = unset → serve runs, so production behavior is unchanged.)
+if (!Deno.env.get('SCC_DISABLE_SERVE')) {
+  serve(handleRequest);
+}

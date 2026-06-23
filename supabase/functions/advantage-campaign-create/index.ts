@@ -178,7 +178,9 @@ serve(async (req) => {
       name: `${payload.name} - Advantage+ Tráfego WhatsApp`,
       objective: 'OUTCOME_TRAFFIC',
       status: 'PAUSED',
-      special_ad_categories: []
+      special_ad_categories: [],
+      // ✅ Meta API v23.0 (subcode 4834011): orçamento no Ad Set (sem CBO) → flag obrigatória.
+      is_adset_budget_sharing_enabled: false
     };
 
     const campaign = await (new AdAccount(adAccountId)).createCampaign(campaignFields, campaignParams);

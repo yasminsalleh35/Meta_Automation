@@ -22,19 +22,28 @@ serve(async (req) => {
     // Normalizar ad account ID
     const actId = adAccountId.startsWith('act_') ? adAccountId : `act_${adAccountId}`;
 
+    // Meta API v23.0 (subcode 4834011): se a campanha não usa orçamento de campanha (CBO), é
+    // obrigatório declarar is_adset_budget_sharing_enabled. Injetamos o default apenas quando
+    // ausente e sem orçamento de campanha — não sobrescreve valor explícito nem quebra CBO.
+    const safeCampaignConfig = { ...campaignConfig };
+    const hasCampaignBudget = safeCampaignConfig?.daily_budget != null || safeCampaignConfig?.lifetime_budget != null;
+    if (!hasCampaignBudget && safeCampaignConfig?.is_adset_budget_sharing_enabled === undefined) {
+      safeCampaignConfig.is_adset_budget_sharing_enabled = false;
+    }
+
     // Construir URL da API (v23.0 para CTWA)
     const campaignUrl = `https://graph.facebook.com/v23.0/${actId}/campaigns?access_token=${accessToken}`;
 
     console.log('[TEST-META-CAMPAIGN-CREATE] Calling Meta API:', {
       url: campaignUrl.replace(accessToken, 'TOKEN_MASKED'),
-      body: campaignConfig,
+      body: safeCampaignConfig,
     });
 
     // Fazer requisição para Meta API
     const campaignResponse = await fetch(campaignUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(campaignConfig),
+      body: JSON.stringify(safeCampaignConfig),
     });
 
     const rawResponse = await campaignResponse.json();
@@ -84,7 +93,7 @@ serve(async (req) => {
     return new Response(
       JSON.stringify({
         success: false,
-        error: error.message,
+        error: error instanceof Error ? error.message : String(error),
       }),
       {
         status: 500,

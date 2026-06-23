@@ -118,7 +118,9 @@ serve(async (req) => {
       name: payload.campaignName,
       objective: 'OUTCOME_TRAFFIC',
       status: 'PAUSED',
-      special_ad_categories: [] // ✅ Obrigatório na Meta API v23.0
+      special_ad_categories: [], // ✅ Obrigatório na Meta API v23.0
+      // ✅ Meta API v23.0 (subcode 4834011): orçamento no Ad Set (sem CBO) → flag obrigatória.
+      is_adset_budget_sharing_enabled: false
     };
 
     logs.push(`[CAMPAIGN] Payload: ${JSON.stringify(campaignPayload)}`);

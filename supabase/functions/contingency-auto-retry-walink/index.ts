@@ -233,7 +233,10 @@ serve(async (req) => {
       name: `${campaign_data.campaignName} (wa.me auto)`,
       objective: 'OUTCOME_TRAFFIC',
       status: 'PAUSED',
-      special_ad_categories: []
+      special_ad_categories: [],
+      // ✅ Meta API v23.0 (subcode 4834011): orçamento fica no Ad Set (sem CBO), então é
+      // obrigatório declarar is_adset_budget_sharing_enabled. false = sem compartilhamento.
+      is_adset_budget_sharing_enabled: false
     };
 
     const campaignUrl = `https://graph.facebook.com/${META_API_VERSION}/${actId}/campaigns?access_token=${access_token}`;
@@ -307,7 +310,7 @@ serve(async (req) => {
         targeting.geo_locations.cities = cities;
         logger('info', 'TARGETING-CITIES', `${cities.length} cidades adicionadas`, { 
           contingency_id,
-          cities: cities.map(c => c.key)
+          cities: cities.map((c: any) => c.key)
         });
       }
 
@@ -320,7 +323,7 @@ serve(async (req) => {
         targeting.geo_locations.regions = regions;
         logger('info', 'TARGETING-REGIONS', `${regions.length} regiões/estados adicionados`, { 
           contingency_id,
-          regions: regions.map(r => r.key)
+          regions: regions.map((r: any) => r.key)
         });
       }
 
