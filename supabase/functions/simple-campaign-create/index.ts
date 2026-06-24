@@ -348,7 +348,7 @@ async function saveToContingency(
 
 // ==== [ADD] createAdSetWithInterestRetries (index.ts) ========================
 
-async function createAdSetWithInterestRetries({
+export async function createAdSetWithInterestRetries({
   adAccountId,
   accessToken,
   adSetPayload,
