@@ -1905,26 +1905,31 @@ export async function handleRequest(req: Request): Promise<Response> {
           // Wait for video processing
           await smartDelay(3000, 'video-processing-wait');
 
-          if (!postThumbnailUrl) {
-            logger('warn', 'CTWA-VIDEO-NO-THUMB', 'No thumbnail available for video, Meta may reject creative');
+          // image_url (thumbnail) é OBRIGATÓRIO para creative de vídeo (senão erro 1443226).
+          // Se o post do Instagram não trouxe thumbnail, buscamos a do vídeo já enviado à conta.
+          let videoThumb = postThumbnailUrl;
+          if (!videoThumb) {
+            videoThumb = (await getBestVideoThumb(videoUploadResult.video_id, accessToken)) || '';
+            logger('info', 'CTWA-VIDEO-THUMB-FALLBACK', 'Thumbnail derivado do vídeo enviado', { hasThumb: !!videoThumb });
           }
 
           darkPostSpec.video_data = {
             video_id: videoUploadResult.video_id,
             message: payload.adText || ' ',
-            call_to_action: ctwaLink
-              ? { type: 'WHATSAPP_MESSAGE', value: { link: ctwaLink } }
-              : { type: 'WHATSAPP_MESSAGE' },
-            ...(postThumbnailUrl ? { image_url: postThumbnailUrl } : {}),
+            // CTWA: o destino do WhatsApp vem do promoted_object.page_id do Ad Set. O CTA deve ser
+            // SOMENTE { type: 'WHATSAPP_MESSAGE' } — incluir value.link (wa.me) gera erro 105 /
+            // subcode 1815630 ("number of parameters exceeded") em creatives de vídeo (validado na Graph API).
+            call_to_action: { type: 'WHATSAPP_MESSAGE' },
+            ...(videoThumb ? { image_url: videoThumb } : {}),
           };
         } else if (postMediaType === 'IMAGE' && postMediaUrl) {
           const linkData: Record<string, any> = {
             picture: postMediaUrl,
             message: payload.adText || ' ',
             name: payload.adTitle || 'Saiba mais',
-            call_to_action: ctwaLink
-              ? { type: 'WHATSAPP_MESSAGE', value: { link: ctwaLink } }
-              : { type: 'WHATSAPP_MESSAGE' }
+            // CTWA: CTA somente { type: 'WHATSAPP_MESSAGE' }; o link wa.me vai em link_data.link
+            // (imagem EXIGE link_data.link, ao contrário do vídeo). Validado na Graph API.
+            call_to_action: { type: 'WHATSAPP_MESSAGE' }
           };
           if (ctwaLink) linkData.link = ctwaLink;
           darkPostSpec.link_data = linkData;
@@ -1936,9 +1941,8 @@ export async function handleRequest(req: Request): Promise<Response> {
           const linkData: Record<string, any> = {
             message: payload.adText || ' ',
             name: payload.adTitle || 'Saiba mais',
-            call_to_action: ctwaLink
-              ? { type: 'WHATSAPP_MESSAGE', value: { link: ctwaLink } }
-              : { type: 'WHATSAPP_MESSAGE' }
+            // CTWA: CTA somente { type: 'WHATSAPP_MESSAGE' }; link wa.me em link_data.link.
+            call_to_action: { type: 'WHATSAPP_MESSAGE' }
           };
           if (ctwaLink) linkData.link = ctwaLink;
           darkPostSpec.link_data = linkData;

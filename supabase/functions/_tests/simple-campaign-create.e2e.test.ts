@@ -94,6 +94,10 @@ function installFetch(opts: { failAds?: boolean }) {
     try { path = new URL(url).pathname; } catch { /* keep */ }
 
     if (method === 'DELETE') return jsonResp({ success: true });
+    // Instagram media-info check (existing-post flow)
+    if (url.includes('fields=media_type')) {
+      return jsonResp({ media_type: 'VIDEO', media_url: 'https://cdn.test/video.mp4', thumbnail_url: 'https://cdn.test/thumb.jpg' });
+    }
     if (url.startsWith('https://cdn.test/')) return new Response(new Uint8Array([1, 2, 3]), { status: 200 });
     if (path.endsWith('/adimages')) return jsonResp({ images: { img: { hash: 'imgHash1', url: 'https://img' } } });
     if (path.endsWith('/advideos')) return jsonResp({ id: 'vid_1' });
@@ -294,4 +298,45 @@ Deno.test({ ...testOpts, name: 'S5 missing Authorization → contingency respons
   assertEquals(body.status, 'contingency'); // never a hard 5xx to the client
   // No campaign was created on Meta
   assert(!calls.some((c) => c.url.includes('/campaigns')), 'no Meta campaign should be created without auth');
+});
+
+// ---------------------------------------------------------------------------------------------
+// Scenario 6 — existing-post VIDEO CTWA dark post (the case from the 26-06 log).
+// Regression for Meta error 105/1815630: the WhatsApp CTA must be the BARE
+// { type: 'WHATSAPP_MESSAGE' } (no value.link), and the thumbnail must be kept.
+// ---------------------------------------------------------------------------------------------
+Deno.test({ ...testOpts, name: 'S6 existing-post VIDEO → bare WHATSAPP_MESSAGE CTA (no value.link) + thumbnail' }, async () => {
+  const cfg = baseConfig();
+  (cfg.integration as any).selected_instagram_ids = ['ig_1'];
+  __setSupabaseFactoryForTests(() => makeSupabase(cfg));
+  const calls = installFetch({});
+
+  const payload = {
+    campaignName: 'C', adTitle: 'T', adText: 'Olá', fanpage: 'fp', instagram: '',
+    whatsappLink: '', dailyBudget: 30, startDate: '2026-07-01T00:00:00-0300',
+    city: 'São Paulo', radius: 10, campaignType: 'whatsapp', status: 'PAUSED',
+    optimization: 'CONVERSATIONS', billingEvent: 'IMPRESSIONS',
+    platforms: ['facebook', 'instagram'], placements: [], devices: ['mobile'],
+    gender: 'all', ageMin: 25, ageMax: 45, specialCategories: [],
+    creativeType: 'post', selectedInstagramPostId: 'media123', useExistingInstagramPost: true,
+  };
+  const req = new Request('https://edge.test/simple-campaign-create', {
+    method: 'POST',
+    headers: { 'Authorization': 'Bearer t', 'Origin': 'https://iacamply.com', 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+
+  const res = await handleRequest(req);
+  const body = await res.json();
+  assertEquals(body.status, 'created');
+
+  const creativeCall = calls.find((c) => c.method === 'POST' && c.url.includes('/adcreatives'));
+  assert(creativeCall, 'expected an /adcreatives POST (dark post)');
+  const spec = JSON.parse(creativeCall!.body || '{}').object_story_spec;
+  assert(spec?.video_data, 'expected a video_data dark post');
+  // The exact field that caused Meta 105/1815630 must be gone: CTA is bare, no value.link.
+  assertEquals(spec.video_data.call_to_action, { type: 'WHATSAPP_MESSAGE' });
+  assert(!('value' in spec.video_data.call_to_action), 'CTA must not carry a value/link');
+  // Thumbnail must be present (otherwise Meta 1443226).
+  assertEquals(spec.video_data.image_url, 'https://cdn.test/thumb.jpg');
 });
