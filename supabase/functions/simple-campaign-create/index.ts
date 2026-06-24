@@ -412,6 +412,32 @@ async function createAdSetWithInterestRetries({
         payload_keys: Object.keys(payload || {})
       });
 
+      // Posicionamento descontinuado (2490562) — ex.: facebook_positions "video_feeds" foi
+      // removido na Meta v23. Auto-cura: remove posicionamentos descontinuados e tenta de novo.
+      if (subcode === 2490562 || /descontinuad|deprecated|cannot be selected/i.test(fbMsg)) {
+        const DEPRECATED_FB_POSITIONS = ['video_feeds'];
+        const t = payload.targeting || {};
+        let changed = false;
+
+        if (Array.isArray(t.facebook_positions)) {
+          const before = t.facebook_positions.length;
+          t.facebook_positions = t.facebook_positions.filter((p: string) => !DEPRECATED_FB_POSITIONS.includes(p));
+          if (t.facebook_positions.length !== before) changed = true;
+          if (t.facebook_positions.length === 0) delete t.facebook_positions;
+        }
+
+        if (changed) {
+          logger('warn', 'ADSET-RETRY-2490562', 'Removidos posicionamentos descontinuados, tentando novamente', {
+            removed: DEPRECATED_FB_POSITIONS,
+            facebook_positions: t.facebook_positions ?? null
+          });
+          attempt++;
+          continue; // retry without the deprecated placement(s)
+        }
+        // nada para remover → não insistir
+        break;
+      }
+
       // Tratamento específico de interesses inválidos (1487079)
       if (subcode === 1487079 || /Invalid data for field interests/i.test(fbMsg)) {
         const invalidIds = extractInvalidInterestIds(fbMsg);
@@ -1619,7 +1645,9 @@ export async function handleRequest(req: Request): Promise<Response> {
     // languages) can be assigned without `as any` casts further down.
     let targeting: Record<string, any> = {
       publisher_platforms: ['facebook', 'instagram'],
-      facebook_positions: ['feed', 'video_feeds', 'story'],
+      // Meta API v23 (subcode 2490562): o posicionamento "video_feeds" do Facebook foi
+      // descontinuado e não pode ser selecionado. Mantemos apenas posicionamentos válidos.
+      facebook_positions: ['feed', 'story'],
       instagram_positions: ['stream', 'story', 'reels'],
       device_platforms: ['mobile'],
       geo_locations,

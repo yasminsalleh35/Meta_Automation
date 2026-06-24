@@ -6,7 +6,7 @@ import type { PlacementType } from '@/types/campaignProfiles';
 const OPTIONS: { key: PlacementType; label: string }[] = [
   { key: 'facebook_feed', label: 'Facebook Feed' },
   { key: 'facebook_marketplace', label: 'Facebook Marketplace' },
-  { key: 'facebook_video_feeds', label: 'Facebook Video Feeds' },
+  // 'facebook_video_feeds' removido: posicionamento descontinuado na Meta API v23 (subcode 2490562).
   { key: 'facebook_right_column', label: 'Facebook Right Column' },
   { key: 'instagram_feed', label: 'Instagram Feed' },
   { key: 'instagram_stories', label: 'Instagram Stories' },

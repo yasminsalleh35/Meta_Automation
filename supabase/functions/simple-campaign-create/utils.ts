@@ -106,7 +106,9 @@ export function applyManualPlacements(targeting: any, aliases: string[]) {
     switch (a) {
       case 'facebook_feed':         publisher.add('facebook'); facebook_positions.add('feed'); break;
       case 'facebook_marketplace':  publisher.add('facebook'); facebook_positions.add('marketplace'); break;
-      case 'facebook_video_feeds':  publisher.add('facebook'); facebook_positions.add('video_feeds'); break;
+      // 'facebook_video_feeds' ignorado: o posicionamento "video_feeds" foi descontinuado na
+      // Meta API v23 (subcode 2490562). Não emitir mais para o targeting.
+      case 'facebook_video_feeds':  publisher.add('facebook'); break;
       case 'facebook_right_column': publisher.add('facebook'); facebook_positions.add('right_hand_column'); break;
       case 'instagram_feed':        publisher.add('instagram'); instagram_positions.add('stream'); break;
       case 'instagram_stories':     publisher.add('instagram'); instagram_positions.add('story'); break;

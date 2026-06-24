@@ -68,7 +68,8 @@ export class CampaignConfigValidator {
       description: 'Click-to-WhatsApp campaign configuration for Meta API v23.0',
       platforms: ['facebook', 'instagram'],
       placements: {
-        facebook: ['feed', 'video_feeds', 'story'],
+        // Meta API v23 (subcode 2490562): "video_feeds" do Facebook foi descontinuado.
+        facebook: ['feed', 'story'],
         instagram: ['stream', 'story', 'reels']
       },
       devices: ['mobile']

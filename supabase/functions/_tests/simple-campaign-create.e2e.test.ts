@@ -191,6 +191,13 @@ Deno.test({ ...testOpts, name: 'S1 happy path → status:created, no rollback, t
   assert(campaignCall, 'expected a /campaigns POST');
   const campaignBody = JSON.parse(campaignCall!.body || '{}');
   assertEquals(campaignBody.is_adset_budget_sharing_enabled, false);
+
+  // Regression (Meta v23 subcode 2490562): the ad set must NOT request the discontinued
+  // Facebook "video_feeds" placement.
+  const adsetCall = calls.find((c) => c.method === 'POST' && c.url.includes('/adsets'));
+  assert(adsetCall, 'expected an /adsets POST');
+  const fbPositions = JSON.parse(adsetCall!.body || '{}')?.targeting?.facebook_positions ?? [];
+  assert(!fbPositions.includes('video_feeds'), `facebook_positions must not contain video_feeds: ${JSON.stringify(fbPositions)}`);
 });
 
 // ---------------------------------------------------------------------------------------------
