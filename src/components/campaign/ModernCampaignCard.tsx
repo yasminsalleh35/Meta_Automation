@@ -21,6 +21,7 @@ import { Link } from 'react-router-dom';
 import type { LiveCampaign } from '@/types/liveCampaign';
 import { getObjectiveFriendlyName } from '@/utils/objectiveNames';
 import { CampaignPreviewImage } from '@/components/common/CampaignPreviewImage';
+import { CampaignBudgetInline } from '@/components/campaign/CampaignBudgetInline';
 import { asMoneyBRL, asPercent, asCompactNumber, PH, formatSyncDate } from '@/utils/metricsFormat';
 import { isMetricsStale, getLastSyncLabel, getMetricsStaleColor } from '@/utils/metricsStaleChecker';
 
@@ -205,6 +206,14 @@ export const ModernCampaignCard: React.FC<ModernCampaignCardProps> = ({
                 />
               </div>
             </div>
+
+            {/* Daily budget — display + inline edit */}
+            <CampaignBudgetInline
+              campaignId={campaign.id}
+              metaAdsetId={campaign.metaAdsetId}
+              budgetDaily={campaign.budgetDaily}
+              disabled={campaign.status === 'finished'}
+            />
 
             {/* Primary Metrics - Highlighted */}
             <div className="space-y-2">

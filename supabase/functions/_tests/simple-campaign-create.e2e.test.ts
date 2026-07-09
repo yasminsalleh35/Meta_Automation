@@ -77,8 +77,9 @@ function jsonResp(obj: unknown, status = 200) {
   return new Response(JSON.stringify(obj), { status, headers: { 'content-type': 'application/json' } });
 }
 
-function installFetch(opts: { failAds?: boolean }) {
+function installFetch(opts: { failAds?: boolean; adsetFailFirst?: boolean } = {}) {
   const calls: FetchCall[] = [];
+  let adsetAttempts = 0;
   const mock = async (input: Request | URL | string, init?: RequestInit): Promise<Response> => {
     const url = typeof input === 'string' ? input : input instanceof URL ? input.href : (input as Request).url;
     const method = (init?.method || (input instanceof Request ? input.method : 'GET') || 'GET').toUpperCase();
@@ -102,7 +103,14 @@ function installFetch(opts: { failAds?: boolean }) {
     if (path.endsWith('/adimages')) return jsonResp({ images: { img: { hash: 'imgHash1', url: 'https://img' } } });
     if (path.endsWith('/advideos')) return jsonResp({ id: 'vid_1' });
     if (path.endsWith('/campaigns')) return jsonResp({ id: 'cmp_1' });
-    if (path.endsWith('/adsets')) return jsonResp({ id: 'as_1' });
+    if (path.endsWith('/adsets')) {
+      adsetAttempts++;
+      // Simulate Meta rejecting the pinned WhatsApp number on the first attempt.
+      if (opts.adsetFailFirst && adsetAttempts === 1) {
+        return jsonResp({ error: { message: 'Invalid parameter', code: 100, error_subcode: 9999 } }, 400);
+      }
+      return jsonResp({ id: 'as_1' });
+    }
     if (path.endsWith('/adcreatives')) return jsonResp({ id: 'cr_1' });
     if (path.endsWith('/ads')) {
       return opts.failAds ? jsonResp({ error: { message: 'boom', code: 100 } }, 400) : jsonResp({ id: 'ad_1' });
@@ -132,7 +140,7 @@ function baseConfig(over: Partial<MockConfig> = {}): MockConfig {
   };
 }
 
-function makeRequest(): Request {
+function makeRequest(extra: Record<string, unknown> = {}): Request {
   const payload = {
     campaignName: 'C', adTitle: 'T', adText: 'X', fanpage: 'fp', instagram: '',
     whatsappLink: 'https://wa.me/5511999999999', dailyBudget: 30,
@@ -142,6 +150,7 @@ function makeRequest(): Request {
     gender: 'all', ageMin: 25, ageMax: 45, specialCategories: [],
     selectedMediaMeta: { file_type: 'image', public_url: 'https://cdn.test/img.jpg', filename: 'img.jpg' },
     creativeType: 'upload', useExistingInstagramPost: false, selectedInstagramPostId: null,
+    ...extra,
   };
   return new Request('https://edge.test/simple-campaign-create', {
     method: 'POST',
@@ -339,4 +348,48 @@ Deno.test({ ...testOpts, name: 'S6 existing-post VIDEO → bare WHATSAPP_MESSAGE
   assert(!('value' in spec.video_data.call_to_action), 'CTA must not carry a value/link');
   // Thumbnail must be present (otherwise Meta 1443226).
   assertEquals(spec.video_data.image_url, 'https://cdn.test/thumb.jpg');
+});
+
+// ---------------------------------------------------------------------------------------------
+// Scenario 7 — per-campaign WhatsApp number pins promoted_object.whatsapp_phone_number_id.
+// ---------------------------------------------------------------------------------------------
+Deno.test({ ...testOpts, name: 'S7 whatsapp_meta selected → ad set promoted_object pins whatsapp_phone_number_id' }, async () => {
+  const cfg = baseConfig();
+  __setSupabaseFactoryForTests(() => makeSupabase(cfg));
+  const calls = installFetch({});
+
+  const res = await handleRequest(makeRequest({
+    whatsapp_meta: { business_id: 'b1', waba_id: 'w1', phone_number_id: 'PHONE123', display_phone_number: '+55 11 90000-0000' },
+  }));
+  const body = await res.json();
+  assertEquals(body.status, 'created');
+
+  const adset = calls.find((c) => c.method === 'POST' && c.url.includes('/adsets'));
+  assert(adset, 'expected an /adsets POST');
+  const promoted = JSON.parse(adset!.body || '{}').promoted_object;
+  assertEquals(promoted.page_id, 'page1');
+  assertEquals(promoted.whatsapp_phone_number_id, 'PHONE123');
+});
+
+// ---------------------------------------------------------------------------------------------
+// Scenario 8 — self-heal: if Meta rejects the pinned WhatsApp number, retry WITHOUT it (page default).
+// ---------------------------------------------------------------------------------------------
+Deno.test({ ...testOpts, name: 'S8 pinned WhatsApp rejected → strips it, retries page-only, succeeds' }, async () => {
+  const cfg = baseConfig();
+  __setSupabaseFactoryForTests(() => makeSupabase(cfg));
+  const calls = installFetch({ adsetFailFirst: true });
+
+  const res = await handleRequest(makeRequest({
+    whatsapp_meta: { business_id: 'b1', waba_id: 'w1', phone_number_id: 'PHONE123', display_phone_number: '+55 11 90000-0000' },
+  }));
+  const body = await res.json();
+  assertEquals(body.status, 'created'); // recovered — not contingency
+
+  const adsetCalls = calls.filter((c) => c.method === 'POST' && c.url.includes('/adsets'));
+  assertEquals(adsetCalls.length, 2); // first (with number) failed, retry (page-only) succeeded
+  const first = JSON.parse(adsetCalls[0].body || '{}').promoted_object;
+  const retry = JSON.parse(adsetCalls[1].body || '{}').promoted_object;
+  assertEquals(first.whatsapp_phone_number_id, 'PHONE123');
+  assert(!('whatsapp_phone_number_id' in retry), 'retry must drop the rejected number and use page default');
+  assertEquals(retry.page_id, 'page1');
 });

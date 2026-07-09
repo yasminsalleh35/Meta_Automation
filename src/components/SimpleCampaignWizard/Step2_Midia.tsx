@@ -10,6 +10,7 @@ import { Loader2, AlertCircle, RefreshCw, User, Upload, AlertTriangle, MessageCi
 import { SimpleCampaignFormData } from '@/types/simpleCampaign.types';
 import { useMetaAssetsContext } from '@/contexts/MetaAssetsContext';
 import { useNormalizedMetaSelection } from '@/hooks/useNormalizedMetaSelection';
+import { useWhatsAppNumbers } from '@/hooks/useWhatsAppNumbers';
 import { WhatsAppInput } from './WhatsAppInput';
 import { MediaSelector } from './MediaSelector';
 import { InstagramPostSelector } from './InstagramPostSelector';
@@ -38,6 +39,27 @@ export const Step2Midia: React.FC<Step2MidiaProps> = ({ formData, updateFormData
 
   const { selection: normalizedSelection } = useNormalizedMetaSelection();
   const { existingIntegration } = useMetaAdsIntegration();
+  const { numbers: whatsappNumbers, isLoading: whatsappLoading } = useWhatsAppNumbers();
+
+  // WhatsApp per-campaign selection ('auto' = resolve from the page's linked number, current behavior)
+  const handleWhatsappChange = (value: string) => {
+    if (value === 'auto') {
+      updateFormData('selectedWhatsappPhoneId', null);
+      updateFormData('whatsapp_meta', null);
+      return;
+    }
+    const n = whatsappNumbers.find((x) => x.phone_number_id === value);
+    updateFormData('selectedWhatsappPhoneId', value);
+    updateFormData('whatsapp_meta', n
+      ? {
+          business_id: n.business_id,
+          waba_id: n.waba_id,
+          phone_number_id: n.phone_number_id,
+          display_phone_number: n.display_phone_number ?? null,
+          verified_name: n.verified_name ?? null,
+        }
+      : null);
+  };
 
   // ✅ FASE 3: Não precisa mais carregar assets aqui (contexto já carrega no mount)
   // Assets já vêm do cache do DB (instantâneo)
@@ -331,6 +353,42 @@ export const Step2Midia: React.FC<Step2MidiaProps> = ({ formData, updateFormData
             </Select>
           </div>
 
+          {/* WhatsApp Selection (optional) — only when the account has WhatsApp numbers */}
+          {(whatsappLoading || whatsappNumbers.length > 0) && (
+            <div className="space-y-2">
+              <Label htmlFor="whatsapp" className="flex items-center gap-2 text-base">
+                <MessageCircle className="w-4 h-4 text-green-600" />
+                WhatsApp para conversas
+                {whatsappLoading && <Loader2 className="inline w-4 h-4 animate-spin" />}
+              </Label>
+              <Select
+                value={formData.selectedWhatsappPhoneId || 'auto'}
+                onValueChange={handleWhatsappChange}
+                disabled={whatsappLoading}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder={whatsappLoading ? 'Carregando...' : 'Selecione o número de WhatsApp'} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="auto">Automático (número da página)</SelectItem>
+                  {whatsappNumbers.map((n) => (
+                    <SelectItem key={n.phone_number_id} value={n.phone_number_id}>
+                      <div className="flex items-center gap-2">
+                        <MessageCircle className="w-4 h-4 text-green-600" />
+                        <span>{n.display_phone_number || n.phone_number_id}</span>
+                        {n.verified_name && (
+                          <span className="text-muted-foreground text-xs">({n.verified_name})</span>
+                        )}
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Escolha qual número receberá as conversas desta campanha. "Automático" usa o número vinculado à página.
+              </p>
+            </div>
+          )}
 
         </CardContent>
       </Card>

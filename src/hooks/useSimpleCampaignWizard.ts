@@ -33,6 +33,9 @@ const initialFormData: SimpleCampaignFormData = {
   // AI targeting toggle
   useAISuggestions: false,
   aiTargeting: null,
+  // WhatsApp per-campaign (null = automatic, resolved from the page's linked number)
+  selectedWhatsappPhoneId: null,
+  whatsapp_meta: null,
 };
 
 const steps: SimpleCampaignWizardStep[] = [
@@ -461,6 +464,9 @@ export const useSimpleCampaignWizard = () => {
         // AI targeting toggle
         useAISuggestions: formData.useAISuggestions || false,
         aiTargeting: formData.aiTargeting || null,
+        // ✅ WhatsApp por campanha (opcional; vazio = número da página)
+        selectedWhatsappPhoneId: formData.selectedWhatsappPhoneId || null,
+        whatsapp_meta: formData.whatsapp_meta || null,
         adSchedule: formData.endDate
           ? buildAdSchedule(
               formData.enableDayparting || false,

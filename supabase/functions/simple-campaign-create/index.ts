@@ -91,12 +91,14 @@ interface SimpleCampaignPayload {
   }> | null;
   // ✅ NOVO: Dados do WhatsApp Business para campanhas nativas
   useWhatsAppNumberFromMeta?: boolean;
+  // ✅ WhatsApp escolhido por campanha (Step 2). Vazio = número padrão da página.
+  selectedWhatsappPhoneId?: string | null;
   whatsapp_meta?: {
     business_id: string;
     waba_id: string;
     phone_number_id: string;
-    display_phone_number: string;
-    verified_name?: string;
+    display_phone_number?: string | null;
+    verified_name?: string | null;
   } | null;
   // ✅ AI targeting: when set, AI-generated targeting overrides the profile overlay (see handler)
   useAISuggestions?: boolean;
@@ -493,6 +495,20 @@ export async function createAdSetWithInterestRetries({
 
         attempt++;
         continue; // tenta novamente
+      }
+
+      // Auto-cura do número de WhatsApp por campanha: se um whatsapp_phone_number_id específico foi
+      // fixado no promoted_object e a Meta reclamou, removemos ele e tentamos novamente com o número
+      // padrão da Página (page_id apenas) — config CTWA conhecida como válida. Sem regressão.
+      if ((payload as any)?.promoted_object?.whatsapp_phone_number_id) {
+        const removedPhone = (payload as any).promoted_object.whatsapp_phone_number_id;
+        delete (payload as any).promoted_object.whatsapp_phone_number_id;
+        logger('warn', 'ADSET-RETRY-WHATSAPP', 'Removido whatsapp_phone_number_id específico; tentando com o número padrão da página', {
+          removedPhone,
+          subcode
+        });
+        attempt++;
+        continue;
       }
 
       // Tratamento específico do erro 2446885 (WhatsApp não é conta Business)
@@ -1244,6 +1260,9 @@ export async function handleRequest(req: Request): Promise<Response> {
     const adAccountId = integration.ad_account_id;
     const pageId = integration.page_id;
     const whatsappPhoneId = integration.selected_whatsapp_phone_id ?? null;
+    // Per-campaign WhatsApp override (Step 2). When present, we pin this specific number on the ad
+    // set's promoted_object; otherwise Meta resolves it from the Page's linked WABA (default).
+    const campaignWhatsappPhoneId = payload.whatsapp_meta?.phone_number_id || payload.selectedWhatsappPhoneId || null;
 
     logger('info', 'integration-found', 'Integração Meta encontrada', {
       adAccountId: adAccountId?.substring(0, 10) + '...',
@@ -1475,8 +1494,11 @@ export async function handleRequest(req: Request): Promise<Response> {
         : {}),
       status: 'PAUSED',
       promoted_object: {
-        page_id: pageId
-      }, // ✅ CTWA v23.0: only page_id in promoted_object — WhatsApp resolved from Page's linked WABA
+        page_id: pageId,
+        // ✅ Se o usuário escolheu um número específico no Step 2, fixamos ele aqui. Caso a Meta
+        // rejeite (número inválido/incompatível), o retry remove este campo e volta ao padrão da página.
+        ...(campaignWhatsappPhoneId ? { whatsapp_phone_number_id: campaignWhatsappPhoneId } : {})
+      }, // CTWA v23.0: page_id (+ opcional whatsapp_phone_number_id) — senão resolve pela WABA da Página
       targeting: {},
       access_token: accessToken
     };

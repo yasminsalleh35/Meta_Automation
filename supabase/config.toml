@@ -183,6 +183,9 @@ verify_jwt = true
 [functions.meta-campaigns-cached]
 verify_jwt = true
 
+[functions.update-campaign-budget]
+verify_jwt = true
+
 [functions.meta-discovery-initial]
 verify_jwt = true
 

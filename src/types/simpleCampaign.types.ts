@@ -53,6 +53,15 @@ export interface SimpleCampaignFormData {
     ageMax: number;
     genders: 'all' | 'male' | 'female';
   } | null;
+  // ✅ WhatsApp por campanha: número escolhido no Step 2 (opcional; vazio = usa o padrão da página)
+  selectedWhatsappPhoneId?: string | null;
+  whatsapp_meta?: {
+    business_id: string;
+    waba_id: string;
+    phone_number_id: string;
+    display_phone_number?: string | null;
+    verified_name?: string | null;
+  } | null;
 }
 
 export interface SimpleCampaignPayload {
@@ -130,6 +139,15 @@ export interface SimpleCampaignPayload {
     days: number[];
     timezone_type: string;
   }> | null;
+  // ✅ WhatsApp por campanha (opcional). Se vazio, o backend resolve pelo número da página.
+  selectedWhatsappPhoneId?: string | null;
+  whatsapp_meta?: {
+    business_id: string;
+    waba_id: string;
+    phone_number_id: string;
+    display_phone_number?: string | null;
+    verified_name?: string | null;
+  } | null;
 }
 
 export interface SimpleCampaignWizardStep {

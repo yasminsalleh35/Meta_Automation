@@ -5,6 +5,8 @@ import { useSupabase } from '@/hooks/useSupabase';
 export interface CachedCampaign {
   id: string;
   metaCampaignId: string;
+  metaAdsetId?: string | null;
+  budgetDaily?: number | null;
   name: string;
   objective: string;
   status: string;

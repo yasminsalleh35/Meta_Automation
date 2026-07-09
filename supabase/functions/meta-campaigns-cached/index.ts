@@ -48,7 +48,7 @@ serve(async (req) => {
     // Build query
     let query = admin
       .from("campaigns")
-      .select("id, name, objective, status, meta_campaign_id, metrics, last_metrics_sync_at, meta_data_cached_at, media_preview_url, meta_data, created_at", { count: 'exact' })
+      .select("id, name, objective, status, meta_campaign_id, meta_adset_id, budget_daily, metrics, last_metrics_sync_at, meta_data_cached_at, media_preview_url, meta_data, created_at", { count: 'exact' })
       .eq("user_id", user.id)
       .eq("ad_account_id", ad_account_id)
       .not("meta_campaign_id", "is", null);
@@ -105,6 +105,8 @@ serve(async (req) => {
     const items = sorted.map(c => ({
       id: c.id,
       metaCampaignId: c.meta_campaign_id,
+      metaAdsetId: c.meta_adset_id,
+      budgetDaily: c.budget_daily != null ? Number(c.budget_daily) : null,
       name: c.name,
       objective: c.objective,
       status: c.status,

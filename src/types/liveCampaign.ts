@@ -20,6 +20,8 @@ export interface LiveCampaign {
   whatsappNumber?: string;
   created_time: string;
   metaCampaignId?: string;
+  metaAdsetId?: string | null;
+  budgetDaily?: number | null;
   last_metrics_sync_at?: string;
   meta_data_cached_at?: string;
 }
