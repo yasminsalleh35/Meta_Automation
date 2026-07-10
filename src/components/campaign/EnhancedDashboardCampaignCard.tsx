@@ -7,6 +7,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { Facebook, Instagram, ExternalLink, RefreshCw, Clock, AlertTriangle } from 'lucide-react';
 import type { LiveCampaign } from '@/types/liveCampaign';
 import { CampaignPreviewImage } from '@/components/common/CampaignPreviewImage';
+import { CampaignBudgetInline } from '@/components/campaign/CampaignBudgetInline';
 import { asMoneyBRL, asPercent, asCompactNumber, PH } from '@/utils/metricsFormat';
 import { isMetricsStale, getLastSyncLabel, getMetricsStaleColor } from '@/utils/metricsStaleChecker';
 
@@ -153,6 +154,14 @@ export const EnhancedDashboardCampaignCard: React.FC<EnhancedDashboardCampaignCa
                 />
               </div>
             </div>
+
+            {/* Daily budget — display + inline edit */}
+            <CampaignBudgetInline
+              campaignId={campaign.id}
+              metaAdsetId={campaign.metaAdsetId}
+              budgetDaily={campaign.budgetDaily}
+              disabled={campaign.status === 'finished'}
+            />
 
             {/* Primary Metrics - Compact */}
             <div className="grid grid-cols-2 gap-2 sm:gap-3">
