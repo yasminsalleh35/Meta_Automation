@@ -116,44 +116,54 @@ export async function handleRequest(req: Request): Promise<Response> {
       return new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime();
     });
 
-    // Real daily budget from Meta (source of truth). The DB `budget_daily` can be the column
-    // default (R$50) for campaigns imported from Ads Manager, and can drift if changed there, so we
-    // override the DISPLAYED value with the live ad set daily_budget. Best-effort: on any failure we
-    // fall back to the DB value (one batched Meta call for the current page — ids limit is 50).
-    const realBudgetByAdset: Record<string, number> = {};
+    // Real daily budget + ad set resolution from Meta (source of truth). We key off the CAMPAIGN id
+    // (every listed row has one) instead of meta_adset_id, so this works even for campaigns imported
+    // from Ads Manager that never stored an ad set id locally. For each campaign we read its ad
+    // set(s) and derive: budgetReais (sum of the ad sets' daily_budget) and adsetId (when there's a
+    // single ad set — used to enable inline editing). Best-effort: on any failure we fall back to
+    // the DB value and the stored ad set id.
+    const infoByCampaign: Record<string, { budgetReais: number | null; adsetId: string | null }> = {};
     try {
-      const adsetIds = Array.from(new Set((sorted || []).map((c: any) => c.meta_adset_id).filter(Boolean))) as string[];
-      if (adsetIds.length > 0) {
+      const campaignIds = Array.from(new Set((sorted || []).map((c: any) => c.meta_campaign_id).filter(Boolean))) as string[];
+      if (campaignIds.length > 0) {
         const integration = await _resolveIntegration(user.id);
         const accessToken = integration?.access_token;
         if (accessToken) {
-          const applyBudget = (id: string, cents: unknown) => {
-            const n = Number(cents);
-            if (Number.isFinite(n) && n > 0) realBudgetByAdset[id] = n / 100;
+          const summarize = (adsets: any[]) => {
+            let totalCents = 0;
+            let hasBudget = false;
+            for (const a of adsets || []) {
+              const cents = Number(a?.daily_budget);
+              if (Number.isFinite(cents) && cents > 0) { totalCents += cents; hasBudget = true; }
+            }
+            return {
+              budgetReais: hasBudget ? totalCents / 100 : null,
+              adsetId: (adsets && adsets.length === 1) ? String(adsets[0].id) : null,
+            };
           };
-          const perId = async (id: string) => {
+          const perCampaign = async (cid: string) => {
             try {
               const r = await fetch(
-                `https://graph.facebook.com/${META_API_VERSION}/${id}?fields=daily_budget`,
+                `https://graph.facebook.com/${META_API_VERSION}/${cid}/adsets?fields=id,daily_budget&limit=25`,
                 { headers: { Authorization: `Bearer ${accessToken}` } }
               );
-              if (r.ok) applyBudget(id, (await r.json())?.daily_budget);
+              if (r.ok) infoByCampaign[cid] = summarize((await r.json())?.data || []);
             } catch { /* best-effort */ }
           };
 
-          for (let i = 0; i < adsetIds.length; i += 50) {
-            const chunk = adsetIds.slice(i, i + 50);
+          for (let i = 0; i < campaignIds.length; i += 50) {
+            const chunk = campaignIds.slice(i, i + 50);
+            // One batched call with field expansion: each campaign's ad sets + their daily_budget.
             const res = await fetch(
-              `https://graph.facebook.com/${META_API_VERSION}/?ids=${chunk.join(",")}&fields=daily_budget`,
+              `https://graph.facebook.com/${META_API_VERSION}/?ids=${chunk.join(",")}&fields=adsets.limit(25){id,daily_budget}`,
               { headers: { Authorization: `Bearer ${accessToken}` } }
             );
             if (res.ok) {
               const map = await res.json();
-              for (const id of chunk) applyBudget(id, map?.[id]?.daily_budget);
+              for (const cid of chunk) infoByCampaign[cid] = summarize(map?.[cid]?.adsets?.data || []);
             } else {
-              // One bad/stale id can 400 the whole batch — fall back to per-id so the rest still resolve.
-              console.warn("[meta-campaigns-cached] budget batch not ok; falling back per-id", res.status);
-              await Promise.allSettled(chunk.map(perId));
+              console.warn("[meta-campaigns-cached] adset batch not ok; falling back per-campaign", res.status);
+              await Promise.allSettled(chunk.map(perCampaign));
             }
           }
         }
@@ -163,12 +173,15 @@ export async function handleRequest(req: Request): Promise<Response> {
     }
 
     // Transform data for frontend
-    const items = sorted.map((c: any) => ({
+    const items = sorted.map((c: any) => {
+      const info = c.meta_campaign_id ? infoByCampaign[c.meta_campaign_id] : undefined;
+      return {
       id: c.id,
       metaCampaignId: c.meta_campaign_id,
-      metaAdsetId: c.meta_adset_id,
-      budgetDaily: (c.meta_adset_id && realBudgetByAdset[c.meta_adset_id] != null)
-        ? realBudgetByAdset[c.meta_adset_id]
+      // Prefer the stored ad set id; otherwise use the one resolved from Meta (imported campaigns).
+      metaAdsetId: c.meta_adset_id || info?.adsetId || null,
+      budgetDaily: (info && info.budgetReais != null)
+        ? info.budgetReais
         : (c.budget_daily != null ? Number(c.budget_daily) : null),
       name: c.name,
       objective: c.objective,
@@ -181,7 +194,8 @@ export async function handleRequest(req: Request): Promise<Response> {
       page: c.meta_data?.page,
       instagram: c.meta_data?.instagram,
       created_time: c.meta_data?.created_time
-    }));
+      };
+    });
 
     return new Response(JSON.stringify({
       items,
