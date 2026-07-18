@@ -9,15 +9,27 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-serve(async (req) => {
+// Test seams: the service-role client and the Meta integration resolver are injected through these
+// so tests can drive the handler without real Supabase/Meta access (production uses the defaults).
+type AdminFactory = () => any;
+type ResolveIntegration = (userId: string) => Promise<{ access_token?: string | null } | null>;
+let _adminFactory: AdminFactory = () => createClient(
+  Deno.env.get("SUPABASE_URL") ?? "",
+  Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? ""
+);
+let _resolveIntegration: ResolveIntegration = resolveMetaIntegration;
+export function __setTestDeps(deps: { adminFactory?: AdminFactory; resolveIntegration?: ResolveIntegration }): void {
+  if (deps.adminFactory) _adminFactory = deps.adminFactory;
+  if (deps.resolveIntegration) _resolveIntegration = deps.resolveIntegration;
+}
+
+export async function handleRequest(req: Request): Promise<Response> {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
 
   try {
-    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const admin = createClient(supabaseUrl, supabaseKey);
+    const admin = _adminFactory();
 
     // Auth
     const authHeader = req.headers.get("Authorization");
@@ -96,7 +108,7 @@ serve(async (req) => {
       rejected: 6,
     };
 
-    const sorted = (campaigns || []).sort((a, b) => {
+    const sorted = (campaigns || []).sort((a: any, b: any) => {
       const aOrder = statusOrder[a.status?.toLowerCase()] ?? 99;
       const bOrder = statusOrder[b.status?.toLowerCase()] ?? 99;
       if (aOrder !== bOrder) return aOrder - bOrder;
@@ -112,7 +124,7 @@ serve(async (req) => {
     try {
       const adsetIds = Array.from(new Set((sorted || []).map((c: any) => c.meta_adset_id).filter(Boolean))) as string[];
       if (adsetIds.length > 0) {
-        const integration = await resolveMetaIntegration(user.id);
+        const integration = await _resolveIntegration(user.id);
         const accessToken = integration?.access_token;
         if (accessToken) {
           const applyBudget = (id: string, cents: unknown) => {
@@ -151,7 +163,7 @@ serve(async (req) => {
     }
 
     // Transform data for frontend
-    const items = sorted.map(c => ({
+    const items = sorted.map((c: any) => ({
       id: c.id,
       metaCampaignId: c.meta_campaign_id,
       metaAdsetId: c.meta_adset_id,
@@ -183,11 +195,16 @@ serve(async (req) => {
 
   } catch (error) {
     console.error("Error in meta-campaigns-cached:", error);
-    return new Response(JSON.stringify({ 
-      error: error instanceof Error ? error.message : "Unknown error" 
+    return new Response(JSON.stringify({
+      error: error instanceof Error ? error.message : "Unknown error"
     }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" }
     });
   }
-});
+}
+
+// Start the server in production (default). Tests set MCC_DISABLE_SERVE=1 before importing.
+if (!Deno.env.get("MCC_DISABLE_SERVE")) {
+  serve(handleRequest);
+}
