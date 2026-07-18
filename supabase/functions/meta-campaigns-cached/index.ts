@@ -1,5 +1,8 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
+import { resolveMetaIntegration } from "../_shared/metaIntegration.ts";
+
+const META_API_VERSION = "v23.0";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -101,12 +104,60 @@ serve(async (req) => {
       return new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime();
     });
 
+    // Real daily budget from Meta (source of truth). The DB `budget_daily` can be the column
+    // default (R$50) for campaigns imported from Ads Manager, and can drift if changed there, so we
+    // override the DISPLAYED value with the live ad set daily_budget. Best-effort: on any failure we
+    // fall back to the DB value (one batched Meta call for the current page — ids limit is 50).
+    const realBudgetByAdset: Record<string, number> = {};
+    try {
+      const adsetIds = Array.from(new Set((sorted || []).map((c: any) => c.meta_adset_id).filter(Boolean))) as string[];
+      if (adsetIds.length > 0) {
+        const integration = await resolveMetaIntegration(user.id);
+        const accessToken = integration?.access_token;
+        if (accessToken) {
+          const applyBudget = (id: string, cents: unknown) => {
+            const n = Number(cents);
+            if (Number.isFinite(n) && n > 0) realBudgetByAdset[id] = n / 100;
+          };
+          const perId = async (id: string) => {
+            try {
+              const r = await fetch(
+                `https://graph.facebook.com/${META_API_VERSION}/${id}?fields=daily_budget`,
+                { headers: { Authorization: `Bearer ${accessToken}` } }
+              );
+              if (r.ok) applyBudget(id, (await r.json())?.daily_budget);
+            } catch { /* best-effort */ }
+          };
+
+          for (let i = 0; i < adsetIds.length; i += 50) {
+            const chunk = adsetIds.slice(i, i + 50);
+            const res = await fetch(
+              `https://graph.facebook.com/${META_API_VERSION}/?ids=${chunk.join(",")}&fields=daily_budget`,
+              { headers: { Authorization: `Bearer ${accessToken}` } }
+            );
+            if (res.ok) {
+              const map = await res.json();
+              for (const id of chunk) applyBudget(id, map?.[id]?.daily_budget);
+            } else {
+              // One bad/stale id can 400 the whole batch — fall back to per-id so the rest still resolve.
+              console.warn("[meta-campaigns-cached] budget batch not ok; falling back per-id", res.status);
+              await Promise.allSettled(chunk.map(perId));
+            }
+          }
+        }
+      }
+    } catch (e) {
+      console.warn("[meta-campaigns-cached] real budget fetch failed; using DB value", e instanceof Error ? e.message : e);
+    }
+
     // Transform data for frontend
     const items = sorted.map(c => ({
       id: c.id,
       metaCampaignId: c.meta_campaign_id,
       metaAdsetId: c.meta_adset_id,
-      budgetDaily: c.budget_daily != null ? Number(c.budget_daily) : null,
+      budgetDaily: (c.meta_adset_id && realBudgetByAdset[c.meta_adset_id] != null)
+        ? realBudgetByAdset[c.meta_adset_id]
+        : (c.budget_daily != null ? Number(c.budget_daily) : null),
       name: c.name,
       objective: c.objective,
       status: c.status,
