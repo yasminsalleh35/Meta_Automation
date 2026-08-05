@@ -105,10 +105,10 @@ export const ModernCampaignCard: React.FC<ModernCampaignCardProps> = ({
     label, 
     value, 
     isPrimary = false 
-  }: { 
-    icon: any; 
-    label: string; 
-    value: string | number; 
+  }: {
+    icon: React.ElementType;
+    label: string;
+    value: string | number;
     isPrimary?: boolean;
   }) => (
     <div className={`rounded-lg ${
