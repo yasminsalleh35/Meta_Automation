@@ -119,26 +119,19 @@ export const EnhancedDashboardCampaignCard: React.FC<EnhancedDashboardCampaignCa
 
               {/* Status Toggle + Refresh Button */}
               <div className="flex items-center gap-2">
-                {/* Refresh Button (only for active campaigns) */}
+                {/* Refresh Button with label (only for active campaigns) */}
                 {campaign.status === 'active' && onRefreshMetrics && campaign.metaCampaignId && (
-                  <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={handleRefresh}
-                          disabled={isRefreshing}
-                          className="h-8 w-8 p-0"
-                        >
-                          <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} />
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        <p className="text-xs">Atualizar métricas</p>
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleRefresh}
+                    disabled={isRefreshing}
+                    className="h-8 gap-1.5 px-2"
+                    title="Atualizar métricas"
+                  >
+                    <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} />
+                    <span className="text-xs">Atualizar métricas</span>
+                  </Button>
                 )}
 
                 <span className="text-xs text-muted-foreground hidden sm:inline">

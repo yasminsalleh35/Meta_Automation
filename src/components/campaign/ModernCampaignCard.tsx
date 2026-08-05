@@ -170,29 +170,22 @@ export const ModernCampaignCard: React.FC<ModernCampaignCardProps> = ({
                 </div>
               </div>
               
-              {/* Actions - Badge + Switch lado a lado mas compactos */}
-              <div className="flex items-center gap-1 sm:gap-1.5 flex-shrink-0">
+              {/* Actions - Badge + labeled refresh + Switch */}
+              <div className="flex flex-wrap items-center gap-1.5 justify-end flex-shrink-0">
                 {getStatusBadge()}
-                
-                <TooltipProvider>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-7 w-7"
-                        onClick={handleIndividualRefresh}
-                        disabled={isIndividualRefreshing || isRefreshing || !campaign.metaCampaignId}
-                      >
-                        <RotateCw className={`w-4 h-4 ${isIndividualRefreshing ? 'animate-spin' : ''}`} />
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      <p className="text-xs">Atualizar métricas (últimos 30 dias)</p>
-                    </TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
-                
+
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7 gap-1.5 px-2"
+                  onClick={handleIndividualRefresh}
+                  disabled={isIndividualRefreshing || isRefreshing || !campaign.metaCampaignId}
+                  title="Atualizar métricas (últimos 30 dias)"
+                >
+                  <RotateCw className={`w-3.5 h-3.5 ${isIndividualRefreshing ? 'animate-spin' : ''}`} />
+                  <span className="text-xs">Atualizar métricas</span>
+                </Button>
+
                 <Switch
                   checked={campaign.status === 'active' || campaign.status === 'pending_review'}
                   onCheckedChange={(checked) => {

@@ -7,11 +7,15 @@ import { DashboardHeader } from '@/components/DashboardHeader';
 import { MobileHeader } from '@/components/MobileHeader';
 import { TrialBanner } from '@/components/trial/TrialBanner';
 import { useResponsive } from '@/hooks/useResponsive';
+import { useAutoDiscoverCampaigns } from '@/hooks/useAutoDiscoverCampaigns';
 import ErrorBoundary from '@/components/ErrorBoundary';
 
 const DashboardLayout: React.FC = () => {
   const { isMobile } = useResponsive();
   const [searchParams] = useSearchParams();
+
+  // Auto-run "Descobrir Novas Campanhas" once per session when the user enters the dashboard.
+  useAutoDiscoverCampaigns();
   
   // Check if user just completed trial setup or subscription
   const trialJustStarted = searchParams.get('trial') === 'active';

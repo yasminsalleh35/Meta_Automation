@@ -71,13 +71,16 @@ export const useCampaignSyncActions = () => {
     }
   };
 
-  const discoverNewCampaigns = async () => {
+  const discoverNewCampaigns = async (opts?: { silent?: boolean }) => {
+    const silent = opts?.silent ?? false;
     if (!selection?.ad_account_id) {
-      toast({
-        title: "Erro",
-        description: "Nenhuma conta de anúncios selecionada",
-        variant: "destructive"
-      });
+      if (!silent) {
+        toast({
+          title: "Erro",
+          description: "Nenhuma conta de anúncios selecionada",
+          variant: "destructive"
+        });
+      }
       return;
     }
 
@@ -106,10 +109,18 @@ export const useCampaignSyncActions = () => {
 
       const result = await response.json();
 
-      toast({
-        title: "Descoberta concluída",
-        description: `${result.imported} novas campanhas, ${result.updated} atualizadas`,
-      });
+      // In silent (auto) mode only notify when something new was actually found — no noise on login.
+      if (!silent) {
+        toast({
+          title: "Descoberta concluída",
+          description: `${result.imported} novas campanhas, ${result.updated} atualizadas`,
+        });
+      } else if ((result.imported ?? 0) > 0) {
+        toast({
+          title: "Campanhas atualizadas",
+          description: `${result.imported} nova(s) campanha(s) encontrada(s) no Meta Ads`,
+        });
+      }
 
       // Invalidate cache after successful discovery
       await queryClient.invalidateQueries({ queryKey: ['campaigns-cache'] });
@@ -118,11 +129,13 @@ export const useCampaignSyncActions = () => {
       return result;
     } catch (error) {
       console.error('Error discovering campaigns:', error);
-      toast({
-        title: "Erro ao descobrir campanhas",
-        description: error instanceof Error ? error.message : "Erro desconhecido",
-        variant: "destructive"
-      });
+      if (!silent) {
+        toast({
+          title: "Erro ao descobrir campanhas",
+          description: error instanceof Error ? error.message : "Erro desconhecido",
+          variant: "destructive"
+        });
+      }
     } finally {
       setIsDiscovering(false);
     }
