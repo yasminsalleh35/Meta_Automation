@@ -1,181 +1,191 @@
-import React from 'react';
-import { useMemo } from 'react';
-import { formatCurrency, formatNumber, normalize } from '@/utils/metrics';
-import type { FunnelInput, FunnelStage } from '@/types/metrics';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import React, { useId, useMemo } from 'react';
+import { formatCurrency, formatNumber } from '@/utils/metrics';
+import type { FunnelInput } from '@/types/metrics';
 
 type Props = {
   data: FunnelInput;
-  height?: number;           // default 280
-  paddingX?: number;         // default 24
-  stageGap?: number;         // gap vertical para labels
+  height?: number;
+  /** @deprecated kept for backward compatibility — no longer used */
+  paddingX?: number;
+  /** @deprecated kept for backward compatibility — no longer used */
+  stageGap?: number;
 };
 
-export default function FunnelFlow({
-  data,
-  height = 300,
-  paddingX = 24,
-  stageGap = 52
-}: Props) {
-  // 1) preparar estágios
-  const stages: FunnelStage[] = useMemo(() => {
-    // Garantir valores seguros (0 se null/undefined)
-    const safeImpressions = data.impressions || 0;
-    const safeReach = data.reach || 0;
-    const safeClicks = data.clicks || 0;
-    const safeCpa = data.cpa || 0;
+/**
+ * Horizontal performance funnel — a smooth, symmetric "flow" that starts wide on the left
+ * (highest-volume stage) and tapers to a thin neck on the right, over a dark panel with a cyan→blue
+ * gradient. Impressões → Alcance → Cliques → CPA. The three volume stages drive the taper
+ * (perceptually compressed so orders-of-magnitude differences still read as a smooth funnel); CPA is
+ * a cost, so it renders as the neck. Labels sit on top, values in pills at the bottom.
+ */
+export default function FunnelFlow({ data, height = 340 }: Props) {
+  const uid = useId().replace(/:/g, '');
 
-    // eficiência de CPA (quanto menor o CPA, maior a eficiência)
-    const cpaEff = safeCpa > 0 ? 1 / safeCpa : 0;
+  const stages = useMemo(() => {
+    const impressions = Math.max(0, data.impressions || 0);
+    const reach = Math.max(0, data.reach || 0);
+    const clicks = Math.max(0, data.clicks || 0);
+    const cpa = Math.max(0, data.cpa || 0);
 
-    // Se todos os valores são 0, usar valores mínimos para visualização
-    const hasData = safeImpressions > 0 || safeReach > 0 || safeClicks > 0 || safeCpa > 0;
-    const widths = hasData 
-      ? normalize([safeImpressions, safeReach, safeClicks, cpaEff], 0.10)
-      : [0.3, 0.25, 0.2, 0.15]; // valores mínimos visuais quando não há dados
+    const NECK = 0.16; // thinnest visible band, as a fraction of the max thickness
+    const POW = 0.45;  // perceptual compression so large ratios still taper smoothly
+
+    const counts = [impressions, reach, clicks];
+    const maxCount = Math.max(...counts, 1);
+    // volume stages → compressed widths; CPA (a cost, not a volume) → the neck
+    let widths = [
+      ...counts.map((c) => NECK + (1 - NECK) * Math.pow(c / maxCount, POW)),
+      NECK * 0.82,
+    ];
+
+    // No data yet → a clean decorative taper so it still looks like a funnel.
+    if (impressions + reach + clicks + cpa <= 0) widths = [1, 0.68, 0.4, 0.18];
+
+    // Always narrow to the right.
+    for (let i = 1; i < widths.length; i++) widths[i] = Math.min(widths[i], widths[i - 1]);
 
     return [
-      {
-        key: 'impressions',
-        label: 'Impressões',
-        rawValue: safeImpressions,
-        widthValue: widths[0],
-        formatted: formatNumber(safeImpressions)
-      },
-      {
-        key: 'reach',
-        label: 'Alcance',
-        rawValue: safeReach,
-        widthValue: widths[1],
-        formatted: formatNumber(safeReach)
-      },
-      {
-        key: 'clicks',
-        label: 'Cliques',
-        rawValue: safeClicks,
-        widthValue: widths[2],
-        formatted: formatNumber(safeClicks)
-      },
-      {
-        key: 'cpa_eff',
-        label: 'CPA',
-        rawValue: safeCpa,
-        widthValue: widths[3],
-        formatted: formatCurrency(safeCpa)
-      }
+      { key: 'impressions', label: 'Impressões', value: formatNumber(impressions), width: widths[0] },
+      { key: 'reach', label: 'Alcance', value: formatNumber(reach), width: widths[1] },
+      { key: 'clicks', label: 'Cliques', value: formatNumber(clicks), width: widths[2] },
+      { key: 'cpa', label: 'CPA', value: formatCurrency(cpa), width: widths[3] },
     ];
   }, [data]);
 
-  // 2) dimensões do SVG - usar valores absolutos
-  const innerW = 400; // largura fixa em pixels
-  const innerH = height - 70; // espaço para labels
-  const centerY = innerH / 2;
-
-  // 3) calcular as "colunas" (uma por estágio)
   const cols = stages.length;
-  const colW = innerW / (cols - 1);
 
-  // 4) gerar pontos superiores/inferiores para o polígono da faixa
-  const topPts: Array<{x:number; y:number}> = [];
-  const botPts: Array<{x:number; y:number}> = [];
+  // Layout: top label row, SVG chart, bottom value row.
+  const topH = 30;
+  const bottomH = 60;
+  const W = 1000;                          // viewBox width units (x is stretched to the container)
+  const chartH = Math.max(120, height - topH - bottomH);
+  const centerY = chartH / 2;
+  const maxBand = chartH * 0.84;
 
-  const maxBand = innerH * 0.8; // espessura max do "rio"
-  const k = 0.35;                 // curvatura bezier
+  const xAt = (i: number) => (i / (cols - 1)) * W;
 
-  stages.forEach((s, i) => {
-    const bandH = s.widthValue * maxBand;
-    const half = bandH / 2;
-    const x = (i * colW);
-    topPts.push({ x, y: centerY - half });
-    botPts.push({ x, y: centerY + half });
-  });
-
-  // 5) helper para path com curvas suaves
-  const curvePath = (pts: Array<{x:number; y:number}>) => {
+  // Smooth cubic path through points with horizontal tangent handles.
+  const curve = (pts: Array<{ x: number; y: number }>) => {
     let d = `M ${pts[0].x},${pts[0].y}`;
     for (let i = 1; i < pts.length; i++) {
       const p0 = pts[i - 1];
       const p1 = pts[i];
-      const dx = (p1.x - p0.x) * k;
+      const dx = (p1.x - p0.x) * 0.5;
       d += ` C ${p0.x + dx},${p0.y} ${p1.x - dx},${p1.y} ${p1.x},${p1.y}`;
     }
     return d;
   };
 
-  const pathTop = curvePath(topPts);
-  const pathBot = curvePath([...botPts].reverse());
-  const d = `${pathTop} L ${botPts.at(-1)!.x},${botPts.at(-1)!.y} ${pathBot} Z`;
+  const top = stages.map((s, i) => ({ x: xAt(i), y: centerY - (s.width * maxBand) / 2 }));
+  const bot = stages.map((s, i) => ({ x: xAt(i), y: centerY + (s.width * maxBand) / 2 }));
+  const last = bot[bot.length - 1];
+  const band =
+    curve(top) +
+    ` L ${last.x},${last.y} ` +
+    curve([...bot].reverse()).replace(/^M/, 'L') +
+    ' Z';
+
+  const gradId = `funnelFlow-${uid}`;
+  const sheenId = `funnelSheen-${uid}`;
+  const glowId = `funnelGlow-${uid}`;
+  const clipId = `funnelClip-${uid}`;
 
   return (
     <div
-      className="relative w-full overflow-hidden rounded-lg"
-      style={{
-        height,
-        background: 'rgba(15,23,42,0.95)',
-        borderColor: 'rgba(255,255,255,0.08)',
-        border: '1px solid rgba(255,255,255,0.08)'
-      }}
+      className="relative w-full overflow-hidden rounded-xl"
+      style={{ height, background: '#0b1220', border: '1px solid rgba(255,255,255,0.06)' }}
     >
-      {/* linhas divisórias entre etapas */}
-      <svg width="100%" height={height} viewBox={`0 0 ${innerW} ${height}`} className="absolute inset-0">
-        {Array.from({ length: cols }).map((_, i) => {
-          const x = (i * colW);
-          return (
-            <line 
-              key={i} 
-              x1={x}
-              y1={20} 
-              x2={x}
-              y2={innerH + 20} 
-              stroke="rgba(255,255,255,0.06)" 
+      {/* Stage labels (top) */}
+      <div
+        className="absolute left-0 right-0 grid px-4"
+        style={{ top: 0, height: topH, gridTemplateColumns: `repeat(${cols}, 1fr)` }}
+      >
+        {stages.map((s, i) => (
+          <div
+            key={s.key}
+            className={`flex items-center text-[11px] sm:text-xs font-medium uppercase tracking-wide text-white/55 ${
+              i === 0 ? 'justify-start' : i === cols - 1 ? 'justify-end' : 'justify-center'
+            }`}
+          >
+            {s.label}
+          </div>
+        ))}
+      </div>
+
+      {/* Funnel */}
+      <div className="absolute left-0 right-0" style={{ top: topH, height: chartH }}>
+        <svg width="100%" height={chartH} viewBox={`0 0 ${W} ${chartH}`} preserveAspectRatio="none">
+          <defs>
+            <linearGradient id={gradId} x1="0" y1="0" x2="1" y2="0">
+              <stop offset="0%" stopColor="#38e0f2" />
+              <stop offset="55%" stopColor="#2aa9f0" />
+              <stop offset="100%" stopColor="#2f6bed" />
+            </linearGradient>
+            {/* soft top highlight + bottom shade for a rounded, 3D "ribbon" look */}
+            <linearGradient id={sheenId} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#ffffff" stopOpacity="0.22" />
+              <stop offset="48%" stopColor="#ffffff" stopOpacity="0" />
+              <stop offset="100%" stopColor="#000000" stopOpacity="0.16" />
+            </linearGradient>
+            <filter id={glowId} x="-20%" y="-40%" width="140%" height="180%">
+              <feGaussianBlur stdDeviation="7" />
+            </filter>
+            <clipPath id={clipId}>
+              <path d={band} />
+            </clipPath>
+          </defs>
+
+          {/* Subtle stage dividers behind the flow */}
+          {stages.map((_, i) => (
+            <line
+              key={i}
+              x1={xAt(i)}
+              y1={8}
+              x2={xAt(i)}
+              y2={chartH - 8}
+              stroke="rgba(255,255,255,0.06)"
+              strokeWidth={1}
+              vectorEffect="non-scaling-stroke"
             />
-          );
-        })}
+          ))}
 
-        {/* gradiente do fluxo */}
-        <defs>
-          <linearGradient id="flowGrad" x1="0" y1="0" x2="1" y2="0">
-            <stop offset="0%" stopColor="#22d3ee" stopOpacity="1.0" />
-            <stop offset="60%" stopColor="#3b82f6" stopOpacity="1.0" />
-            <stop offset="100%" stopColor="#0ea5e9" stopOpacity="1.0" />
-          </linearGradient>
-        </defs>
+          {/* Glow */}
+          <path d={band} fill={`url(#${gradId})`} opacity={0.35} filter={`url(#${glowId})`} />
+          {/* Main flow */}
+          <path d={band} fill={`url(#${gradId})`} />
+          {/* Sheen (clipped to the flow) */}
+          <rect x={0} y={0} width={W} height={chartH} fill={`url(#${sheenId})`} clipPath={`url(#${clipId})`} />
+          {/* Fold seam down the middle */}
+          <line
+            x1={0}
+            y1={centerY}
+            x2={W}
+            y2={centerY}
+            stroke="rgba(255,255,255,0.16)"
+            strokeWidth={1}
+            vectorEffect="non-scaling-stroke"
+            clipPath={`url(#${clipId})`}
+          />
+        </svg>
+      </div>
 
-        <g transform="translate(0, 20)">
-          <path d={d} fill="url(#flowGrad)" />
-        </g>
-      </svg>
-
-      {/* labels + badges abaixo */}
-      <div className="absolute left-4 right-4 bottom-4">
-        <div 
-          className="grid gap-2"
-          style={{ gridTemplateColumns: `repeat(${cols}, 1fr)` }}
-        >
-          <TooltipProvider>
-            {stages.map((s, i) => (
-              <Tooltip key={s.key}>
-                <TooltipTrigger asChild>
-                  <div 
-                    className={`${
-                      i === 0 ? 'text-left' : i === cols - 1 ? 'text-right' : 'text-center'
-                    }`}
-                  >
-                    <div className="text-xs text-white/70 mb-1.5">
-                      {s.label}
-                    </div>
-                    <div className="inline-block px-2.5 py-1.5 rounded-md text-xs font-semibold text-white/95 bg-white/8 border border-white/10">
-                      {s.key === 'cpa_eff' ? formatCurrency(s.rawValue) : s.formatted}
-                    </div>
-                  </div>
-                </TooltipTrigger>
-                <TooltipContent>
-                  <p>{s.label}: {s.key === 'cpa_eff' ? formatCurrency(s.rawValue) : s.formatted}</p>
-                </TooltipContent>
-              </Tooltip>
-            ))}
-          </TooltipProvider>
-        </div>
+      {/* Values (bottom) */}
+      <div
+        className="absolute left-0 right-0 grid px-4"
+        style={{ bottom: 0, height: bottomH, gridTemplateColumns: `repeat(${cols}, 1fr)` }}
+      >
+        {stages.map((s, i) => (
+          <div
+            key={s.key}
+            className={`flex items-center ${
+              i === 0 ? 'justify-start' : i === cols - 1 ? 'justify-end' : 'justify-center'
+            }`}
+          >
+            <span className="rounded-lg bg-white/5 border border-white/10 px-2.5 py-1.5 text-xs sm:text-sm font-semibold text-white/90 tabular-nums">
+              {s.value}
+            </span>
+          </div>
+        ))}
       </div>
     </div>
   );
