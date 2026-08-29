@@ -12,8 +12,14 @@ import { Step4Local } from './Step4_Local';
 import { useToast } from '@/hooks/use-toast';
 import { useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
+import { useSessionKeepAlive } from '@/hooks/useSessionKeepAlive';
 
 export const SimpleCampaignWizard: React.FC = () => {
+  // Keep the Supabase session alive for the whole wizard. Users often spend several minutes
+  // writing ad copy on step 1; without this the access token can expire and the authenticated
+  // calls on step 2 (WhatsApp / assets) and step 3 (media upload) would start failing.
+  useSessionKeepAlive();
+
   const {
     currentStep,
     formData,

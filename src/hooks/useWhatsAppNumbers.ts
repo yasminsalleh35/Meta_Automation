@@ -22,7 +22,16 @@ export const useWhatsAppNumbers = () => {
   const query = useQuery({
     queryKey: ['whatsapp-numbers'],
     queryFn: async (): Promise<WhatsAppNumber[]> => {
-      const { data, error } = await supabase.functions.invoke('meta-whatsapp-assets', {});
+      // Always resolve a fresh session first. getSession() auto-refreshes an expired token, and
+      // passing the Authorization header explicitly guarantees the invoke uses THAT token rather
+      // than a stale one cached on the functions client — this is what made the WhatsApp list
+      // silently fail to load when the user lingered on step 1. See useSessionKeepAlive.
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error('Sessão expirada. Faça login novamente.');
+
+      const { data, error } = await supabase.functions.invoke('meta-whatsapp-assets', {
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      });
       if (error) throw new Error(error.message || 'Falha ao carregar números de WhatsApp');
 
       const businesses: BusinessNode[] = data?.businesses || [];
@@ -45,7 +54,11 @@ export const useWhatsAppNumbers = () => {
       return flat.filter((n) => (seen.has(n.phone_number_id) ? false : (seen.add(n.phone_number_id), true)));
     },
     staleTime: 5 * 60 * 1000,
-    retry: 1,
+    retry: 2,
+    // Recover automatically when the user comes back to the tab or re-enters step 2 after a
+    // long time on step 1.
+    refetchOnWindowFocus: true,
+    refetchOnMount: true,
   });
 
   return {

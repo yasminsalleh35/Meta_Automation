@@ -16,7 +16,6 @@ import { MediaSelector } from './MediaSelector';
 import { InstagramPostSelector } from './InstagramPostSelector';
 import { MetaAssetsLoading } from '@/components/ui/meta-assets-loading';
 import { supabase } from '@/integrations/supabase/client';
-import { useSession } from '@supabase/auth-helpers-react';
 import { useMetaAdsIntegration } from '@/hooks/useMetaAdsIntegration';
 import { useToast } from '@/hooks/use-toast';
 
@@ -26,16 +25,27 @@ interface Step2MidiaProps {
 }
 
 export const Step2Midia: React.FC<Step2MidiaProps> = ({ formData, updateFormData }) => {
-  const session = useSession();
   const { toast } = useToast();
   // ✅ FASE 2: Usar contexto compartilhado ao invés de hook direto
-  const { 
-    facebookPages, 
-    instagramAccounts, 
-    assetsLoading: isLoading, 
+  const {
+    facebookPages,
+    instagramAccounts,
+    assetsLoading: isLoading,
     assetsError: error,
     fetchAllAssets
   } = useMetaAssetsContext();
+
+  // Self-heal: assets are loaded once when the provider mounts (usually on step 1). If that load
+  // failed or was never populated by the time the user reaches step 2 (e.g. she spent a long time
+  // writing copy and the token had expired), re-fetch now with a fresh session so the page/IG
+  // dropdowns aren't left empty. fetchAllAssets() dedups and reads from cache, so this is cheap
+  // when assets are already present.
+  useEffect(() => {
+    if (!isLoading && facebookPages.length === 0) {
+      void fetchAllAssets(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const { selection: normalizedSelection } = useNormalizedMetaSelection();
   const { existingIntegration } = useMetaAdsIntegration();
@@ -82,41 +92,40 @@ export const Step2Midia: React.FC<Step2MidiaProps> = ({ formData, updateFormData
   };
   
   useEffect(() => {
-    if (!formData.fanpage || !session?.access_token) return;
-    
+    if (!formData.fanpage) return;
+
+    let cancelled = false;
     setResolvingIg(true);
-    
-    // Call meta-selection edge function to resolve page-linked IG
+
+    // Call meta-selection edge function to resolve the page-linked Instagram account.
+    // Resolve a fresh session at call time (getSession auto-refreshes an expired token) instead
+    // of depending on a captured session object — the previous version read from an auth-helpers
+    // hook that was never provided, so this auto-fill silently never ran.
     const resolvePageIg = async () => {
       try {
-        const response = await fetch(`https://ibwhqkgvrkkqxiksbiqr.supabase.co/functions/v1/meta-selection`, {
-          method: "POST",
-          headers: { 
-            "Content-Type": "application/json", 
-            "Authorization": `Bearer ${session.access_token}` 
-          },
-          body: JSON.stringify({ 
-            action: "resolve_page_ig", 
-            page_id: formData.fanpage 
-          }),
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session || cancelled) return;
+
+        const { data, error } = await supabase.functions.invoke('meta-selection', {
+          body: { action: 'resolve_page_ig', page_id: formData.fanpage },
+          headers: { Authorization: `Bearer ${session.access_token}` },
         });
 
-        if (response.ok) {
-          const data = await response.json();
-          if (data?.instagram_id && data.instagram_id !== formData.instagram) {
-            updateFormData("instagram", data.instagram_id);
-            console.log('[STEP2] Auto-filled IG from page:', data.instagram_id);
-          }
+        if (!cancelled && !error && data?.instagram_id && data.instagram_id !== formData.instagram) {
+          updateFormData('instagram', data.instagram_id);
+          console.log('[STEP2] Auto-filled IG from page:', data.instagram_id);
         }
-      } catch (error) {
-        console.warn('[STEP2] Error resolving page IG:', error);
+      } catch (err) {
+        console.warn('[STEP2] Error resolving page IG:', err);
       } finally {
-        setResolvingIg(false);
+        if (!cancelled) setResolvingIg(false);
       }
     };
 
-    resolvePageIg();
-  }, [formData.fanpage, session?.access_token]);
+    void resolvePageIg();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [formData.fanpage]);
 
   // ✅ NOVO: Pré-preenchimento determinístico baseado na seleção salva
   useEffect(() => {
