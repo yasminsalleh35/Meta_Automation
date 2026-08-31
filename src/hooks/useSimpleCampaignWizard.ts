@@ -364,6 +364,9 @@ export const useSimpleCampaignWizard = () => {
   };
 
   const submitCampaign = async () => {
+    // Timers used to advance the progress message while the single long-running edge call is
+    // in flight (there is no server push). Always cleared in `finally`.
+    const progressTimers: ReturnType<typeof setTimeout>[] = [];
     try {
       setIsSubmitting(true);
       setSubmitProgress({ stage: 'validating', message: 'Validando dados da campanha...' });
@@ -518,14 +521,29 @@ export const useSimpleCampaignWizard = () => {
       });
 
       setSubmitProgress({ stage: 'uploading', message: 'Enviando mídia para o Meta Ads...' });
-      
-      // 🔄 Usar função com retry
+
+      // The edge function does the whole Meta creation server-side (media upload + campaign +
+      // ad set + creative + ad). When the media is a VIDEO, Meta needs time to process it, so
+      // the call can legitimately take up to ~2 minutes. There is no progress stream, so advance
+      // the message on a timer — otherwise the user stares at a frozen "Enviando mídia" and
+      // assumes it hung (exactly the report we got).
+      const showAfter = (delayMs: number, message: string) =>
+        progressTimers.push(setTimeout(() => setSubmitProgress({ stage: 'creating-campaign', message }), delayMs));
+      showAfter(12_000, 'Processando a mídia no Meta Ads (vídeos podem levar até 2 min)...');
+      showAfter(45_000, 'Criando a campanha e o anúncio...');
+      showAfter(90_000, 'Quase lá, finalizando a criação...');
+
+      // ⚠️ Sem retry no cliente: criar campanha NÃO é idempotente — reenviar após um timeout
+      // duplicaria a campanha na Meta. A própria edge function já tem retries internos para
+      // erros transitórios da Meta API.
       const result = await invokeFunctionWithRetry<{success: boolean, data: any, error?: string}>(
         'simple-campaign-create',
         payload,
-        2 // 2 retries
+        0 // no client-side retries — avoid duplicate campaigns
       );
-      
+
+      progressTimers.forEach(t => clearTimeout(t));
+
       if (!result.success) {
         throw new Error(result.error || 'Erro ao criar campanha');
       }
@@ -540,6 +558,7 @@ export const useSimpleCampaignWizard = () => {
         error: error instanceof Error ? error.message : 'Erro desconhecido'
       };
     } finally {
+      progressTimers.forEach(t => clearTimeout(t));
       setIsSubmitting(false);
       setSubmitProgress({ stage: 'idle', message: '' });
     }
