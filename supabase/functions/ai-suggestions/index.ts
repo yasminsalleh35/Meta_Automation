@@ -51,28 +51,74 @@ interface CampaignSuggestion {
   };
 }
 
+const jsonResponse = (payload: unknown, status = 200) =>
+  new Response(JSON.stringify(payload), {
+    status,
+    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+  });
+
+// Load the requesting user's business data (best-effort) so both the AI prompt and the fallback
+// can be personalised. Never throws — returns null when unavailable.
+async function loadBusinessData(req: Request, supabaseUrl: string): Promise<BusinessData | null> {
+  try {
+    const authHeader = req.headers.get('Authorization');
+    if (!authHeader) return null;
+
+    const token = authHeader.replace('Bearer ', '');
+    const userSupabase = createClient(supabaseUrl, Deno.env.get('SUPABASE_ANON_KEY')!, {
+      global: { headers: { Authorization: `Bearer ${token}` } },
+    });
+
+    const { data: businessSettings } = await userSupabase
+      .from('business_settings')
+      .select('business_name, business_description, main_product, category, target_audience, business_goals')
+      .single();
+
+    if (!businessSettings) return null;
+
+    return {
+      name: businessSettings.business_name,
+      description: businessSettings.business_description,
+      mainProduct: businessSettings.main_product,
+      category: businessSettings.category,
+      targetAudience: businessSettings.target_audience,
+      businessGoals: businessSettings.business_goals,
+    };
+  } catch (err) {
+    console.warn('⚠️ Não foi possível carregar dados do negócio (seguindo sem eles):', toMessage(err));
+    return null;
+  }
+}
+
 serve(async (req) => {
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
 
+  // Objetivo é opcional: usamos um padrão sensato para que o botão nunca falhe por falta de input.
+  let objective = 'gerar leads e vendas pelo WhatsApp';
   try {
-    const { objective } = await req.json();
-    
-    if (!objective) {
-      throw new Error('Objetivo da campanha é obrigatório');
+    const body = await req.json();
+    if (body?.objective && String(body.objective).trim()) {
+      objective = String(body.objective).trim();
     }
+  } catch {
+    // corpo ausente/inválido — mantém o objetivo padrão
+  }
 
-    console.log('🤖 Processando sugestão de IA para objetivo:', objective);
+  console.log('🤖 Processando sugestão de IA para objetivo:', objective);
 
-    // Criar cliente Supabase para acessar configuração
-    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+  const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+
+  // Carrega os dados do negócio primeiro — servem tanto para a IA quanto para o fallback.
+  const businessData = await loadBusinessData(req, supabaseUrl);
+
+  try {
+    // Buscar configuração ativa de IA diretamente da base
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-    
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    // Buscar configuração ativa de IA diretamente da base
     const { data: aiConfig, error: configError } = await supabase
       .from('ai_configurations')
       .select('provider, api_key, model_name')
@@ -81,106 +127,47 @@ serve(async (req) => {
       .single();
 
     if (configError || !aiConfig) {
-      console.error('❌ Configuração de IA não encontrada:', configError);
-      throw new Error('IA não configurada. Configure a integração de IA nas configurações de admin.');
+      throw new Error('IA não configurada (nenhuma configuração ativa/padrão em ai_configurations)');
     }
-
     if (!aiConfig.api_key) {
-      throw new Error('API Key não configurada. Configure a integração de IA nas configurações de admin.');
+      throw new Error('API Key não configurada na integração de IA');
     }
 
-    console.log('✅ Configuração de IA encontrada:', { 
-      provider: aiConfig.provider, 
+    console.log('✅ Configuração de IA encontrada:', {
+      provider: aiConfig.provider,
       model: aiConfig.model_name,
-      hasApiKey: !!aiConfig.api_key
+      hasApiKey: !!aiConfig.api_key,
     });
-
-    // Buscar dados do negócio do usuário (se autenticado)
-    let businessData: BusinessData | null = null;
-    
-    const authHeader = req.headers.get('Authorization');
-    if (authHeader) {
-      const token = authHeader.replace('Bearer ', '');
-      
-      // Criar cliente com JWT do usuário para buscar seus dados
-      const userSupabase = createClient(supabaseUrl, Deno.env.get('SUPABASE_ANON_KEY')!, {
-        global: {
-          headers: {
-            Authorization: `Bearer ${token}`
-          }
-        }
-      });
-
-      const { data: businessSettings } = await userSupabase
-        .from('business_settings')
-        .select('business_name, business_description, main_product, category, target_audience, business_goals')
-        .single();
-
-      if (businessSettings) {
-        businessData = {
-          name: businessSettings.business_name,
-          description: businessSettings.business_description,
-          mainProduct: businessSettings.main_product,
-          category: businessSettings.category,
-          targetAudience: businessSettings.target_audience,
-          businessGoals: businessSettings.business_goals
-        };
-        console.log('📊 Dados do negócio carregados:', businessData);
-      }
-    }
 
     // Verificar cache de respostas
     const cacheKey = `${objective}_${businessData?.name || 'generic'}`;
     const cachedResponse = responseCache.get(cacheKey);
-
     if (cachedResponse && (Date.now() - cachedResponse.timestamp) < CACHE_DURATION) {
       console.log('📦 Usando resposta do cache (5 minutos)');
-      return new Response(
-        JSON.stringify(cachedResponse.response),
-        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
+      return jsonResponse(cachedResponse.response);
     }
 
     // Gerar sugestões usando o provedor configurado
     const suggestions = await generateAISuggestions(aiConfig, businessData, objective);
-    
-    // Armazenar no cache
+
     responseCache.set(cacheKey, { response: suggestions, timestamp: Date.now() });
-    
     console.log('✅ Sugestões geradas com sucesso e armazenadas no cache');
-    
-    return new Response(
-      JSON.stringify(suggestions),
-      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    );
+
+    return jsonResponse(suggestions);
 
   } catch (err: unknown) {
-    console.error('❌ Erro na Edge Function:', toObject(err));
-    
-    let errorMessage = 'Erro ao gerar sugestões de IA';
-    
-    const errorMsg = toMessage(err);
-    if (errorMsg.includes('não configurada') || errorMsg.includes('não encontrada')) {
-      errorMessage = 'IA não configurada. Configure a integração de IA nas configurações de admin.';
-    } else if (errorMsg.includes('API Key')) {
-      errorMessage = 'Chave de API inválida. Verifique sua configuração de IA.';
-    } else if (errorMsg.includes('401')) {
-      errorMessage = 'Chave de API inválida. Verifique sua configuração de IA.';
-    } else if (errorMsg.includes('429')) {
-      errorMessage = 'Limite de requisições atingido. Tente novamente em alguns minutos.';
-    } else if (errorMsg.includes('402')) {
-      errorMessage = 'Conta sem créditos. Adicione créditos na sua conta de IA.';
-    } else {
-      errorMessage = `Erro na IA: ${errorMsg}`;
-    }
-    
-    return new Response(
-      JSON.stringify({ error: errorMessage }),
-      { 
-        status: 500,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-      }
-    );
+    // ⚠️ Um recurso de "sugestões" nunca deve travar o usuário. Se a IA não está configurada ou
+    // falha (chave inválida, provedor não suportado, rate limit, erro da API), devolvemos as
+    // sugestões padrão embutidas com HTTP 200 em vez de um 500. O motivo real fica no log e no
+    // campo _warning para o administrador diagnosticar/consertar a integração de IA.
+    console.error('⚠️ IA indisponível — usando sugestões de fallback. Motivo:', toObject(err));
+
+    const fallback = {
+      ...generateFallbackSuggestions(businessData),
+      _source: 'fallback',
+      _warning: toMessage(err),
+    };
+    return jsonResponse(fallback);
   }
 });
 
