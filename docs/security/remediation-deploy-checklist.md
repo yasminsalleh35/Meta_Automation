@@ -1,6 +1,18 @@
 # Audit remediation: deploy checklist (Phases 1–2)
 
-Code changed locally on 2026-11-02. **Nothing has been deployed.** Run everything on staging first, then production.
+Code changed locally on 2026-11-02. **Deployed to production on 2026-11-03** (commits `8ed37e5`, `3fa32a5` and later).
+
+**Production status (2026-11-03):**
+- ✅ Backup: `db_backups/prod_2026-11-03_pre-remediation.dump`, outside the repo.
+- ✅ Secrets set: `CRON_SECRET`, `SITE_URL=https://camplyia.netlify.app`, `PAGARME_ENV=live`. Vault: `cron_secret`, `project_url`.
+- ✅ Migrations applied: the 3 that were missing, `20261102000001`–`009`, each recorded in `schema_migrations`.
+- ✅ The 34 changed functions are deployed; the 25 retired functions are deleted.
+- ✅ The frontend is live on Netlify.
+- ✅ Anon smoke tests pass.
+- ✅ Cron: `metrics_refresh_all` returns 200; `meta_campaign_auto_sync` is updating campaigns.
+- ⏳ Delete the legacy cron job `meta-campaign-auto-sync-job` in Dashboard → Integrations → Cron. It's owned by `supabase_read_only_user`, so `postgres` can't remove it, and it now gets a harmless 401 every 10 minutes.
+- ⏳ Auth → URL Configuration: add `https://camplyia.netlify.app/**`. Decide what to do about the `iacamply.com` DNS.
+- ⏳ Logged-in smoke tests (section 5): connect Meta, save admin settings, create a campaign, switch users.
 
 ## 0. Before anything
 - [ ] Revoke the old Supabase personal access token (Dashboard → Account → Access Tokens).
