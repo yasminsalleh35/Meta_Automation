@@ -31,7 +31,7 @@ export const useMetaAdsIntegrationManager = () => {
           .single();
 
         if (data) {
-          console.log(`✅ Found integration with provider: ${query.provider}`, data);
+          console.log(`✅ Found integration with provider: ${query.provider}`);
           return data;
         }
 

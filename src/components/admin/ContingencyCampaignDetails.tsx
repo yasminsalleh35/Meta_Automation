@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import { safeUrl } from '@/lib/safeUrl';
 
 interface Location {
   key: string;
@@ -179,7 +180,7 @@ export const ContingencyCampaignDetails: React.FC<ContingencyCampaignDetailsProp
                   asChild
                 >
                   <a
-                    href={campaignData.selectedMediaMeta.publicUrl}
+                    href={safeUrl(campaignData.selectedMediaMeta.publicUrl)}
                     target="_blank"
                     rel="noopener noreferrer"
                   >
@@ -384,7 +385,7 @@ export const ContingencyCampaignDetails: React.FC<ContingencyCampaignDetailsProp
                     asChild
                   >
                     <a
-                      href={campaignData.whatsappLink}
+                      href={safeUrl(campaignData.whatsappLink)}
                       target="_blank"
                       rel="noopener noreferrer"
                     >

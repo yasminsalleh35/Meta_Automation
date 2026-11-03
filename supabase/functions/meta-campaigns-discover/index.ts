@@ -167,11 +167,11 @@ serve(async (req) => {
         source: isExisting && existingSource === "camply" ? "camply" : "meta_import",
       };
 
-      // Upsert using the real UNIQUE constraint on meta_campaign_id
+      // Upsert por (user_id, meta_campaign_id) — migração 20261102000002 (audit DATA-03/SEC-15)
       const { data: upsertResult, error } = await admin
         .from("campaigns")
         .upsert(upsertData, {
-          onConflict: "meta_campaign_id",
+          onConflict: "user_id,meta_campaign_id",
           ignoreDuplicates: false,
         })
         .select("id")

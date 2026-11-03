@@ -6,6 +6,8 @@ export function cn(...inputs: ClassValue[]) {
 }
 
 export function openPaymentCheckout(url: string, onFallback?: () => void, onSuccess?: () => void) {
+  // Apenas http(s) (audit SEC-16)
+  if (!/^https?:\/\//i.test(String(url ?? '').trim())) return false;
   // Tenta abrir em nova aba
   const newWindow = window.open(url, '_blank');
   

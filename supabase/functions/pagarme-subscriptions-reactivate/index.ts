@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.49.8';
+import { requireUser, authErrorResponse } from '../_shared/auth.ts';
+import { loadPagarmeConfig, assertOwnsPagarmeSubscription } from '../_shared/pagarme.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -18,25 +19,24 @@ serve(async (req: Request): Promise<Response> => {
   try {
     logStep('🚀 Starting subscription reactivation');
 
-    const supabase = createClient(
-      Deno.env.get('SUPABASE_URL')!,
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-    );
+    // Usuário logado e dono da assinatura (audit SEC-10 / PAY-07)
+    const { user, db: supabase } = await requireUser(req);
 
     const body = await req.json();
     const { subscription_id } = body;
 
     if (!subscription_id) {
-      throw new Error('subscription_id is required');
+      return new Response(JSON.stringify({ success: false, error: 'subscription_id is required' }), {
+        status: 400, headers: { 'Content-Type': 'application/json', ...corsHeaders }
+      });
     }
+
+    await assertOwnsPagarmeSubscription(supabase, user.id, subscription_id);
 
     logStep('📝 Request validated', { subscription_id });
 
-    // Get Pagar.me config
-    const { data: config, error: configError } = await supabase.rpc('get_pagarme_config_for_functions');
-    if (configError || !config?.secret_key) {
-      throw new Error('Pagar.me config not found');
-    }
+    // Get Pagar.me config (PAY-05: RPC retorna lista; sempre com ambiente)
+    const config = await loadPagarmeConfig(supabase);
 
     logStep('✅ Config loaded');
 
@@ -104,6 +104,8 @@ serve(async (req: Request): Promise<Response> => {
 
   } catch (error: any) {
     logStep('💥 Error reactivating subscription', error.message);
+    const authResp = authErrorResponse(error, corsHeaders);
+    if (authResp) return authResp;
 
     return new Response(JSON.stringify({
       success: false,

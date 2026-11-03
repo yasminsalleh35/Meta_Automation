@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
+import { isCron, requireUser, authErrorResponse } from "../_shared/auth.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -144,15 +145,30 @@ serve(async (req) => {
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? ""
   );
 
+  // Autorização (audit SEC-06/SEC-15): cron sincroniza todos; usuário só a própria integração.
+  let scopeUserId: string | null = null;
+  if (!isCron(req)) {
+    try {
+      const { user } = await requireUser(req);
+      scopeUserId = user.id;
+    } catch (e) {
+      const resp = authErrorResponse(e, corsHeaders);
+      if (resp) return resp;
+      throw e;
+    }
+  }
+
   try {
     console.log('🔄 Meta Campaign Auto Sync function started');
 
-    // Get all active Meta Ads integrations
-    const { data: integrations, error: integrationsError } = await supabaseClient
+    // Integrações Meta Ads ativas (todas no cron; apenas a do usuário quando chamado pelo app)
+    let integrationsQuery = supabaseClient
       .from('integrations')
       .select('user_id, access_token, ad_account_id')
       .eq('provider', 'meta_ads')
       .eq('status', 'active');
+    if (scopeUserId) integrationsQuery = integrationsQuery.eq('user_id', scopeUserId);
+    const { data: integrations, error: integrationsError } = await integrationsQuery;
 
     if (integrationsError) {
       throw new Error(`Error fetching integrations: ${integrationsError.message}`);

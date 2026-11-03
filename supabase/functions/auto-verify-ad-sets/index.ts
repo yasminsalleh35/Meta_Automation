@@ -1,6 +1,7 @@
 import { serve } from 'https://deno.land/std@0.190.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { toMessage, toObject } from '../_shared/errors.ts'
+import { isCron, requireAdmin, authErrorResponse } from '../_shared/auth.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -10,6 +11,17 @@ const corsHeaders = {
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
+  }
+
+  // Multi-tenant com service role: cron ou admin (botão manual) — audit SEC-06/SEC-11
+  if (!isCron(req)) {
+    try {
+      await requireAdmin(req)
+    } catch (e) {
+      const resp = authErrorResponse(e, corsHeaders)
+      if (resp) return resp
+      throw e
+    }
   }
 
   try {

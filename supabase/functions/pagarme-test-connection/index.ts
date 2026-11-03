@@ -59,8 +59,10 @@ function basicAuthFromSecret(secret: string): string {
 // Helper: Create secure fingerprint of secret key
 // =============================================
 function maskFingerprint(sk: string): string {
-  if (!sk || sk.length <= 14) return sk || 'n/a';
-  return `${sk.slice(0, 12)}...${sk.slice(-4)}`; // ex: sk_test_add2...0887
+  // Só o tipo da chave e os 4 últimos caracteres (audit SEC-17)
+  if (!sk) return 'n/a';
+  const kind = sk.startsWith('sk_test_') ? 'sk_test_' : sk.startsWith('sk_') ? 'sk_' : '?';
+  return `${kind}…${sk.slice(-4)}`;
 }
 
 // =============================================
@@ -126,7 +128,7 @@ async function probePagarmeV5(secret: string, environment: 'test' | 'live'): Pro
     logStep('⚠️ Secret key prefix mismatch', {
       environment,
       expectedPrefix,
-      actualPrefix: secret.substring(0, 8)
+      actualPrefix: secret.startsWith('sk_test_') ? 'sk_test_' : secret.startsWith('sk_') ? 'sk_' : 'other'
     });
   }
 

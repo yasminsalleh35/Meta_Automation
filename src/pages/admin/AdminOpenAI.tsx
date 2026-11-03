@@ -136,7 +136,7 @@ Quando responder, considere sempre o contexto específico da plataforma (Meta ou
     setIsLoading(true);
     
     try {
-      console.log('🔄 Salvando configuração de IA...', config);
+      console.log('🔄 Salvando configuração de IA...');
       
       // Verificar permissões
       if (role !== 'super_admin') {

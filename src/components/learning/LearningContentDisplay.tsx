@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { PlayCircle, FileText, HelpCircle, TrendingUp, ExternalLink } from 'lucide-react';
 import { useSupabaseLearningContent } from '@/hooks/useSupabaseLearningContent';
 import { VideoModal } from '@/components/video/VideoModal';
+import { safeUrl } from '@/lib/safeUrl';
 
 interface LearningContentDisplayProps {
   contentType?: 'video' | 'guide' | 'tutorial' | 'article';
@@ -67,7 +68,7 @@ export const LearningContentDisplay: React.FC<LearningContentDisplayProps> = ({
     } else {
       await trackView(content.id);
       if (content.content_url) {
-        window.open(content.content_url, '_blank');
+        window.open(safeUrl(content.content_url), '_blank', 'noopener,noreferrer');
       }
     }
   };
@@ -151,7 +152,7 @@ export const LearningContentDisplay: React.FC<LearningContentDisplayProps> = ({
                     {content.supplementary_material.slice(0, 2).map((material: any, index: number) => (
                       <a 
                         key={index}
-                        href={material.url} 
+                        href={safeUrl(material.url)}
                         target="_blank" 
                         rel="noopener noreferrer"
                         className="text-xs text-blue-600 hover:underline block"

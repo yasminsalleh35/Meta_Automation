@@ -146,7 +146,7 @@ const MetaAdsIntegration: React.FC<MetaAdsIntegrationProps> = ({
   }
 
   // Mostrar erro APENAS se não estiver loading E não tiver config
-  if (!globalConfig?.appId || !globalConfig?.appSecret) {
+  if (!globalConfig?.appId) {
     return (
       <Alert className="border-red-200 bg-red-50">
         <AlertTriangle className="h-4 w-4 text-red-600" />

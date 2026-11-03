@@ -7,6 +7,7 @@ import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { sendEmail } from '../_shared/emailClient.ts';
 import { toMessage, toObject } from '../_shared/errors.ts';
+import { isServiceRole } from '../_shared/auth.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -21,6 +22,14 @@ serve(async (req) => {
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
+  }
+
+  // Interna: cria contas confirmadas — apenas service role (audit SEC-06/SEC-10)
+  if (!isServiceRole(req)) {
+    return new Response(JSON.stringify({ error: 'forbidden' }), {
+      status: 403,
+      headers: { 'Content-Type': 'application/json', ...corsHeaders },
+    });
   }
 
   try {
@@ -133,7 +142,7 @@ serve(async (req) => {
       type: 'recovery',
       email: email,
       options: {
-        redirectTo: `${Deno.env.get('SUPABASE_URL') || ''}.replace('/supabase', '')}/setup-password?from=guest_checkout`
+        redirectTo: `${Deno.env.get('SITE_URL') || 'https://iacamply.com'}/auth/set-password?from=guest_checkout`
       }
     });
 

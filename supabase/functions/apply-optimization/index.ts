@@ -123,21 +123,40 @@ serve(async (req) => {
         case 'update_budget':
         case 'increase_budget':
         case 'decrease_budget': {
-          const objectId = action?.meta_object_id || campaign.meta_campaign_id;
+          // Valores vindos do modelo NÃO são confiáveis (audit SEC-15):
+          // objeto só pode ser a campanha/ad set do próprio usuário; campo só orçamento; ±30% do valor REAL.
+          const allowedObjects = [campaign.meta_campaign_id, campaign.meta_adset_id].filter(Boolean).map(String);
+          const objectId = String(action?.meta_object_id || campaign.meta_campaign_id || '');
+          if (!allowedObjects.includes(objectId)) {
+            throw new Error('Objeto da sugestão não pertence a esta campanha.');
+          }
           const budgetField = action?.field || 'daily_budget';
-          const newValue = action?.suggested_value;
-
-          if (!newValue || newValue <= 0) {
+          if (!['daily_budget', 'lifetime_budget'].includes(budgetField)) {
+            throw new Error('Campo de orçamento inválido na sugestão.');
+          }
+          const requested = Number(action?.suggested_value);
+          if (!Number.isFinite(requested) || requested <= 0) {
             throw new Error('Valor de orçamento inválido. Verifique a sugestão e tente novamente.');
           }
 
-          // Fetch current budget from Meta
+          // Orçamento atual lido da Meta (fonte da verdade) — obrigatório para o limite
           const currentRes = await fetch(
             `${baseUrl}/${objectId}?fields=daily_budget,lifetime_budget,status&access_token=${accessToken}`
           );
-          if (currentRes.ok) {
-            beforeState = await currentRes.json();
+          if (!currentRes.ok) {
+            throw new Error('Não foi possível ler o orçamento atual na Meta.');
           }
+          beforeState = await currentRes.json();
+          const currentCents = Number(beforeState[budgetField]);
+          if (!Number.isFinite(currentCents) || currentCents <= 0) {
+            throw new Error('Este objeto não usa esse tipo de orçamento na Meta.');
+          }
+          const currentValue = currentCents / 100;
+          const MAX_CHANGE = 0.30;
+          const newValue = Math.min(
+            Math.max(requested, currentValue * (1 - MAX_CHANGE)),
+            currentValue * (1 + MAX_CHANGE),
+          );
 
           // Apply budget update (Meta uses cents)
           const budgetInCents = Math.round(newValue * 100);
@@ -170,7 +189,8 @@ serve(async (req) => {
               [budgetField === 'daily_budget' ? 'budget_daily' : 'budget_total']: newValue,
               updated_at: new Date().toISOString(),
             })
-            .eq('id', campaign.id);
+            .eq('id', campaign.id)
+            .eq('user_id', user.id);
 
           console.log(`✅ [APPLY-OPT] Budget updated: ${beforeState.daily_budget} → ${afterState.daily_budget}`);
           break;

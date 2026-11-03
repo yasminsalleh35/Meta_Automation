@@ -24,6 +24,8 @@ export default tseslint.config(
         { allowConstantExport: true },
       ],
       "@typescript-eslint/no-unused-vars": "off",
+      // audit SEC-17: nada de log/debug em produção (build também remove via esbuild.pure)
+      "no-console": ["warn", { allow: ["warn", "error"] }],
     },
   }
 );

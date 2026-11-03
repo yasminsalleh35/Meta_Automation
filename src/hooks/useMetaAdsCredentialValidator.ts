@@ -36,10 +36,10 @@ export const useMetaAdsCredentialValidator = () => {
     permissionLevel: 'required' = 'required'
   ) => {
     // Use global config if no specific credentials provided
+    // O app secret fica só no servidor (audit SEC-04); o OAuth precisa apenas do app id
     const effectiveAppId = appId || globalConfig?.appId;
-    const effectiveAppSecret = appSecret || globalConfig?.appSecret;
 
-    if (!effectiveAppId || !effectiveAppSecret) {
+    if (!effectiveAppId) {
       throw new Error('Configurações Meta Ads não encontradas. Entre em contato com o administrador.');
     }
 
@@ -69,14 +69,28 @@ export const useMetaAdsCredentialValidator = () => {
       
       // Use unified scopes from permissionLevels
       const requestedScopes = selectedPermissions.scopes;
-      
+
+      // CSRF (audit SEC-14): state aleatório registrado no servidor para este usuário
+      const { data: { user: currentUser } } = await supabase.auth.getUser();
+      if (!currentUser) {
+        throw new Error('Sessão expirada. Faça login novamente.');
+      }
+      const oauthState = `${crypto.randomUUID()}${crypto.randomUUID()}`.replace(/-/g, '');
+      const { error: stateError } = await supabase
+        .from('oauth_states' as any)
+        .insert({ state: oauthState, user_id: currentUser.id, provider: 'meta_ads' });
+      if (stateError) {
+        console.error('❌ Failed to register OAuth state:', stateError.message);
+        throw new Error('Não foi possível iniciar a conexão com a Meta. Tente novamente.');
+      }
+
       // ✅ CORREÇÃO: URL OAuth atualizada para v19.0 e parâmetros corrigidos
       const params = new URLSearchParams({
         client_id: effectiveAppId,
         redirect_uri: redirectUri,
         scope: requestedScopes.join(','),
         response_type: 'code',
-        state: `meta_ads_oauth_${permissionLevel}_${Date.now()}`, // ✅ CORREÇÃO: State único
+        state: oauthState,
         display: 'popup',  // ✅ CORREÇÃO: Especificar display para popup
         auth_type: 'rerequest' // 👈 Força reapresentar consentimentos e exibir link da política
       });
@@ -84,11 +98,8 @@ export const useMetaAdsCredentialValidator = () => {
       // ✅ CORREÇÃO: Usar v19.0 conforme objetivo
       const oauthUrl = `https://www.facebook.com/v19.0/dialog/oauth?${params.toString()}`;
       
-      console.log('🔗 Opening OAuth URL:', oauthUrl);
       console.log('📍 Redirect URI:', redirectUri);
       console.log('🔑 Requested scopes:', requestedScopes.join(','));
-      console.log('🏷️ State parameter:', params.get('state'));
-      console.log('🔄 Auth type: rerequest (forces policy display)');
       
       // ✅ CORREÇÃO: Melhor configuração e detecção de popup
       const popupFeatures = [
@@ -201,7 +212,7 @@ export const useMetaAdsCredentialValidator = () => {
                 return;
               }
 
-              console.log('✅ Integration found:', integration);
+              console.log('✅ Integration found');
               setCurrentPermissions(['ads_management', 'pages_show_list']);
 
               toast({

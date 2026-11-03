@@ -150,11 +150,7 @@ export const useMonitoringDashboard = () => {
       await supabase.functions.invoke('metrics-cache-refresh', {
         body: { mode: 'refresh_user', user_id: user.id, date_preset: 'last_7d' },
       });
-
-      // Also check for alerts
-      await supabase.functions.invoke('metrics-cache-refresh', {
-        body: { mode: 'check_alerts' },
-      });
+      // check_alerts roda via pg_cron (multi-tenant, audit SEC-11)
 
       // Reload data
       await Promise.all([fetchCampaignMetrics(), fetchAlerts(), fetchApiUsage()]);

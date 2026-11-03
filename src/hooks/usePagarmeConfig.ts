@@ -165,7 +165,7 @@ export const usePagarmeConfig = () => {
           throw error;
         }
 
-        console.log('[usePagarmeConfig] Insert successful, data:', data);
+        console.log('[usePagarmeConfig] Insert successful');
         configId = data.id;
       }
 

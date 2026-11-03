@@ -1,10 +1,9 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { CheckCircle, ArrowRight, Crown, Sparkles, Calendar } from 'lucide-react';
-import { PasswordSetupModal } from '@/components/checkout/PasswordSetupModal';
 
 const CheckoutSuccess: React.FC = () => {
   const { user, isAuthenticated, loading } = useAuth();
@@ -12,32 +11,22 @@ const CheckoutSuccess: React.FC = () => {
   const [searchParams] = useSearchParams();
   const sessionId = searchParams.get('session_id');
   const isNewUser = searchParams.get('new_user') === 'true';
-  const [showPasswordSetup, setShowPasswordSetup] = useState(false);
-  
+
   // Guest checkout parameters
   const guestEmail = searchParams.get('guest_email');
   const guestName = searchParams.get('guest_name');
   const paymentMethod = searchParams.get('payment_method');
-  const isGuestCheckout = !!(guestEmail && guestName && paymentMethod === 'pagarme_parcelado');
+  // Novos compradores recebem por email o link para criar a senha (create-guest-user / pagarme-webhook)
+  const isGuestCheckout = !!(guestEmail && guestName && paymentMethod === 'pagarme_parcelado') || (!isAuthenticated && isNewUser);
 
   useEffect(() => {
-    if (!loading && !isAuthenticated && isNewUser && sessionId) {
-      setShowPasswordSetup(true);
-    } else if (!loading && !isAuthenticated && !isNewUser && !isGuestCheckout) {
+    if (!loading && !isAuthenticated && !isGuestCheckout) {
       navigate('/auth/login');
     }
-  }, [isAuthenticated, loading, navigate, isNewUser, sessionId, isGuestCheckout]);
+  }, [isAuthenticated, loading, navigate, isGuestCheckout]);
 
   const handleGoToDashboard = () => {
-    navigate('/dashboard?subscription=active');
-  };
-
-  const handlePasswordSetupSuccess = () => {
-    setShowPasswordSetup(false);
-    // User should now be authenticated, redirect to dashboard
-    setTimeout(() => {
-      navigate('/dashboard?subscription=active&welcome=true');
-    }, 500);
+    navigate('/dashboard');
   };
 
   const benefits = [
@@ -79,9 +68,9 @@ const CheckoutSuccess: React.FC = () => {
             <p className="text-lg text-gray-600 mb-6">
               {isGuestCheckout ? (
                 <>
-                  Parabéns, <strong>{guestName}</strong>! Seu pagamento foi processado com sucesso.
+                  Parabéns{guestName ? <>, <strong>{guestName}</strong></> : ''}! Seu pagamento foi processado com sucesso.
                   <br />
-                  Você receberá um email em <strong>{guestEmail}</strong> para criar sua senha e acessar sua conta Premium.
+                  Você receberá um email {guestEmail ? <>em <strong>{guestEmail}</strong> </> : ''}para criar sua senha e acessar sua conta Premium.
                 </>
               ) : (
                 <>
@@ -125,7 +114,7 @@ const CheckoutSuccess: React.FC = () => {
             <p className="text-sm text-blue-800">
               {isGuestCheckout ? (
                 <>
-                  📧 Enviamos um email para <strong>{guestEmail}</strong> com as instruções para configurar sua senha e acessar sua conta Premium.
+                  📧 Enviamos um email {guestEmail ? <>para <strong>{guestEmail}</strong> </> : ''}com as instruções para configurar sua senha e acessar sua conta Premium.
                 </>
               ) : (
                 <>
@@ -189,16 +178,6 @@ const CheckoutSuccess: React.FC = () => {
           )}
         </CardContent>
       </Card>
-
-      {/* Password Setup Modal for New Users */}
-      {showPasswordSetup && sessionId && (
-        <PasswordSetupModal
-          isOpen={showPasswordSetup}
-          email={user?.email || undefined}
-          sessionId={sessionId}
-          onSuccess={handlePasswordSetupSuccess}
-        />
-      )}
     </div>
   );
 };

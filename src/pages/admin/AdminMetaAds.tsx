@@ -80,7 +80,8 @@ const AdminMetaAds: React.FC = () => {
                 type="password"
                 value={globalConfig.appSecret}
                 onChange={(e) => setGlobalConfig({...globalConfig, appSecret: e.target.value})}
-                placeholder="Seu Meta App Secret"
+                placeholder={globalConfig.appSecretSet ? "•••••••• (salvo — deixe em branco para manter)" : "Seu Meta App Secret"}
+                autoComplete="new-password"
               />
             </div>
           </div>

@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.49.8';
+import { requireUser, authErrorResponse } from '../_shared/auth.ts';
+import { loadPagarmeConfig, assertOwnsPagarmeSubscription } from '../_shared/pagarme.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -18,29 +19,24 @@ serve(async (req: Request): Promise<Response> => {
   try {
     logStep('🚀 Starting card update');
 
-    const supabase = createClient(
-      Deno.env.get('SUPABASE_URL')!,
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-    );
+    // Usuário logado e dono da assinatura (audit SEC-10 / PAY-07)
+    const { user, db: supabase } = await requireUser(req);
 
     const body = await req.json();
-    const { subscription_id, token, card_hash } = body;
+    const { subscription_id, token, card_id, card_hash } = body;
 
-    if (!subscription_id) {
-      throw new Error('subscription_id is required');
+    if (!subscription_id || (!token && !card_id && !card_hash)) {
+      return new Response(JSON.stringify({ success: false, error: 'subscription_id and card token are required' }), {
+        status: 400, headers: { 'Content-Type': 'application/json', ...corsHeaders }
+      });
     }
 
-    if (!token && !card_hash) {
-      throw new Error('Either token or card_hash is required');
-    }
+    await assertOwnsPagarmeSubscription(supabase, user.id, subscription_id);
 
     logStep('📝 Request validated', { subscription_id, has_token: !!token, has_card_hash: !!card_hash });
 
-    // Get Pagar.me config
-    const { data: config, error: configError } = await supabase.rpc('get_pagarme_config_for_functions');
-    if (configError || !config?.secret_key) {
-      throw new Error('Pagar.me config not found');
-    }
+    // Get Pagar.me config (PAY-05: RPC retorna lista; sempre com ambiente)
+    const config = await loadPagarmeConfig(supabase);
 
     logStep('✅ Config loaded');
 
@@ -49,9 +45,13 @@ serve(async (req: Request): Promise<Response> => {
       payment_method: 'credit_card'
     };
 
+    // V5: token do tokenizecard → card_token; cartão salvo → card_id (PAY-07)
     if (token) {
-      updatePayload.card_id = token;
+      updatePayload.card_token = token;
+    } else if (card_id) {
+      updatePayload.card_id = card_id;
     } else if (card_hash) {
+      // TODO(PAY-07/PAY-12): card_hash é do SDK V4; trocar UpdateCardForm para tokenização V5
       updatePayload.card_hash = card_hash;
     }
 
@@ -97,6 +97,8 @@ serve(async (req: Request): Promise<Response> => {
 
   } catch (error: any) {
     logStep('💥 Error updating card', error.message);
+    const authResp = authErrorResponse(error, corsHeaders);
+    if (authResp) return authResp;
 
     return new Response(JSON.stringify({
       success: false,

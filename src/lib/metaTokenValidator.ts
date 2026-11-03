@@ -100,12 +100,9 @@ class MetaTokenValidator {
     }
 
     try {
+      // O app secret é lido no servidor; o navegador não o envia (audit SEC-04)
       const { data, error } = await supabase.functions.invoke('meta-validation', {
-        body: {
-          accessToken,
-          appId: globalConfig.appId,
-          appSecret: globalConfig.appSecret
-        }
+        body: {}
       });
 
       if (error) {

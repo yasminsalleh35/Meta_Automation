@@ -1,6 +1,8 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { toMessage, toObject } from '../_shared/errors.ts';
+import { requireUser, authErrorResponse } from '../_shared/auth.ts';
+import { consumeAiQuota } from '../_shared/aiQuota.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -94,6 +96,16 @@ serve(async (req) => {
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
+  }
+
+  // IA paga: exige usuário logado (audit SEC-06). Limite por usuário: SEC-10.
+  try {
+    const { user, db } = await requireUser(req);
+    await consumeAiQuota(db, user.id, 'ai-suggestions');
+  } catch (e) {
+    const resp = authErrorResponse(e, corsHeaders);
+    if (resp) return resp;
+    throw e;
   }
 
   // Objetivo é opcional: usamos um padrão sensato para que o botão nunca falhe por falta de input.

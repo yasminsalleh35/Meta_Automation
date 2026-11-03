@@ -5,7 +5,6 @@ import { CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
 const MetaCallbackGeneral = () => {
   useEffect(() => {
     console.log('🔗 MetaCallbackGeneral: Component mounted');
-    console.log('🌐 MetaCallbackGeneral: Current URL:', window.location.href);
     console.log('🎯 MetaCallbackGeneral: Expected origin:', window.location.origin);
     
     // Parse dos parâmetros da URL
@@ -18,9 +17,7 @@ const MetaCallbackGeneral = () => {
     console.log('📋 MetaCallbackGeneral: URL params:', { 
       hasCode: !!code, 
       hasError: !!error, 
-      errorDescription, 
-      state,
-      fullUrl: window.location.href
+      errorDescription
     });
 
     // Verificar se estamos na URL correta

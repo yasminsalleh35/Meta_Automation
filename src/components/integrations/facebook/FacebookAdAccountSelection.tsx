@@ -42,7 +42,7 @@ const FacebookAdAccountSelection: React.FC = () => {
 
       await saveIntegration(
         existingIntegration.app_id || '',
-        existingIntegration.app_secret || '',
+        '', // app secret nunca no navegador (SEC-04/SEC-12)
         existingIntegration.access_token || '',
         [accountId],
         existingIntegration.selected_pages || [],

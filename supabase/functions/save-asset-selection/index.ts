@@ -146,7 +146,8 @@ Deno.serve(async (req) => {
       .from('integrations')
       .update(updateData)
       .eq('id', integrationToUpdate.id)
-      .select()
+      // Nunca devolver access_token/app_secret ao navegador (audit SEC-12)
+      .select('id, ad_account_id, page_id, selected_page_ids, selected_instagram_ids, selected_accounts, selected_pages, updated_at')
       .single();
 
     if (updateError) {

@@ -25,30 +25,36 @@ interface UserWithIntegration extends User {
   integration?: Integration;
 }
 
+// appSecret é somente escrita: vazio = manter o segredo salvo (audit SEC-04)
 interface GlobalConfig {
   appId: string;
   appSecret: string;
+  appSecretSet: boolean;
   businessManagerId: string;
 }
 
-interface MetaAdsConfig {
+interface MetaAdsAdminConfigRow {
   id: string;
   app_id: string;
-  app_secret: string;
+  app_secret_set: boolean;
   business_manager_id: string | null;
   created_at: string;
   updated_at: string;
 }
 
+// Colunas não sensíveis — nunca access_token (audit SEC-12)
+const INTEGRATION_PUBLIC_COLUMNS = 'id, user_id, provider, status, created_at, app_id, ad_account_id, page_id';
+
 export const useMetaAdsAdmin = () => {
   const { toast } = useToast();
   const supabase = useSupabase();
-  
+
   const [users, setUsers] = useState<UserWithIntegration[]>([]);
   const [loading, setLoading] = useState(true);
   const [globalConfig, setGlobalConfig] = useState<GlobalConfig>({
     appId: '',
     appSecret: '',
+    appSecretSet: false,
     businessManagerId: ''
   });
 
@@ -63,7 +69,7 @@ export const useMetaAdsAdmin = () => {
       // Buscar todas as integrações Meta Ads
       const { data: integrationsData, error: integrationsError } = await supabase
         .from('integrations')
-        .select('*')
+        .select(INTEGRATION_PUBLIC_COLUMNS)
         .eq('provider', 'meta_ads');
 
       if (integrationsError) throw integrationsError;
@@ -71,7 +77,7 @@ export const useMetaAdsAdmin = () => {
       // Combinar dados
       const usersWithIntegrations: UserWithIntegration[] = usersData.map(user => ({
         ...user,
-        integration: integrationsData.find(int => int.user_id === user.id)
+        integration: (integrationsData as Integration[]).find(int => int.user_id === user.id)
       }));
 
       setUsers(usersWithIntegrations);
@@ -89,21 +95,20 @@ export const useMetaAdsAdmin = () => {
 
   const fetchMetaAdsConfig = async () => {
     try {
-      console.log('Fetching Meta Ads config...');
-      const { data, error } = await supabase.rpc('get_meta_ads_config');
+      const { data, error } = await supabase.rpc('admin_get_meta_ads_config' as any);
 
       if (error) {
-        console.error('Error fetching Meta Ads config:', error);
+        console.error('Error fetching Meta Ads config:', error.message);
         return;
       }
 
-      console.log('Meta Ads config fetched:', data);
-
-      if (data && data.length > 0) {
-        const config = data[0] as MetaAdsConfig;
+      const rows = (data as MetaAdsAdminConfigRow[] | null) ?? [];
+      if (rows.length > 0) {
+        const config = rows[0];
         setGlobalConfig({
           appId: config.app_id,
-          appSecret: config.app_secret,
+          appSecret: '',
+          appSecretSet: config.app_secret_set,
           businessManagerId: config.business_manager_id || ''
         });
       }
@@ -113,7 +118,7 @@ export const useMetaAdsAdmin = () => {
   };
 
   const saveGlobalConfig = async () => {
-    if (!globalConfig.appId || !globalConfig.appSecret) {
+    if (!globalConfig.appId || (!globalConfig.appSecret && !globalConfig.appSecretSet)) {
       toast({
         title: "Campos obrigatórios",
         description: "App ID e App Secret são obrigatórios.",
@@ -123,20 +128,16 @@ export const useMetaAdsAdmin = () => {
     }
 
     try {
-      console.log('Saving global config:', globalConfig);
-
-      const { data, error } = await supabase.rpc('upsert_meta_ads_config', {
+      const { error } = await supabase.rpc('admin_upsert_meta_ads_config' as any, {
         p_app_id: globalConfig.appId,
-        p_app_secret: globalConfig.appSecret,
+        p_app_secret: globalConfig.appSecret || null, // null = manter o atual
         p_business_manager_id: globalConfig.businessManagerId || null
       });
 
       if (error) {
-        console.error('Error saving Meta Ads config:', error);
+        console.error('Error saving Meta Ads config:', error.message);
         throw error;
       }
-
-      console.log('Global config saved successfully:', data);
 
       toast({
         title: "Configurações salvas!",
@@ -146,7 +147,6 @@ export const useMetaAdsAdmin = () => {
       // Recarregar configurações
       await fetchMetaAdsConfig();
     } catch (error) {
-      console.error('Error saving config:', error);
       toast({
         title: "Erro ao salvar",
         description: "Não foi possível salvar as configurações.",
@@ -156,62 +156,13 @@ export const useMetaAdsAdmin = () => {
     }
   };
 
+  // Cada usuário conecta a própria conta Meta (OAuth com o próprio login).
+  // O admin não pode concluir o OAuth em nome de outro usuário.
   const configureIntegration = async (user: UserWithIntegration) => {
-    if (!globalConfig.appId || !globalConfig.appSecret) {
-      toast({
-        title: "Configuração incompleta",
-        description: "Configure as credenciais globais do Meta App primeiro.",
-        variant: "destructive"
-      });
-      return;
-    }
-
-    try {
-      // Gerar URL de OAuth
-      const redirectUri = `${window.location.origin}/admin/meta-ads`;
-      const scopes = [
-        'ads_management',
-        'pages_read_engagement', 
-        'pages_show_list',
-        'business_management',
-        'read_insights'
-      ].join(',');
-      
-      const params = new URLSearchParams({
-        client_id: globalConfig.appId,
-        redirect_uri: redirectUri,
-        scope: scopes,
-        response_type: 'code',
-        state: `user_${user.id}`
-      });
-      
-      const oauthUrl = `https://www.facebook.com/v18.0/dialog/oauth?${params.toString()}`;
-      
-      // Abrir OAuth em nova janela
-      const authWindow = window.open(
-        oauthUrl,
-        'meta-auth',
-        'width=600,height=700,scrollbars=yes,resizable=yes'
-      );
-
-      // Simular integração bem-sucedida (em produção seria o resultado do OAuth)
-      setTimeout(() => {
-        authWindow?.close();
-        toast({
-          title: "Integração configurada!",
-          description: `Meta Ads conectado para ${user.email}`,
-        });
-        fetchUsersAndIntegrations();
-      }, 2000);
-
-    } catch (error) {
-      console.error('Error configuring integration:', error);
-      toast({
-        title: "Erro na configuração",
-        description: "Não foi possível configurar a integração.",
-        variant: "destructive"
-      });
-    }
+    toast({
+      title: "Conexão feita pelo próprio usuário",
+      description: `Peça para ${user.email} conectar a conta Meta em Integrações no painel dele.`,
+    });
   };
 
   const disconnectIntegration = async (user: UserWithIntegration) => {

@@ -63,7 +63,7 @@ export const useRobustIntegration = () => {
         setIntegrations([]);
         setError(`Erro ao carregar integrações: ${queryError.message}`);
       } else {
-        console.log('✅ Integrations fetched successfully:', data);
+        console.log('✅ Integrations fetched successfully:', data?.length ?? 0);
         setIntegrations(data ? [data] : []);
       }
     } catch (error) {

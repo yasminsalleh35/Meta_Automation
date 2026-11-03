@@ -1,5 +1,6 @@
 
 import mapboxgl from 'mapbox-gl';
+import { escapeHtml } from '@/lib/safeUrl';
 
 export const createCircle = (center: [number, number], radiusKm: number): GeoJSON.Feature<GeoJSON.Polygon> => {
   const points = 64;
@@ -111,7 +112,7 @@ export const addMarker = (
 
   const popup = new mapboxgl.Popup({ offset: 25 }).setHTML(
     `<div class="p-2">
-      <div class="font-medium">${title}</div>
+      <div class="font-medium">${escapeHtml(title)}</div>
       <div class="text-sm text-gray-600">${lat.toFixed(4)}, ${lng.toFixed(4)}</div>
       ${showRadius && radius > 0 ? `<div class="text-xs text-gray-500">Raio: ${radius}km</div>` : ''}
     </div>`

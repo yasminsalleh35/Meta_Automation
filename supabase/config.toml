@@ -10,7 +10,7 @@ max_rows = 1000
 [auth]
 enabled = true
 site_url = "https://iacamply.com"
-additional_redirect_urls = ["https://iacamply.com/auth/reset-password", "https://ibwhqkgvrkkqxiksbiqr.supabase.co"]
+additional_redirect_urls = ["https://iacamply.com/auth/reset-password", "https://iacamply.com/auth/set-password", "https://iacamply.com/auth/email-confirmation", "https://ibwhqkgvrkkqxiksbiqr.supabase.co"]
 jwt_expiry = 3600
 enable_signup = true
 
@@ -45,38 +45,18 @@ verify_jwt = true
 [functions.check-pagarme-subscription]
 verify_jwt = true
 
-[functions.guest-checkout]
-verify_jwt = false
-
-[functions.create-checkout]
-verify_jwt = true
-
-[functions.create-payment-intent]
-verify_jwt = false
-
-[functions.customer-portal]
-verify_jwt = true
-
-[functions.get-campaigns]
-verify_jwt = true
-
 [functions.save-campaign]
 verify_jwt = true
 
-[functions.business-settings]
-verify_jwt = true
-
 [functions.meta-campaigns-insights]
-verify_jwt = true
-
-[functions.meta-campaign-management]
 verify_jwt = true
 
 [functions.meta-campaign-bulk-operations]
 verify_jwt = true
 
 [functions.meta-campaign-auto-sync]
-verify_jwt = true
+# cron chama só com x-cron-secret; a function autentica sozinha (isCron ou requireUser)
+verify_jwt = false
 
 [functions.verify-and-correct-ad-set]
 verify_jwt = true
@@ -85,9 +65,6 @@ verify_jwt = true
 verify_jwt = false
 
 [functions.manage-snapshots]
-verify_jwt = true
-
-[functions.meta-campaigns-list]
 verify_jwt = true
 
 [functions.lead-quiz-submit]
@@ -99,12 +76,6 @@ verify_jwt = true
 [functions.meta-targeting-search]
 verify_jwt = true
 
-[functions.security-audit]
-verify_jwt = true
-
-[functions.meta-campaigns-enhanced]
-verify_jwt = true
-
 [functions.meta-selection]
 verify_jwt = true
 
@@ -114,17 +85,11 @@ verify_jwt = true
 [functions.ai-suggestions]
 verify_jwt = false
 
-[functions.pagarme-init]
-verify_jwt = true
-
 [functions.pagarme-test-connection]
 verify_jwt = true
 
 [functions.pagarme-webhook]
 verify_jwt = false
-
-[functions.pagarme-calc]
-verify_jwt = true
 
 [functions.meta-oauth-exchange]
 verify_jwt = true
@@ -156,9 +121,6 @@ verify_jwt = false
 [functions.pagarme-create-plans]
 verify_jwt = true
 
-[functions.pagarme-public-config]
-verify_jwt = false
-
 [functions.send-account-creation]
 verify_jwt = false
 
@@ -184,12 +146,6 @@ verify_jwt = true
 verify_jwt = true
 
 [functions.update-campaign-budget]
-verify_jwt = true
-
-[functions.meta-discovery-initial]
-verify_jwt = true
-
-[functions.meta-discovery-diff]
 verify_jwt = true
 
 [functions.meta-sync-actives]
@@ -227,9 +183,6 @@ verify_jwt = true
 
 [functions.asaas-create-checkout]
 verify_jwt = true
-
-[functions.asaas-process-checkout-success]
-verify_jwt = false
 
 [functions.quiz-lead-scoring]
 verify_jwt = true

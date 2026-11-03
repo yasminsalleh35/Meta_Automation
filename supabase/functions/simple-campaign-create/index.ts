@@ -296,48 +296,9 @@ async function saveToContingency(
         user_id: userId,
         error_stage: errorStage
       });
-
-      // ✅ NOVO: Acionar auto-retry wa.me (fire-and-forget)
-      try {
-        logger('info', 'AUTO-RETRY-TRIGGER', '🔄 Acionando tentativa automática via wa.me', {
-          contingency_id: data.id
-        });
-
-        // Buscar access_token completo da integração
-        const { data: integrationData } = await supabaseClient
-          .from('integrations')
-          .select('access_token')
-          .eq('user_id', userId)
-          .eq('provider', 'meta_ads')
-          .eq('status', 'active')
-          .single();
-
-        if (!integrationData?.access_token) {
-          logger('warn', 'AUTO-RETRY-SKIP', '⚠️ Access token não encontrado, pulando auto-retry');
-        } else {
-          // Invocar edge function de forma assíncrona (não aguardar resposta)
-          supabaseClient.functions.invoke('contingency-auto-retry-walink', {
-            body: {
-              contingency_id: data.id,
-              user_id: userId,
-              campaign_data: payload,
-              ad_account_id: integration.ad_account_id,
-              page_id: integration.page_id,
-              instagram_id: payload.instagram,
-              access_token: integrationData.access_token
-            }
-          }).then((result: any) => {
-            logger('info', 'AUTO-RETRY-INVOKED', '✅ Auto-retry invocado', { result });
-          }).catch((err: any) => {
-            logger('error', 'AUTO-RETRY-ERROR', '❌ Erro ao invocar auto-retry', { error: err });
-          });
-        }
-      } catch (autoRetryError) {
-        logger('error', 'AUTO-RETRY-EXCEPTION', '❌ Exceção ao tentar auto-retry', { 
-          error: autoRetryError instanceof Error ? autoRetryError.message : String(autoRetryError)
-        });
-        // Não lançar erro - auto-retry é opcional
-      }
+      // Auto-retry wa.me removido (audit CMP-02): criava uma campanha OUTCOME_TRAFFIC diferente
+      // da configurada pelo usuário. A contingência agora é tratada manualmente pelo admin
+      // (contingency-manual-sync).
     }
   } catch (saveError) {
     logger('error', 'CONTINGENCY-SAVE-CRITICAL', '❌ Erro crítico ao salvar contingência', {

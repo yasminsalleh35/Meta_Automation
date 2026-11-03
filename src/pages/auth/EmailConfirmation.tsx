@@ -44,7 +44,6 @@ const EmailConfirmation: React.FC = () => {
       }
 
       try {
-        console.log('Confirmando email com token:', token);
         
         const { data, error } = await supabase.auth.verifyOtp({
           token_hash: token,

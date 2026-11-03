@@ -5,6 +5,7 @@
 
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.49.8';
+import { isServiceRole } from '../_shared/auth.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -232,6 +233,14 @@ serve(async (req: Request): Promise<Response> => {
     return new Response(null, { headers: corsHeaders });
   }
 
+  // Interna: apenas chamadas entre functions com service role (audit SEC-06)
+  if (!isServiceRole(req)) {
+    return new Response(JSON.stringify({ error: 'forbidden' }), {
+      status: 403,
+      headers: { 'Content-Type': 'application/json', ...corsHeaders },
+    });
+  }
+
   try {
     const supabase = createClient(
       Deno.env.get('SUPABASE_URL')!,
@@ -260,7 +269,7 @@ serve(async (req: Request): Promise<Response> => {
       type: 'recovery',
       email: email,
       options: {
-        redirectTo: 'https://iacamply.com/auth/set-password'
+        redirectTo: `${Deno.env.get('SITE_URL') || 'https://iacamply.com'}/auth/set-password`
       }
     });
 

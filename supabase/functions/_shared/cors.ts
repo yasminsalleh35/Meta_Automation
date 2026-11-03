@@ -9,8 +9,11 @@ const ORIGINS_FROM_ENV =
 
 export const ALLOWED_ORIGINS = [...new Set([...ORIGINS_FROM_ENV, ...DEFAULT_ALLOWED])];
 
+// localhost só quando explicitamente habilitado (dev local) — audit SEC-17
+const ALLOW_LOCALHOST = Deno.env.get("ALLOW_LOCALHOST_ORIGINS") === "true";
+
 function isLocalDev(origin: string): boolean {
-  return /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
+  return ALLOW_LOCALHOST && /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
 }
 
 export function corsHeadersFor(originHeader: string | null) {

@@ -1,6 +1,6 @@
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { requireUser, isAdminUser, authErrorResponse } from '../_shared/auth.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -49,38 +49,38 @@ serve(async (req) => {
   }
 
   try {
-    const supabaseClient = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
-    )
+    // Usuário logado; só verifica ad sets próprios (admin: qualquer) — audit SEC-10/SEC-15
+    const { user, db: supabaseClient } = await requireUser(req)
+    const isAdmin = await isAdminUser(supabaseClient, user.id)
 
-    const { ad_set_id, ad_account_id } = await req.json() as AdSetVerificationRequest
+    const { ad_set_id } = await req.json() as AdSetVerificationRequest
 
     console.log(`🔍 Starting verification for Ad Set: ${ad_set_id}`)
 
     // 1. Buscar dados desejados no Supabase
-    const { data: expectedSettings, error: dbError } = await supabaseClient
+    let settingsQuery = supabaseClient
       .from('expected_ad_set_settings')
       .select('*')
       .eq('ad_set_id', ad_set_id)
-      .single()
+    if (!isAdmin) settingsQuery = settingsQuery.eq('user_id', user.id)
+    const { data: expectedSettings, error: dbError } = await settingsQuery.maybeSingle()
 
     if (dbError || !expectedSettings) {
-      console.error('❌ Expected settings not found:', dbError)
+      console.error('❌ Expected settings not found:', dbError?.message)
       return new Response(
-        JSON.stringify({ 
-          success: false, 
-          error: 'Expected settings not found for this Ad Set',
-          details: dbError 
+        JSON.stringify({
+          success: false,
+          error: 'Expected settings not found for this Ad Set'
         }),
-        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
 
-    const settings = expectedSettings as ExpectedAdSetSettings
+    const settings = expectedSettings as ExpectedAdSetSettings & { user_id: string | null }
 
-    // 2. Buscar dados atuais da Meta API
-    const metaAccessToken = await getMetaAccessToken(supabaseClient, settings.ad_account_id)
+    // 2. Buscar dados atuais da Meta API com o token do DONO do ad set
+    const ownerId = settings.user_id ?? user.id
+    const metaAccessToken = await getMetaAccessToken(supabaseClient, ownerId)
     
     if (!metaAccessToken) {
       throw new Error('Meta access token not found')
@@ -125,12 +125,13 @@ serve(async (req) => {
 
   } catch (error) {
     console.error('❌ Verification failed:', error)
-    
+    const authResp = authErrorResponse(error, corsHeaders)
+    if (authResp) return authResp
+
     return new Response(
       JSON.stringify({
         success: false,
-        error: (error as any)?.message,
-        stack: (error as any)?.stack
+        error: (error as any)?.message
       }),
       { 
         status: 500,
@@ -140,15 +141,16 @@ serve(async (req) => {
   }
 })
 
-async function getMetaAccessToken(supabaseClient: any, adAccountId: string): Promise<string | null> {
+async function getMetaAccessToken(supabaseClient: any, userId: string): Promise<string | null> {
   try {
-    // Buscar token de acesso da integração Meta
+    // Token da integração Meta Ads do próprio usuário (antes: qualquer integração 'meta' — SEC-15)
     const { data: integration } = await supabaseClient
       .from('integrations')
       .select('access_token')
-      .eq('provider', 'meta')
+      .eq('user_id', userId)
+      .eq('provider', 'meta_ads')
       .eq('status', 'active')
-      .single()
+      .maybeSingle()
 
     return integration?.access_token || null
   } catch (error) {
@@ -158,7 +160,8 @@ async function getMetaAccessToken(supabaseClient: any, adAccountId: string): Pro
 }
 
 async function fetchAdSetFromMeta(adSetId: string, accessToken: string): Promise<MetaApiResponse> {
-  const fields = 'name,targeting,daily_budget,lifetime_budget,promoted_object,status,spend'
+  // 'spend' não é campo de ad set (é de insights) — removido (SEC-15)
+  const fields = 'name,targeting,daily_budget,lifetime_budget,promoted_object,status'
   const url = `https://graph.facebook.com/v23.0/${adSetId}?fields=${fields}&access_token=${accessToken}`
 
   console.log(`📡 Fetching Ad Set data from Meta API: ${adSetId}`)

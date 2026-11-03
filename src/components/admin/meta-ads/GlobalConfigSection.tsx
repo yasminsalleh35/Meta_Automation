@@ -10,6 +10,7 @@ import { Key, AlertCircle, Eye, Loader2 } from 'lucide-react';
 interface GlobalConfig {
   appId: string;
   appSecret: string;
+  appSecretSet?: boolean;
   businessManagerId: string;
 }
 
@@ -66,7 +67,8 @@ export const GlobalConfigSection: React.FC<GlobalConfigSectionProps> = ({
                 type={showAppSecret ? "text" : "password"}
                 value={globalConfig.appSecret}
                 onChange={(e) => setGlobalConfig({ ...globalConfig, appSecret: e.target.value })}
-                placeholder="Seu app secret"
+                placeholder={globalConfig.appSecretSet ? "•••••••• (salvo — deixe em branco para manter)" : "Seu app secret"}
+                autoComplete="new-password"
                 className="pr-10"
               />
               <Button
@@ -93,7 +95,7 @@ export const GlobalConfigSection: React.FC<GlobalConfigSectionProps> = ({
 
         <div className="flex justify-between items-center">
           <div>
-            {(!globalConfig.appId || !globalConfig.appSecret) && (
+            {(!globalConfig.appId || (!globalConfig.appSecret && !globalConfig.appSecretSet)) && (
               <Alert className="max-w-md">
                 <AlertCircle className="h-4 w-4" />
                 <AlertDescription>

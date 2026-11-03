@@ -11,6 +11,7 @@
 
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.49.8';
+import { isCron, requireUser, isAdminUser, HttpError } from '../_shared/auth.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -40,6 +41,22 @@ serve(async (req: Request): Promise<Response> => {
 
     const body = await req.json().catch(() => ({}));
     const mode = body.mode || 'refresh_user';
+
+    // Autorização (audit SEC-06/SEC-10): refresh_all/check_alerts são multi-tenant → só cron/service role;
+    // refresh_user apenas para o próprio usuário (admin pode qualquer um).
+    if (!isCron(req)) {
+      if (mode !== 'refresh_user') return json(401, { error: 'forbidden' });
+      try {
+        const { user, db } = await requireUser(req);
+        if (body.user_id && body.user_id !== user.id && !(await isAdminUser(db, user.id))) {
+          return json(403, { error: 'forbidden' });
+        }
+        body.user_id = body.user_id || user.id;
+      } catch (e) {
+        if (e instanceof HttpError) return json(e.status, { error: e.code });
+        throw e;
+      }
+    }
 
     let result: any = {};
 

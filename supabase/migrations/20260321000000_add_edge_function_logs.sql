@@ -39,12 +39,7 @@ CREATE INDEX IF NOT EXISTS idx_efl_user_created
 ALTER TABLE edge_function_logs ENABLE ROW LEVEL SECURITY;
 
 -- Allow authenticated admins to read logs
+-- (audit SEC-10: user_roles, não raw_user_meta_data — esse o próprio usuário edita)
 CREATE POLICY "admins_read_logs" ON edge_function_logs
   FOR SELECT
-  USING (
-    EXISTS (
-      SELECT 1 FROM auth.users u
-      WHERE u.id = auth.uid()
-      AND (u.raw_user_meta_data->>'role' = 'admin' OR u.raw_user_meta_data->>'is_admin' = 'true')
-    )
-  );
+  USING (public.is_admin_or_super_admin());

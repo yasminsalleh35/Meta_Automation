@@ -5,6 +5,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
 import { corsHeadersFor, handlePreflight } from '../_shared/cors.ts';
+import { isServiceRole, requireAdmin, authErrorResponse } from '../_shared/auth.ts';
 
 const supabase = createClient(
   Deno.env.get('SUPABASE_URL') ?? '',
@@ -22,6 +23,23 @@ serve(async (req) => {
   try {
     const body = await req.json();
     const { action } = body;
+
+    // Autorização (audit SEC-10): write só via service role; list/stats só admin (user_roles,
+    // nunca user_metadata, que o próprio usuário pode alterar).
+    if (action === 'write') {
+      if (!isServiceRole(req)) {
+        return new Response(JSON.stringify({ error: 'forbidden' }),
+          { status: 403, headers: { ...headers, 'Content-Type': 'application/json' } });
+      }
+    } else {
+      try {
+        await requireAdmin(req);
+      } catch (e) {
+        const resp = authErrorResponse(e, headers);
+        if (resp) return resp;
+        throw e;
+      }
+    }
 
     // ── Write log entry (called by edge functions via service_role) ──
     if (action === 'write') {
@@ -76,32 +94,6 @@ serve(async (req) => {
 
     // ── Read logs (admin only) ──
     if (action === 'list') {
-      // Verify admin via auth header
-      const authHeader = req.headers.get('Authorization');
-      if (!authHeader) {
-        return new Response(
-          JSON.stringify({ error: 'Auth required' }),
-          { status: 401, headers: { ...headers, 'Content-Type': 'application/json' } }
-        );
-      }
-
-      const token = authHeader.replace('Bearer ', '');
-      const { data: { user }, error: authErr } = await supabase.auth.getUser(token);
-      if (authErr || !user) {
-        return new Response(
-          JSON.stringify({ error: 'Invalid token' }),
-          { status: 401, headers: { ...headers, 'Content-Type': 'application/json' } }
-        );
-      }
-
-      const isAdmin = user.user_metadata?.role === 'admin' || user.user_metadata?.is_admin === true;
-      if (!isAdmin) {
-        return new Response(
-          JSON.stringify({ error: 'Admin access required' }),
-          { status: 403, headers: { ...headers, 'Content-Type': 'application/json' } }
-        );
-      }
-
       // Query params
       const {
         function_name: filterFn,
@@ -110,11 +102,13 @@ serve(async (req) => {
         offset = 0,
       } = body;
 
+      const safeLimit = Math.min(Math.max(Number(limit) || 100, 1), 500);
+      const safeOffset = Math.max(Number(offset) || 0, 0);
       let query = supabase
         .from('edge_function_logs')
         .select('*', { count: 'exact' })
         .order('created_at', { ascending: false })
-        .range(offset, offset + limit - 1);
+        .range(safeOffset, safeOffset + safeLimit - 1);
 
       if (filterFn) query = query.eq('function_name', filterFn);
       if (filterLevel) query = query.eq('level', filterLevel);
@@ -136,31 +130,6 @@ serve(async (req) => {
 
     // ── Stats summary (admin only) ──
     if (action === 'stats') {
-      const authHeader = req.headers.get('Authorization');
-      if (!authHeader) {
-        return new Response(
-          JSON.stringify({ error: 'Auth required' }),
-          { status: 401, headers: { ...headers, 'Content-Type': 'application/json' } }
-        );
-      }
-
-      const token = authHeader.replace('Bearer ', '');
-      const { data: { user }, error: authErr } = await supabase.auth.getUser(token);
-      if (authErr || !user) {
-        return new Response(
-          JSON.stringify({ error: 'Invalid token' }),
-          { status: 401, headers: { ...headers, 'Content-Type': 'application/json' } }
-        );
-      }
-
-      const isAdmin = user.user_metadata?.role === 'admin' || user.user_metadata?.is_admin === true;
-      if (!isAdmin) {
-        return new Response(
-          JSON.stringify({ error: 'Admin access required' }),
-          { status: 403, headers: { ...headers, 'Content-Type': 'application/json' } }
-        );
-      }
-
       // Count errors in last 24h grouped by function
       const since24h = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
 

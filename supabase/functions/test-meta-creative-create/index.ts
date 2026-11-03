@@ -1,6 +1,7 @@
 // Supabase Edge Function: test-meta-creative-create
 // Last updated: 2025-10-09 - ✅ CORREÇÃO v23: IMAGE usa image_url (dark post), VIDEO usa source_instagram_media_id
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
+import { requireAdmin, authErrorResponse } from '../_shared/auth.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -10,6 +11,15 @@ const corsHeaders = {
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
+  }
+
+  // Laboratório de testes Meta: somente admin (audit SEC-06/SEC-10)
+  try {
+    await requireAdmin(req);
+  } catch (e) {
+    const resp = authErrorResponse(e, corsHeaders);
+    if (resp) return resp;
+    throw e;
   }
 
   try {

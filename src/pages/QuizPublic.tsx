@@ -7,6 +7,7 @@ import { Progress } from '@/components/ui/progress';
 import { Button } from '@/components/ui/button';
 import { ArrowLeft, ArrowRight, CheckCircle2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { safeUrl } from '@/lib/safeUrl';
 import { DynamicQuizStep } from '@/components/quiz/DynamicQuizStep';
 
 interface QuizStep {
@@ -197,7 +198,7 @@ const QuizPublic: React.FC = () => {
             {thankYouConfig?.ctaUrl && (
               <Button
                 size="lg"
-                onClick={() => window.location.href = thankYouConfig.ctaUrl}
+                onClick={() => { const url = safeUrl(thankYouConfig.ctaUrl); if (url !== '#') window.location.href = url; }}
                 className="w-full md:w-auto"
               >
                 {thankYouConfig?.ctaText || 'Continuar'}

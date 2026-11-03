@@ -43,6 +43,13 @@ const MetaCallback: React.FC = () => {
         return;
       }
 
+      // CSRF (audit SEC-14): só troca o código dentro do popup aberto pelo app e com state
+      if (!window.opener || window.opener.closed || !state) {
+        console.error('MetaCallback: not opened by the app or missing state');
+        setTimeout(() => window.close(), 1500);
+        return;
+      }
+
       if (!code) {
         console.error('MetaCallback: missing code');
         
@@ -92,7 +99,7 @@ const MetaCallback: React.FC = () => {
         }
 
         // Chamar a Edge Function para trocar o código por token
-        const response = await fetch(`https://ibwhqkgvrkkqxiksbiqr.supabase.co/functions/v1/meta-oauth-exchange`, {
+        const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/meta-oauth-exchange`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -123,7 +130,7 @@ const MetaCallback: React.FC = () => {
         }
 
         const resultData = await response.json();
-        console.log('Meta OAuth exchange successful:', resultData);
+        console.log('Meta OAuth exchange successful');
 
         // ✅ FASE 1: Melhorar comunicação e evitar navegação
         console.log('✅ OAuth completed, posting success message to parent...');

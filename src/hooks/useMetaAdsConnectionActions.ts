@@ -27,7 +27,7 @@ export const useMetaAdsConnectionActions = ({
       console.log('🚀 Starting OAuth connection process...');
       
       // Validar configuração global primeiro
-      if (!globalConfig?.appId || !globalConfig?.appSecret) {
+      if (!globalConfig?.appId) {
         console.error('❌ Global config missing:', globalConfig);
         toast({
           title: "Configuração incompleta",
@@ -39,7 +39,6 @@ export const useMetaAdsConnectionActions = ({
 
       console.log('✅ Global config validated:', {
         hasAppId: !!globalConfig.appId,
-        hasAppSecret: !!globalConfig.appSecret,
         businessManagerId: globalConfig.businessManagerId
       });
 

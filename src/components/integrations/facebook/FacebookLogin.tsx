@@ -18,13 +18,13 @@ const FacebookLogin: React.FC = () => {
 
   const handleConnect = async () => {
     try {
-      if (!globalConfig?.appId || !globalConfig?.appSecret) {
+      if (!globalConfig?.appId) {
         throw new Error('Configuração Meta não encontrada');
       }
 
       await validateCredentials(
         globalConfig.appId,
-        globalConfig.appSecret,
+        undefined,
         'required'
       );
       
@@ -143,7 +143,7 @@ const FacebookLogin: React.FC = () => {
       <p className="text-sm text-gray-600 mb-4">
         Ao conectar sua conta Meta, você concorda com nossa{' '}
         <a
-          href="https://iacamply.com/privacy"
+          href="https://iacamply.com/legal/privacy"
           target="_blank"
           rel="noopener noreferrer"
           className="text-blue-600 underline hover:text-blue-800"
@@ -152,7 +152,7 @@ const FacebookLogin: React.FC = () => {
         </a>{' '}
         e nossos{' '}
         <a
-          href="https://iacamply.com/terms"
+          href="https://iacamply.com/legal/terms"
           target="_blank"
           rel="noopener noreferrer"
           className="text-blue-600 underline hover:text-blue-800"

@@ -46,7 +46,7 @@ export const useMetaAdsSaveActions = ({
       return;
     }
 
-    if (!globalConfig?.appId || !globalConfig?.appSecret) {
+    if (!globalConfig?.appId) {
       console.error('❌ Global config missing during save');
       toast({
         title: "Configuração incompleta",
@@ -59,7 +59,6 @@ export const useMetaAdsSaveActions = ({
     try {
       console.log('💾 Saving integration with data:', {
         appId: globalConfig.appId,
-        hasAppSecret: !!globalConfig.appSecret,
         businessManagerId: globalConfig.businessManagerId,
         selectedAccounts: selectedAccounts.length,
         selectedPages: selectedPages.length,
@@ -68,7 +67,7 @@ export const useMetaAdsSaveActions = ({
 
       await saveIntegration(
         globalConfig.appId,
-        globalConfig.appSecret,
+        '', // app secret não é usado no navegador (SEC-04)
         accessToken,
         selectedAccounts,
         selectedPages,

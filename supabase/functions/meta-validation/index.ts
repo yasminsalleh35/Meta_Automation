@@ -98,80 +98,30 @@ serve(async (req) => {
       );
     }
 
-    // Get request body for app credentials
-    const { accessToken: requestToken, configuredAppId, configuredAppSecret } = await req.json().catch(() => ({
-      accessToken: null,
-      configuredAppId: null,
-      configuredAppSecret: null
-    }));
+    // Credenciais do app carregadas no servidor (audit SEC-04) — o navegador nunca envia/recebe o app secret
+    const { data: appConfigRows, error: appConfigError } = await supabaseServiceClient.rpc('get_meta_ads_config');
+    const appConfig = Array.isArray(appConfigRows) ? appConfigRows[0] : appConfigRows;
+    if (appConfigError || !appConfig?.app_id || !appConfig?.app_secret) {
+      console.error('Meta app config unavailable:', appConfigError?.message);
+      throw new Error('Meta app configuration not found');
+    }
+    const configuredAppId: string = appConfig.app_id;
+    const configuredAppSecret: string = appConfig.app_secret;
 
     // Validate token and get permissions
     try {
       // Generate App Access Token for validation
       const appAccessToken = `${configuredAppId}|${configuredAppSecret}`;
-      
-      console.log('🔍 Validating token via Facebook API using App Access Token:', {
-        url: `https://graph.facebook.com/v19.0/debug_token?input_token=TOKEN_MASKED&access_token=APP_TOKEN`,
-        appId: configuredAppId
-      });
 
-      const debugUrl = `https://graph.facebook.com/v19.0/debug_token?input_token=${accessToken}&access_token=${appAccessToken}`;
+      const debugUrl = `https://graph.facebook.com/v19.0/debug_token?input_token=${encodeURIComponent(accessToken)}&access_token=${encodeURIComponent(appAccessToken)}`;
       const response = await fetch(debugUrl);
       console.log('📡 Facebook API response status:', { status: response.status, ok: response.ok });
-      
+
       if (!response.ok) {
         const errorText = await response.text();
-        console.error('❌ Facebook API validation failed with App Access Token:', {
-          status: response.status,
-          error: errorText
-        });
-        
-        // Fallback: Try basic /me endpoint validation
-        console.log('🔄 Attempting fallback validation via /me endpoint...');
-        
-        const meResponse = await fetch(
-          `https://graph.facebook.com/v19.0/me?access_token=${accessToken}`,
-          {
-            method: 'GET',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-          }
-        );
-        
-        if (meResponse.ok) {
-          const meData = await meResponse.json();
-          console.log('✅ Fallback validation successful via /me endpoint:', {
-            userId: meData.id,
-            name: meData.name
-          });
-          
-          // Return minimal valid response for non-admin users
-          return new Response(JSON.stringify({
-            isValid: true,
-            appId: configuredAppId,
-            userId: meData.id,
-            grantedPermissions: ['public_profile'], // Basic permission
-            permissionAnalysis: {
-              essential: { granted: ['public_profile'], missing: [] },
-              hasEssentialPermissions: true
-            },
-            hasEssentialPermissions: true,
-            hasRequiredPermissions: true,
-            canAccessPages: false,
-            canAccessInstagram: false,
-            canAccessWhatsApp: false,
-            availableCategories: ['essential'],
-            missingCategories: ['pages', 'instagram', 'whatsapp'],
-            issues: [],
-            recommendations: ['Token validated for non-admin user with basic permissions'],
-            needsReauthorization: false
-          }), {
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          });
-        }
-        
-        throw new Error(`Token validation failed: ${response.status} - ${errorText}`);
+        console.error('❌ Facebook debug_token failed:', { status: response.status });
+        // Sem fallback "válido": falha de validação é falha (audit SEC-04)
+        throw new Error(`Token validation failed: ${response.status} - ${errorText.slice(0, 300)}`);
       }
       
       const debugData = await response.json();

@@ -1,6 +1,8 @@
 // deno-lint-ignore-file
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
+import { HttpError } from "../_shared/auth.ts";
+import { consumeAiQuota } from "../_shared/aiQuota.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -144,6 +146,14 @@ serve(async (req) => {
     const token = authHeader.replace('Bearer ', '');
     const { data: { user }, error: authError } = await anonClient.auth.getUser(token);
     if (authError || !user) return json(401, { error: 'Invalid token' });
+
+    // Limite por usuário para IA paga (audit SEC-10)
+    try {
+      await consumeAiQuota(supabase, user.id, 'ai-generate-profile');
+    } catch (e) {
+      if (e instanceof HttpError) return json(e.status, { error: e.code });
+      throw e;
+    }
 
     console.log(`[ai-generate-profile] Starting for user ${user.id}`);
 

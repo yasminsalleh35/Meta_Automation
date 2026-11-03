@@ -1,6 +1,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.7.1';
 import { corsHeadersFor, handlePreflight } from '../_shared/cors.ts';
+import { requireAdmin, authErrorResponse } from '../_shared/auth.ts';
 
 serve(async (req) => {
   // Handle CORS
@@ -10,6 +11,15 @@ serve(async (req) => {
 
   const origin = req.headers.get('Origin');
   const corsHeaders = corsHeadersFor(origin);
+
+  // Usa a API key do Asaas: somente admin (audit SEC-10)
+  try {
+    await requireAdmin(req);
+  } catch (e) {
+    const resp = authErrorResponse(e, corsHeaders);
+    if (resp) return resp;
+    throw e;
+  }
 
   try {
     // Get environment from request body

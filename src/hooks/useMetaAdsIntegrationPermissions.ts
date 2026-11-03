@@ -32,7 +32,7 @@ export const useMetaAdsIntegrationPermissions = ({
       console.log('🔧 Requesting advanced permissions...');
       
       // Validar se temos configuração global
-      if (!globalConfig?.appId || !globalConfig?.appSecret) {
+      if (!globalConfig?.appId) {
         console.error('❌ Global config missing for advanced permissions');
         toast({
           title: "Configuração incompleta",
@@ -45,7 +45,7 @@ export const useMetaAdsIntegrationPermissions = ({
       // Solicitar permissões via OAuth
       const result = await validateCredentials(
         globalConfig.appId,
-        globalConfig.appSecret,
+        undefined,
         'required'
       );
       

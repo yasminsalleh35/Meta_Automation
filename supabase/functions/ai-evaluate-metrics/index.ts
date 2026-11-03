@@ -1,6 +1,8 @@
 import { serve } from 'https://deno.land/std@0.190.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { corsHeadersFor, handlePreflight } from '../_shared/cors.ts';
+import { authErrorResponse } from '../_shared/auth.ts';
+import { consumeAiQuota } from '../_shared/aiQuota.ts';
 
 // Version: 1.0.0 - AI metric evaluation with bounded optimization suggestions
 
@@ -47,6 +49,15 @@ serve(async (req) => {
         JSON.stringify({ error: 'Usuário não autenticado' }),
         { status: 401, headers: { ...cors, 'Content-Type': 'application/json' } }
       );
+    }
+
+    // Limite por usuário para IA paga (audit SEC-10)
+    try {
+      await consumeAiQuota(supabaseClient, user.id, 'ai-evaluate-metrics');
+    } catch (e) {
+      const resp = authErrorResponse(e, cors);
+      if (resp) return resp;
+      throw e;
     }
 
     const input = await req.json().catch(() => ({}));

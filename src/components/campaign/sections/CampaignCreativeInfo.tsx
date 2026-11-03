@@ -6,6 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import { Image, Type, Link, Copy, ExternalLink } from 'lucide-react';
 import { RealCampaign } from '@/types/realCampaign';
 import { useToast } from '@/hooks/use-toast';
+import { safeUrl } from '@/lib/safeUrl';
 
 interface CampaignCreativeInfoProps {
   campaign: RealCampaign;
@@ -97,7 +98,7 @@ export const CampaignCreativeInfo: React.FC<CampaignCreativeInfoProps> = ({ camp
               <Button
                 size="sm"
                 variant="outline"
-                onClick={() => window.open(campaign.destination_url, '_blank')}
+                onClick={() => window.open(safeUrl(campaign.destination_url), '_blank', 'noopener,noreferrer')}
                 className="h-7 px-2"
               >
                 <ExternalLink className="w-3 h-3" />

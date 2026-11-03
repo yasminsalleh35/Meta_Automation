@@ -148,7 +148,6 @@ const Quiz: React.FC = () => {
         answers: data, // Store complete answers for reference
       };
 
-      console.log('🚀 Submitting quiz data:', submissionData);
 
       const { error } = await supabase.functions.invoke('lead-quiz-submit', {
         body: submissionData,

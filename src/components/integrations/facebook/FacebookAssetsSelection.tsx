@@ -83,7 +83,7 @@ const FacebookAssetsSelection: React.FC = () => {
 
       await saveIntegration(
         existingIntegration.app_id || '',
-        existingIntegration.app_secret || '',
+        '', // app secret nunca no navegador (SEC-04/SEC-12)
         existingIntegration.access_token || '',
         existingIntegration.selected_accounts || [],
         selectedPagesData, // Passando array de objetos MetaPage

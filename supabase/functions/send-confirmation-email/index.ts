@@ -5,6 +5,7 @@ import React from "https://esm.sh/react@18.3.1";
 import { EmailConfirmationTemplate } from "./_templates/email-confirmation.tsx";
 import { sendEmail } from "../_shared/emailClient.ts";
 import { assertRateLimit } from "../_shared/rateLimit.ts";
+import { isServiceRole } from "../_shared/auth.ts";
 
 
 
@@ -23,6 +24,14 @@ interface EmailConfirmationRequest {
 const handler = async (req: Request): Promise<Response> => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
+  }
+
+  // Interna: apenas service role — evita relay de phishing (audit SEC-06)
+  if (!isServiceRole(req)) {
+    return new Response(JSON.stringify({ error: "forbidden" }), {
+      status: 403,
+      headers: { "Content-Type": "application/json", ...corsHeaders },
+    });
   }
 
   // Rate limiting for public email endpoint

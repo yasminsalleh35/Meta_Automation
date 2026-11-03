@@ -61,35 +61,10 @@ export const AISuggestionsCard: React.FC<AISuggestionsCardProps> = ({
 }) => {
   const [showDetails, setShowDetails] = useState(false);
   
-  const getAIConfigStatus = () => {
-    try {
-      const configStr = localStorage.getItem('camply_ai_config');
-      console.log('Config string no card:', configStr);
-      
-      if (!configStr) {
-        return { isValid: false, message: 'Configuração não encontrada' };
-      }
-      
-      const aiConfig = JSON.parse(configStr);
-      console.log('Config parseada no card:', aiConfig);
-      
-      if (!aiConfig.enabled) {
-        return { isValid: false, message: 'IA desabilitada' };
-      }
-      
-      if (!aiConfig.apiKey || aiConfig.apiKey.trim() === '') {
-        return { isValid: false, message: 'API Key não configurada' };
-      }
-      
-      return { isValid: true, message: 'Configuração válida' };
-    } catch (error) {
-      console.error('Erro ao verificar config da IA:', error);
-      return { isValid: false, message: 'Erro na configuração' };
-    }
-  };
-
-  const aiStatus = getAIConfigStatus();
-  console.log('Status da IA no card:', aiStatus);
+  // A IA roda no servidor (edge function ai-suggestions); a chave nunca fica no navegador.
+  // Antes o card exigia 'camply_ai_config' no localStorage, que só existia no navegador do admin
+  // (audit CMP-15 / SEC-17).
+  const aiStatus = { isValid: true, message: 'Configuração válida' };
 
   const hasBusinessData = !!localStorage.getItem('camply_business_data');
 

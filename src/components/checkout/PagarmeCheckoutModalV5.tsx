@@ -222,7 +222,7 @@ export const PagarmeCheckoutModalV5: React.FC<PagarmeCheckoutModalV5Props> = ({
       console.log('[pagarme-v5] Elementos mapeados encontrados:', { form, holderInput, numberInput });
 
       const onTokenizeSuccess = (data: any) => {
-        console.log('[pagarme-v5] ✅ SDK tokenization callback triggered:', data);
+        console.log('[pagarme-v5] ✅ SDK tokenization callback triggered');
         
         // Extract token from hidden input (SDK V5 places it there with name="pagarmetoken-X")
         const formEl = document.querySelector('[data-pagarmecheckout-form]') as HTMLFormElement;

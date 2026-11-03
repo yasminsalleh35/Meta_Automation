@@ -300,7 +300,7 @@ async function handlePaidCharge(supabase: any, charge: any, environment: string)
       const { data: newUser, error: inviteError } = await supabase.auth.admin.inviteUserByEmail(
         subscription.email,
         {
-          redirectTo: 'https://iacamply.com/onboarding/criar-senha'
+          redirectTo: `${Deno.env.get('SITE_URL') || 'https://iacamply.com'}/auth/set-password`
         }
       );
 

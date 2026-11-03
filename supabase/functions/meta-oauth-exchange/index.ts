@@ -95,6 +95,26 @@ serve(async (req) => {
     return j({ error: "Missing 'code' param" }, { status: 400, headers });
   }
 
+  // CSRF (audit SEC-14): o state precisa ter sido criado por ESTE usuário há < 15 min; uso único.
+  const oauthState = typeof (body as any).state === "string" ? (body as any).state : "";
+  if (!oauthState) {
+    return j({ error: "invalid_state" }, { status: 400, headers });
+  }
+  const { data: consumed, error: stateErr } = await supabase
+    .from("oauth_states")
+    .delete()
+    .eq("state", oauthState)
+    .eq("user_id", userId)
+    .gte("created_at", new Date(Date.now() - 15 * 60 * 1000).toISOString())
+    .select("state");
+  if (stateErr || !consumed || consumed.length === 0) {
+    console.warn("[META-OAUTH-EXCHANGE] invalid or expired OAuth state");
+    return j({ error: "invalid_state" }, { status: 400, headers });
+  }
+  // limpeza oportunista de states antigos do usuário
+  await supabase.from("oauth_states").delete().eq("user_id", userId)
+    .lt("created_at", new Date(Date.now() - 15 * 60 * 1000).toISOString());
+
   // Buscar configurações Meta Ads do banco de dados
   console.info("[META-OAUTH-EXCHANGE] Fetching Meta Ads config from database");
   const { data: configData, error: configErr } = await supabase.rpc('get_meta_ads_config');
@@ -371,12 +391,25 @@ serve(async (req) => {
     meta_assets: metaAssetsCache
   };
 
-  const { data: existing, error: selErr } = await supabase
+  // audit SEC-14: maybeSingle() falhava com linhas duplicadas e o erro era ignorado → nova duplicata.
+  // Agora: atualiza a mais recente e remove as demais do mesmo (user, provider).
+  const { data: existingRows, error: selErr } = await supabase
     .from("integrations")
     .select("id")
     .eq("user_id", userId)
     .eq("provider", provider)
-    .maybeSingle();
+    .order("updated_at", { ascending: false });
+
+  if (selErr) {
+    console.error("[META-OAUTH-EXCHANGE] integration lookup failed", selErr.message);
+    return j({ error: "integration_lookup_failed" }, { status: 500, headers });
+  }
+
+  const existing = existingRows?.[0];
+  const duplicateIds = (existingRows ?? []).slice(1).map((r: { id: string }) => r.id);
+  if (duplicateIds.length > 0) {
+    await supabase.from("integrations").delete().in("id", duplicateIds).eq("user_id", userId);
+  }
 
   let upsertErr;
   if (existing?.id) {
@@ -436,7 +469,7 @@ serve(async (req) => {
               },
               meta_data_cached_at: new Date().toISOString()
             }, {
-              onConflict: 'meta_campaign_id',
+              onConflict: 'user_id,meta_campaign_id', // audit DATA-03/SEC-15
               ignoreDuplicates: false
             });
           

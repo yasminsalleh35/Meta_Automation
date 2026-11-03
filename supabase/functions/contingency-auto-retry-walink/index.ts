@@ -98,6 +98,16 @@ serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
+  // Desativada (audit SEC-06/CMP-02): construía uma campanha diferente da solicitada,
+  // com payload quebrado e sem rollback. Contingências são tratadas manualmente.
+  const RETIRED = true;
+  if (RETIRED) {
+    return new Response(JSON.stringify({ success: false, error: 'gone', code: 'AUTO_RETRY_DISABLED' }), {
+      status: 410,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
+  }
+
   const supabase = createClient(
     Deno.env.get('SUPABASE_URL') ?? '',
     Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''

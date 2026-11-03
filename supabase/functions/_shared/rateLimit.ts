@@ -1,4 +1,7 @@
 // Rate limiting middleware for Edge Functions
+// ATENÇÃO: em memória por isolate — não é um limite global. Para IA paga use _shared/aiQuota.ts.
+import { corsHeadersFor } from "./cors.ts";
+
 export interface RateLimitOptions {
   key: string;
   limit: number;
@@ -35,6 +38,7 @@ export const assertRateLimit = (req: Request, options: RateLimitOptions): Respon
       {
         status: 429,
         headers: {
+          ...corsHeadersFor(req.headers.get('Origin')),
           'Content-Type': 'application/json',
           'Retry-After': retryAfter.toString(),
         },

@@ -78,7 +78,7 @@ serve(async (req: Request): Promise<Response> => {
     // Create a simplified portal URL
     // Since Pagar.me doesn't have a native customer portal like Stripe,
     // we'll redirect to a custom page within our app
-    const appUrl = Deno.env.get('SITE_URL') || 'https://app.camply.com.br';
+    const appUrl = Deno.env.get('SITE_URL') || 'https://iacamply.com';
     const portalUrl = `${appUrl}/dashboard/subscription?action=manage`;
 
     logStep('Portal URL created', { url: portalUrl });

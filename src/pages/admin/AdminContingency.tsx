@@ -44,6 +44,7 @@ import {
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { format } from 'date-fns';
+import { safeUrl } from '@/lib/safeUrl';
 
 interface ContingencyCampaign {
   id: string;
@@ -833,7 +834,7 @@ const AdminContingency: React.FC = () => {
                         <Button
                           size="sm"
                           variant="outline"
-                          onClick={() => window.open(selectedCampaign.campaign_data.selectedMediaMeta.public_url, '_blank')}
+                          onClick={() => window.open(safeUrl(selectedCampaign.campaign_data.selectedMediaMeta.public_url), '_blank', 'noopener,noreferrer')}
                         >
                           <ExternalLink className="w-4 h-4 mr-1" />
                           Abrir
@@ -843,7 +844,7 @@ const AdminContingency: React.FC = () => {
                           variant="outline"
                           onClick={() => {
                             const link = document.createElement('a');
-                            link.href = selectedCampaign.campaign_data.selectedMediaMeta.public_url;
+                            link.href = safeUrl(selectedCampaign.campaign_data.selectedMediaMeta.public_url);
                             link.download = selectedCampaign.campaign_data.selectedMediaMeta.filename;
                             link.click();
                           }}

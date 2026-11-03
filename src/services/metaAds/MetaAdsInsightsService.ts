@@ -47,7 +47,6 @@ export class MetaAdsInsightsService {
     }
 
     const url = `${this.baseUrl}/${adId}/insights?${params.toString()}`;
-    console.log('Fetching insights from:', url);
 
     const response = await fetch(url);
 

@@ -2,9 +2,10 @@
 import { useState, useEffect } from 'react';
 import { useSupabase } from '@/hooks/useSupabase';
 
+// Configuração pública do Meta App. O app secret NUNCA chega ao navegador (audit SEC-04):
+// as edge functions o leem com service role.
 interface GlobalMetaConfig {
   appId: string;
-  appSecret: string;
   businessManagerId?: string;
 }
 
@@ -17,20 +18,19 @@ export const useGlobalMetaConfig = () => {
   useEffect(() => {
     const fetchConfig = async () => {
       try {
-        const { data, error } = await supabase.rpc('get_meta_ads_config');
-        
+        const { data, error } = await supabase.rpc('get_meta_app_public_config' as any);
+
         if (error) {
-          console.error('Error fetching Meta Ads config:', error);
+          console.error('Error fetching Meta Ads config:', error.message);
           setError('Erro ao buscar configurações');
           return;
         }
 
-        if (data && data.length > 0) {
-          const configData = data[0];
+        const rows = (data as Array<{ app_id: string; business_manager_id: string | null }> | null) ?? [];
+        if (rows.length > 0 && rows[0].app_id) {
           setConfig({
-            appId: configData.app_id,
-            appSecret: configData.app_secret,
-            businessManagerId: configData.business_manager_id
+            appId: rows[0].app_id,
+            businessManagerId: rows[0].business_manager_id ?? undefined
           });
         } else {
           setError('Configurações Meta Ads não encontradas');

@@ -25,6 +25,7 @@ import {
 } from 'lucide-react';
 import { Lead } from '@/hooks/admin/useLeads';
 import { useToast } from '@/hooks/use-toast';
+import { safeUrl } from '@/lib/safeUrl';
 
 interface LeadDrawerProps {
   lead: Lead | null;
@@ -321,7 +322,7 @@ export const LeadDrawer: React.FC<LeadDrawerProps> = ({
                   <Button 
                     variant="outline" 
                     size="sm" 
-                    onClick={() => window.open(lead.website!, '_blank')}
+                    onClick={() => window.open(safeUrl(lead.website), '_blank', 'noopener,noreferrer')}
                     className="gap-2"
                   >
                     <Globe className="h-4 w-4" />

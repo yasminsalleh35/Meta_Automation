@@ -89,11 +89,10 @@ Deno.serve(async (req) => {
     });
 
     // 🔍 CORREÇÃO 3: Log detalhado da integração
-    console.log('[Read] Integration raw data:', {
-      integration,
+    // Nunca logar a linha inteira nem parte do token (audit SEC-17)
+    console.log('[Read] Integration found:', {
       hasAdAccount: !!integration?.ad_account_id,
-      hasToken: !!integration?.access_token,
-      tokenPreview: integration?.access_token ? integration.access_token.substring(0, 20) + '...' : null
+      hasToken: !!integration?.access_token
     });
 
     if (integrationError || !integration) {

@@ -9,6 +9,7 @@ import SimpleVideoPlayer from './SimpleVideoPlayer';
 import { CommentsSection } from './CommentsSection';
 import { useVideoProgress } from '@/hooks/useVideoProgress';
 import { useSupabaseLearningContent } from '@/hooks/useSupabaseLearningContent';
+import { safeUrl } from '@/lib/safeUrl';
 
 interface VideoModalProps {
   isOpen: boolean;
@@ -100,7 +101,7 @@ export const VideoModal: React.FC<VideoModalProps> = ({ isOpen, onClose, content
                     {content.supplementary_material.map((material: any, index: number) => (
                       <a
                         key={index}
-                        href={material.url}
+                        href={safeUrl(material.url)}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="flex items-center gap-2 text-sm text-blue-600 hover:underline p-2 border rounded-md hover:bg-muted/50 transition-colors"

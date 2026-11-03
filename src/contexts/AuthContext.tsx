@@ -1,7 +1,9 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { User, Session } from '@supabase/supabase-js';
+import { useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useRecoveryState } from '@/hooks/useRecoveryState';
+import { clearUserData } from '@/lib/clearUserData';
 
 // Limpeza de URL com tokens (sem navegar)
 function cleanTokensFromURL() {
@@ -41,6 +43,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [mustChangePassword, setMustChangePassword] = useState(false);
   const [sessionTimeout, setSessionTimeout] = useState<NodeJS.Timeout | null>(null);
   const { isActiveRecovery } = useRecoveryState();
+  const queryClient = useQueryClient();
+  // Último usuário visto: troca de conta no mesmo navegador limpa os caches (audit SEC-13)
+  const lastUserIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     let isMounted = true;
@@ -54,6 +59,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         console.log('Initial session check:', session ? 'session found' : 'no session');
         
         if (session?.user && isMounted) {
+          lastUserIdRef.current = session.user.id;
           const authUser: AuthUser = {
             ...session.user,
             name: session.user.user_metadata?.name || session.user.email?.split('@')[0],
@@ -101,11 +107,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       // 🔒 FASE 3: Configurar listener APÓS verificação inicial
       if (isMounted) {
         const { data: { subscription } } = supabase.auth.onAuthStateChange(
-          async (event, session) => {
+          (event, session) => {
             if (!isMounted) return;
-            
+
             console.log('Auth state changed:', event, session ? 'with session' : 'no session');
-            
+
+            // SEC-13: logout ou troca de usuário → limpar caches do usuário anterior
+            const nextUserId = session?.user?.id ?? null;
+            if (event === 'SIGNED_OUT' || (lastUserIdRef.current && nextUserId && nextUserId !== lastUserIdRef.current)) {
+              clearUserData(queryClient);
+            }
+            lastUserIdRef.current = nextUserId;
+
             setSession(session);
             if (session?.user) {
               console.log('User logged in');
@@ -124,19 +137,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 console.log('AuthProvider: Recovery flow in listener, skipping password change requirement');
                 setMustChangePassword(false);
               } else {
-                // Verificar se precisa trocar senha apenas fora do recovery
-                try {
-                  const { data: profile } = await supabase
-                    .from('profiles')
-                    .select('must_change_password')
-                    .eq('id', session.user.id)
-                    .single();
-                  
-                  const needsPasswordChange = profile?.must_change_password || false;
-                  setMustChangePassword(needsPasswordChange);
-                } catch (error) {
-                  console.error('Error fetching profile:', error);
-                }
+                // Verificar se precisa trocar senha apenas fora do recovery.
+                // Fora do callback (setTimeout): chamadas Supabase aguardadas dentro de
+                // onAuthStateChange podem travar o cliente (audit PLT-08).
+                const uid = session.user.id;
+                setTimeout(async () => {
+                  try {
+                    const { data: profile } = await supabase
+                      .from('profiles')
+                      .select('must_change_password')
+                      .eq('id', uid)
+                      .single();
+                    if (isMounted) setMustChangePassword(profile?.must_change_password || false);
+                  } catch (error) {
+                    console.error('Error fetching profile:', error);
+                  }
+                }, 0);
               }
               
               cleanTokensFromURL();
@@ -160,11 +176,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         authSubscription.unsubscribe();
       }
     };
-  }, [isActiveRecovery]);
+  }, [isActiveRecovery, queryClient]);
 
   const login = async (email: string, password: string): Promise<void> => {
-    console.log('AuthContext: Attempting login for:', email);
-    
     const { error } = await supabase.auth.signInWithPassword({
       email,
       password,
@@ -175,12 +189,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       throw error;
     }
     
-    console.log('Login successful for:', email);
+    console.log('Login successful');
   };
 
   const register = async (name: string, email: string, password: string): Promise<void> => {
-    console.log('AuthContext: Attempting registration for:', email);
-    
     const { error } = await supabase.auth.signUp({
       email,
       password,
@@ -197,7 +209,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       throw error;
     }
     
-    console.log('Registration successful for:', email);
+    console.log('Registration successful');
   };
 
   const logout = async (): Promise<void> => {
@@ -215,7 +227,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       console.error('Logout: Error during signOut:', error);
       throw error;
     } finally {
-      // Sempre limpa estado local
+      // Sempre limpa estado local e caches do usuário (audit SEC-13)
+      clearUserData(queryClient);
+      lastUserIdRef.current = null;
       setUser(null);
       setSession(null);
       setMustChangePassword(false);

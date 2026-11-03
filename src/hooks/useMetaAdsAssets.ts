@@ -103,8 +103,12 @@ export const useMetaAdsAssets = () => {
   // ✅ CACHE: Set cached assets to localStorage
   const setCachedAssets = (data: any) => {
     try {
+      // Nunca persistir tokens de página no localStorage (audit SEC-13)
+      const sanitized = JSON.parse(JSON.stringify(data ?? null, (key, value) =>
+        key === 'pageAccessToken' || key === 'access_token' ? undefined : value
+      ));
       localStorage.setItem(ASSETS_CACHE_KEY, JSON.stringify({
-        data,
+        data: sanitized,
         timestamp: Date.now()
       }));
       console.log('[META_ASSETS] Assets cached');

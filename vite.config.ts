@@ -16,6 +16,10 @@ export default defineConfig(({ mode }) => ({
       "@": path.resolve(__dirname, "./src"),
     },
   },
+  // audit SEC-17: remove console.log/info/debug do bundle de produção (mantém warn/error)
+  esbuild: mode === "production"
+    ? { pure: ["console.log", "console.info", "console.debug"] }
+    : undefined,
   test: {
     globals: true,
     environment: "jsdom",

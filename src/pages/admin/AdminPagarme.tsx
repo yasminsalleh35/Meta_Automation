@@ -166,7 +166,7 @@ export default function AdminPagarme() {
         throw new Error('Configurações não foram salvas corretamente. Nenhum registro retornado.');
       }
       
-      console.log('[AdminPagarme] ✅ Configurações salvas com sucesso!', result.data);
+      console.log('[AdminPagarme] ✅ Configurações salvas com sucesso!');
       
       toast({
         title: "Sucesso",
