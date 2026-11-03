@@ -8,8 +8,12 @@
 -- meta-campaign-auto-sync: produção já tinha 'meta-campaign-auto-sync-job' (*/10) chamando com a
 -- anon key, que a nova guarda rejeita. Mantemos o mesmo agendamento, agora via x-cron-secret.
 -- =============================================
-create extension if not exists pg_cron;
-create extension if not exists pg_net;
+-- só cria se faltar: no Supabase o event trigger do pg_cron falha mesmo com "if not exists"
+do $$
+begin
+  if not exists (select 1 from pg_extension where extname = 'pg_cron') then create extension pg_cron; end if;
+  if not exists (select 1 from pg_extension where extname = 'pg_net')  then create extension pg_net;  end if;
+end $$;
 
 create or replace function public.invoke_cron_function(p_function text, p_body jsonb default '{}'::jsonb)
 returns bigint
@@ -39,9 +43,16 @@ begin
                            'camply_metrics_refresh_all','camply_metrics_check_alerts','camply_auto_verify_ad_sets',
                            'camply_meta_campaign_auto_sync','meta-campaign-auto-sync-job']
   loop
-    if exists (select 1 from cron.job where jobname = j) then
-      perform cron.unschedule(j);
-    end if;
+    -- o job legado pertence a outro usuário (supabase_read_only_user): tenta por id, sem abortar
+    declare v_id bigint;
+    begin
+      select jobid into v_id from cron.job where jobname = j;
+      if v_id is not null then
+        perform cron.unschedule(v_id);
+      end if;
+    exception when others then
+      raise notice 'could not unschedule % (%): remove it in Dashboard > Integrations > Cron', j, sqlerrm;
+    end;
   end loop;
 end $$;
 
