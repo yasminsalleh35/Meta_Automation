@@ -10,9 +10,10 @@ Code changed locally on 2026-11-02. **Deployed to production on 2026-11-03** (co
 - ✅ The frontend is live on Netlify.
 - ✅ Anon smoke tests pass.
 - ✅ Cron: `metrics_refresh_all` returns 200; `meta_campaign_auto_sync` is updating campaigns.
-- ⏳ Delete the legacy cron job `meta-campaign-auto-sync-job` in Dashboard → Integrations → Cron. It's owned by `supabase_read_only_user`, so `postgres` can't remove it, and it now gets a harmless 401 every 10 minutes.
-- ⏳ Auth → URL Configuration: add `https://camplyia.netlify.app/**`. Decide what to do about the `iacamply.com` DNS.
-- ⏳ Logged-in smoke tests (section 5): connect Meta, save admin settings, create a campaign, switch users.
+- ➖ Legacy cron job `meta-campaign-auto-sync-job` (id 1, running since 2025-11-01) is kept. It's owned by `supabase_read_only_user`, and the dashboard, `postgres` and the Management API all get "permission denied". Only Supabase support can remove it. It's harmless: an immediate 401 every 10 minutes.
+- ✅ Auth redirect URLs: `https://camplyia.netlify.app/**` added by the client.
+- ⏳ The Site URL is still `iacamply.com`, which doesn't resolve in DNS. The client needs to decide.
+- ✅ Logged-in smoke tests: the client tested on 2026-11-04 ("Funcionou tudo que testei").
 
 ## 0. Before anything
 - [ ] Revoke the old Supabase personal access token (Dashboard → Account → Access Tokens).
