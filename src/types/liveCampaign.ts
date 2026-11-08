@@ -1,7 +1,7 @@
 export interface LiveCampaign {
   id: string;
   name: string;
-  status: 'active' | 'paused' | 'draft' | 'finished' | 'pending_review';
+  status: 'active' | 'paused' | 'draft' | 'finished' | 'pending_review' | 'error' | 'deleted';
   objective: string;
   mediaPreviewUrl?: string;
   page?: { id?: string; name?: string };

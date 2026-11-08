@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
+import { normalizeBrPhone } from "../_shared/phone.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -105,23 +106,14 @@ const handler = async (req: Request): Promise<Response> => {
       });
     }
 
-    // Normalize WhatsApp to E.164 format
-    let whatsappE164 = submission.whatsapp;
-    if (whatsappE164) {
-      // Remove all non-digits
-      const digits = whatsappE164.replace(/\D/g, "");
-      
-      // Add +55 if it's a Brazilian number without country code
-      if (digits.length === 11 && digits.startsWith("11")) {
-        whatsappE164 = `+55${digits}`;
-      } else if (digits.length === 10) {
-        whatsappE164 = `+55${digits}`;
-      } else if (digits.length === 13 && digits.startsWith("55")) {
-        whatsappE164 = `+${digits}`;
-      } else {
-        whatsappE164 = `+${digits}`;
-      }
+    // Normalize WhatsApp to E.164 format (shared rule, audit CMP-06)
+    if (!submission.whatsapp || !normalizeBrPhone(submission.whatsapp)) {
+      return new Response(JSON.stringify({ error: "Invalid WhatsApp number" }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
+    const whatsappE164 = `+${normalizeBrPhone(submission.whatsapp)}`;
 
     // Basic email validation
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;

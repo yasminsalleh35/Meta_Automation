@@ -11,6 +11,7 @@ import { StepReview } from '@/components/quiz/StepReview';
 import { QuizThankYou } from '@/components/quiz/QuizThankYou';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
+import { normalizeBrPhone } from '@/lib/phone';
 
 interface QuizData {
   // Step 1 - About
@@ -109,7 +110,7 @@ const Quiz: React.FC = () => {
       case 0: return data.name && data.clinic_name && data.city && data.state && data.specialty;
       case 1: return data.used_paid_traffic !== "";
       case 2: return data.desired_monthly_spend_range && data.main_goal && data.start_timing;
-      case 3: return data.whatsapp && data.email;
+      case 3: return normalizeBrPhone(data.whatsapp) && data.email;
       case 4: return data.consent;
       default: return false;
     }

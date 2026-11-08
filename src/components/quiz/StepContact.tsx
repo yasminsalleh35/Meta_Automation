@@ -3,6 +3,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent } from '@/components/ui/card';
+import { normalizeBrPhone } from '@/lib/phone';
 
 interface StepContactProps {
   data: any;
@@ -68,6 +69,9 @@ export const StepContact: React.FC<StepContactProps> = ({ data, updateData }) =>
         <p className="text-xs text-gray-500 mt-1">
           Número com DDD para contato via WhatsApp
         </p>
+        {data.whatsapp && !normalizeBrPhone(data.whatsapp) && (
+          <p className="text-xs text-red-600 mt-1">Informe o número completo com DDD (10 ou 11 dígitos).</p>
+        )}
       </div>
 
       {/* E-mail */}

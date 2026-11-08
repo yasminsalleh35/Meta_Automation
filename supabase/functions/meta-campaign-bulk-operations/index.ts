@@ -34,22 +34,27 @@ serve(async (req) => {
   try {
     console.log('Meta Campaign Bulk Operations function called');
     
+    const unauthenticated = () => new Response(
+      JSON.stringify({ success: false, error: "User not authenticated", code: "UNAUTHENTICATED" }),
+      { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 401 }
+    );
+
     const authHeader = req.headers.get("Authorization");
     if (!authHeader) {
-      throw new Error("No authorization header provided");
+      return unauthenticated();
     }
 
     const token = authHeader.replace("Bearer ", "");
-    
+
     const authClient = createClient(
       Deno.env.get("SUPABASE_URL") ?? "",
       Deno.env.get("SUPABASE_ANON_KEY") ?? ""
     );
-    
+
     const { data: userData, error: userError } = await authClient.auth.getUser(token);
-    
+
     if (userError || !userData.user?.id) {
-      throw new Error("User not authenticated");
+      return unauthenticated();
     }
 
     console.log('User authenticated:', userData.user.id);

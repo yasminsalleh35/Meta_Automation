@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { MessageCircle } from 'lucide-react';
+import { normalizeBrPhone } from '@/lib/phone';
 
 interface WhatsAppManualConfigProps {
   isOpen: boolean;
@@ -22,34 +23,6 @@ export const WhatsAppManualConfig: React.FC<WhatsAppManualConfigProps> = ({
   const [name, setName] = useState('');
   const [error, setError] = useState('');
 
-  const validatePhone = (phoneNumber: string) => {
-    // Remove all non-digit characters
-    const cleanPhone = phoneNumber.replace(/\D/g, '');
-    
-    // Check if it's a valid Brazilian phone (11 digits) or international (10-15 digits)
-    if (cleanPhone.length >= 10 && cleanPhone.length <= 15) {
-      return true;
-    }
-    return false;
-  };
-
-  const formatPhone = (phoneNumber: string) => {
-    const cleanPhone = phoneNumber.replace(/\D/g, '');
-    
-    // If it doesn't start with country code, assume it's Brazilian (+55)
-    if (cleanPhone.length === 11 && cleanPhone.startsWith('1')) {
-      return `+55${cleanPhone}`;
-    } else if (cleanPhone.length === 10) {
-      return `+55${cleanPhone}`;
-    } else if (!cleanPhone.startsWith('55') && cleanPhone.length <= 11) {
-      return `+55${cleanPhone}`;
-    } else if (!phoneNumber.startsWith('+')) {
-      return `+${cleanPhone}`;
-    }
-    
-    return phoneNumber;
-  };
-
   const handleSave = () => {
     setError('');
     
@@ -63,12 +36,13 @@ export const WhatsAppManualConfig: React.FC<WhatsAppManualConfigProps> = ({
       return;
     }
 
-    const formattedPhone = formatPhone(phone);
-    
-    if (!validatePhone(formattedPhone)) {
+    // Regra única de normalização (audit CMP-06)
+    const normalized = normalizeBrPhone(phone);
+    if (!normalized) {
       setError('Número de telefone inválido. Use formato: +5511999999999 ou 11999999999');
       return;
     }
+    const formattedPhone = `+${normalized}`;
 
     const whatsappData = {
       id: `manual_${Date.now()}`,
