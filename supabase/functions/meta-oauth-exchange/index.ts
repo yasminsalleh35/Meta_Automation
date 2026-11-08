@@ -9,6 +9,7 @@
 
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
+import { fetchAllGraphPages } from "../_shared/metaPaging.ts";
 
 type OAuthExchangeBody = {
   code: string;
@@ -216,6 +217,13 @@ serve(async (req) => {
     return { ok: r.ok, status: r.status, json };
   }
 
+  // Igual a get(), mas segue paging.next
+  async function getAll(path: string, params: Record<string, string>) {
+    const url = new URL(`https://graph.facebook.com/${API_VERSION}/${path}`);
+    for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
+    return await fetchAllGraphPages(url.toString(), { headers: { authorization: `Bearer ${accessToken}` } });
+  }
+
   const mePerms = await get("me/permissions", {});
   if (mePerms.ok && mePerms.json.data) {
     const grantedScopes = mePerms.json.data.filter((p: any) => p.status === 'granted').map((p: any) => p.permission);
@@ -243,13 +251,14 @@ serve(async (req) => {
 
   try {
     console.info('[META-OAUTH-EXCHANGE][ASSETS] Fetching Facebook Pages...');
-    const pagesRes = await get("me/accounts", { 
+    // audit CMP-11: segue paging.next (limitado a MAX_GRAPH_PAGES)
+    const pagesRes = await getAll("me/accounts", {
       fields: "id,name,picture,whatsapp_number,instagram_business_account{id,username,profile_picture_url}",
       limit: "100"
     });
 
-    if (pagesRes.ok && pagesRes.json?.data) {
-      const pages = pagesRes.json.data;
+    if (pagesRes.ok) {
+      const pages = pagesRes.data;
       for (const page of pages) {
         facebookPages.push({
           id: page.id,
@@ -273,13 +282,13 @@ serve(async (req) => {
 
     // Buscar Ad Accounts
     console.info('[META-OAUTH-EXCHANGE][ASSETS] Fetching Ad Accounts...');
-    const adAccountsRes = await get("me/adaccounts", {
+    const adAccountsRes = await getAll("me/adaccounts", {
       fields: "id,name,currency,account_status,amount_spent,balance",
       limit: "100"
     });
 
-    if (adAccountsRes.ok && adAccountsRes.json?.data) {
-      adAccounts = adAccountsRes.json.data.map((acc: any) => ({
+    if (adAccountsRes.ok) {
+      adAccounts = adAccountsRes.data.map((acc: any) => ({
         id: acc.id,
         name: acc.name,
         currency: acc.currency ?? 'BRL',

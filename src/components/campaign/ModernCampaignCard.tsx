@@ -91,6 +91,13 @@ export const ModernCampaignCard: React.FC<ModernCampaignCardProps> = ({
             Finalizada
           </Badge>
         );
+      // status canônico de rejeição/problema na Meta (audit CMP-10)
+      case 'error':
+        return (
+          <Badge className="bg-red-100 text-red-800 border-red-200 text-[10px] sm:text-xs px-1.5 sm:px-2 py-0.5">
+            Com problema
+          </Badge>
+        );
       default:
         return (
           <Badge className="bg-blue-100 text-blue-800 border-blue-200 text-[10px] sm:text-xs px-1.5 sm:px-2 py-0.5">

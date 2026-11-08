@@ -18,6 +18,7 @@ import { MetaAssetsLoading } from '@/components/ui/meta-assets-loading';
 import { supabase } from '@/integrations/supabase/client';
 import { useMetaAdsIntegration } from '@/hooks/useMetaAdsIntegration';
 import { useToast } from '@/hooks/use-toast';
+import { waLinkFromPhone } from '@/lib/phone';
 
 interface Step2MidiaProps {
   formData: SimpleCampaignFormData;
@@ -161,28 +162,22 @@ export const Step2Midia: React.FC<Step2MidiaProps> = ({ formData, updateFormData
     }
   }, [normalizedSelection, instagramAccounts, formData.fanpage, formData.instagram, updateFormData]);
 
-  // Auto-update whatsappLink based on whatsappNumber (GERAR wa.me)
+  // Auto-update whatsappLink based on whatsappNumber (GERAR wa.me). Só grava quando muda (audit CMP-04);
+  // normalização única com o backend (audit CMP-06).
   useEffect(() => {
-    if (formData.whatsappNumber) {
-      const cleanNumber = formData.whatsappNumber.replace(/\D/g, '');
-      
-      if (cleanNumber.length === 11) {
-        // ✅ GERAR LINK wa.me com código do país
-        const waLink = `https://wa.me/55${cleanNumber}`;
-        updateFormData('whatsappLink', waLink);
-        
-        console.log('✅ Link wa.me gerado:', waLink);
-      } else {
-        updateFormData('whatsappLink', '');
-      }
-    }
-  }, [formData.whatsappNumber, updateFormData]);
+    if (!formData.whatsappNumber) return;
+    const waLink = waLinkFromPhone(formData.whatsappNumber) || '';
+    if (waLink !== formData.whatsappLink) updateFormData('whatsappLink', waLink);
+  }, [formData.whatsappNumber, formData.whatsappLink, updateFormData]);
 
   // Auto-fill ad text when Instagram post is selected (mantido para futura reativação)
   useEffect(() => {
-    if (formData.creativeType === 'post' && formData.selectedInstagramPost?.caption) {
-      updateFormData('adText', formData.selectedInstagramPost.caption);
+    const caption = formData.selectedInstagramPost?.caption;
+    if (formData.creativeType === 'post' && caption && caption !== formData.adText) {
+      updateFormData('adText', caption);
     }
+    // adText fora das deps de propósito: o usuário pode editar o texto depois
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [formData.selectedInstagramPost, formData.creativeType, updateFormData]);
 
   const handleWhatsAppChange = (number: string) => {

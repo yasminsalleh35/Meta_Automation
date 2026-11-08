@@ -115,6 +115,7 @@ Considere especialmente:
           temperature: 0.7,
           max_tokens: 1000,
         }),
+        signal: AbortSignal.timeout(30_000),
       });
 
       if (!openaiResponse.ok) {
@@ -122,11 +123,16 @@ Considere especialmente:
       }
 
       const openaiData = await openaiResponse.json();
-      const content = openaiData.choices[0].message.content;
-      
-      // Parse JSON removendo possíveis markdown
+      const content = String(openaiData.choices?.[0]?.message?.content ?? '');
+
+      // Parse JSON removendo possíveis markdown; resposta inválida cai no scoring por regras (audit CMP-14)
       const cleanContent = content.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-      aiResponse = JSON.parse(cleanContent);
+      try {
+        aiResponse = JSON.parse(cleanContent);
+      } catch {
+        console.warn('⚠️ Quiz Lead Scoring - resposta da IA não é JSON válido; usando regras');
+        aiResponse = calculateRuleBasedScoring(responses, weights);
+      }
     } else {
       // Fallback para scoring simples baseado em regras
       aiResponse = calculateRuleBasedScoring(responses, weights);

@@ -88,7 +88,7 @@ export const CampaignsSection: React.FC<CampaignsSectionProps> = ({
             <p className="text-gray-600 mb-6">
               Comece criando sua primeira campanha para gerar leads
             </p>
-            <Link to="/dashboard/campaigns/create">
+            <Link to="/dashboard/simple-campaign-wizard">
               <Button className="bg-purple-600 hover:bg-purple-700">
                 <Target className="w-4 h-4 mr-2" />
                 Criar Primeira Campanha

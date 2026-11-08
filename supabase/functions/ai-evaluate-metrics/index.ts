@@ -16,7 +16,12 @@ interface CampaignMetrics {
   reach: number;
   conversions: number;
   cpa: number;
+  messaging_conversations: number;
 }
+
+const MESSAGING_RESULT_ACTION = 'onsite_conversion.messaging_conversation_started_7d';
+const OTHER_RESULT_ACTIONS = ['lead', 'purchase', 'contact_total'];
+const LLM_TIMEOUT_MS = 30_000;
 
 serve(async (req) => {
   const origin = req.headers.get('Origin');
@@ -129,10 +134,14 @@ serve(async (req) => {
     const insightsData = await insightsRes.json();
     const raw = insightsData.data?.[0] || {};
 
-    // Extract conversions from actions array
-    const conversions = (raw.actions || [])
-      .filter((a: any) => ['offsite_conversion', 'onsite_conversion', 'lead', 'contact_total'].includes(a.action_type))
-      .reduce((sum: number, a: any) => sum + parseInt(a.value || '0', 10), 0);
+    // Resultados = conversas iniciadas no WhatsApp (CTWA) + leads + compras + contatos (audit CMP-14).
+    // Antes só contava tipos inexistentes e campanhas CTWA apareciam com "0 conversões".
+    const actionCount = (type: string) => (raw.actions || [])
+      .filter((a: any) => a.action_type === type)
+      .reduce((sum: number, a: any) => sum + (parseInt(a.value || '0', 10) || 0), 0);
+    const messagingConversations = actionCount(MESSAGING_RESULT_ACTION);
+    const conversions = messagingConversations +
+      OTHER_RESULT_ACTIONS.reduce((sum, type) => sum + actionCount(type), 0);
 
     const metrics: CampaignMetrics = {
       impressions: parseInt(raw.impressions || '0', 10),
@@ -144,17 +153,19 @@ serve(async (req) => {
       reach: parseInt(raw.reach || '0', 10),
       conversions,
       cpa: conversions > 0 ? parseFloat(raw.spend || '0') / conversions : 0,
+      messaging_conversations: messagingConversations,
     };
 
     console.log('📊 [AI-EVAL] Metrics:', metrics);
 
-    // Get AI configuration
+    // Configuração global de IA (a tabela não tem user_id) — prefere a padrão entre as ativas
     const { data: aiConfig } = await supabaseClient
       .from('ai_configurations')
-      .select('*')
-      .eq('user_id', user.id)
+      .select('provider, api_key, model_name')
       .eq('is_active', true)
-      .single();
+      .order('is_default', { ascending: false })
+      .limit(1)
+      .maybeSingle();
 
     // Get business settings for context
     const { data: bizSettings } = await supabaseClient
@@ -173,6 +184,7 @@ REGRAS IMPORTANTES:
 - Sugira ajustes de orçamento de no máximo ±30% do valor atual
 - NUNCA sugira ações que o usuário não possa executar com um clique
 - Considere o setor do negócio e público-alvo ao fazer sugestões
+- "Resultados" inclui conversas iniciadas no WhatsApp: se Resultados > 0, a campanha TEM conversões; nunca afirme o contrário
 - Responda APENAS em JSON válido, sem markdown ou texto adicional
 
 FORMATO DE RESPOSTA (JSON array):
@@ -207,8 +219,9 @@ MÉTRICAS (últimos 7 dias):
 - CPC: R$ ${metrics.cpc.toFixed(2)}
 - CPM: R$ ${metrics.cpm.toFixed(2)}
 - Gasto total: R$ ${metrics.spend.toFixed(2)}
-- Conversões: ${metrics.conversions}
-- CPA: R$ ${metrics.cpa.toFixed(2)}
+- Resultados (conversas no WhatsApp + leads + compras + contatos): ${metrics.conversions}
+- Conversas iniciadas no WhatsApp: ${metrics.messaging_conversations}
+- Custo por resultado: R$ ${metrics.cpa.toFixed(2)}
 
 Meta Campaign ID: ${campaign.meta_campaign_id}
 Meta AdSet ID: ${campaign.meta_adset_id || 'N/A'}
@@ -218,7 +231,7 @@ Analise estas métricas e gere sugestões de otimização.`;
 
     // Call AI provider
     const provider = aiConfig?.provider || 'openai';
-    const model = aiConfig?.model || 'gpt-4o-mini';
+    const model = aiConfig?.model_name || 'gpt-4o-mini';
     let apiKey = aiConfig?.api_key;
 
     if (!apiKey) {
@@ -245,25 +258,31 @@ Analise estas métricas e gere sugestões de otimização.`;
 
     console.log(`🤖 [AI-EVAL] Calling ${provider} (${model})...`);
 
-    const aiRes = await fetch(apiUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model,
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userPrompt },
-        ],
-        temperature: 0.3,
-        max_tokens: 2000,
-      }),
-    });
+    let aiRes: Response | null = null;
+    try {
+      aiRes = await fetch(apiUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+          model,
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userPrompt },
+          ],
+          temperature: 0.3,
+          max_tokens: 2000,
+        }),
+        signal: AbortSignal.timeout(LLM_TIMEOUT_MS),
+      });
+    } catch (fetchError) {
+      console.error('❌ [AI-EVAL] AI request failed/timed out:', fetchError instanceof Error ? fetchError.message : fetchError);
+    }
 
-    if (!aiRes.ok) {
-      const err = await aiRes.json();
+    if (!aiRes || !aiRes.ok) {
+      const err = aiRes ? await aiRes.text().catch(() => '') : 'timeout/network';
       console.error('❌ [AI-EVAL] AI API error:', err);
       // Fallback to rule-based
       const suggestions = generateRuleBasedSuggestions(metrics, campaign);
@@ -274,7 +293,7 @@ Analise estas métricas e gere sugestões de otimização.`;
       );
     }
 
-    const aiData = await aiRes.json();
+    const aiData = await aiRes.json().catch(() => ({}));
     const aiContent = aiData.choices?.[0]?.message?.content || '[]';
 
     let suggestions: any[];
@@ -303,15 +322,33 @@ Analise estas métricas e gere sugestões de otimização.`;
       }))
       .slice(0, 5); // Max 5 suggestions
 
-    // Enforce budget bounds (±30%)
+    // Limite ±30% sobre o orçamento REAL da campanha, nunca sobre o current_value do modelo (audit CMP-14/SEC-15)
+    const realBudget = parseFloat(campaign.budget_daily || campaign.daily_budget || '0');
+    const allowedObjects = [campaign.meta_campaign_id, campaign.meta_adset_id].filter(Boolean).map(String);
     for (const s of suggestions) {
-      if (s.suggested_action?.action === 'update_budget' && s.suggested_action?.current_value) {
-        const current = s.suggested_action.current_value;
-        const suggested = s.suggested_action.suggested_value;
-        const maxIncrease = current * 1.3;
-        const maxDecrease = current * 0.7;
-        s.suggested_action.suggested_value = Math.min(Math.max(suggested, maxDecrease), maxIncrease);
+      const action = s.suggested_action;
+      const isBudget = action?.action === 'update_budget' ||
+        s.type === 'increase_budget' || s.type === 'decrease_budget';
+      if (!isBudget) continue;
+      const suggested = Number(action?.suggested_value);
+      if (!(realBudget > 0) || !Number.isFinite(suggested) || suggested <= 0) {
+        // Sem orçamento conhecido não há como limitar: mantém só como recomendação textual
+        s.type = 'general';
+        s.suggested_action = {};
+        continue;
       }
+      const bounded = Math.min(Math.max(suggested, realBudget * 0.7), realBudget * 1.3);
+      const objectId = allowedObjects.includes(String(action?.meta_object_id))
+        ? String(action.meta_object_id)
+        : String(campaign.meta_campaign_id);
+      s.suggested_action = {
+        action: 'update_budget',
+        field: 'daily_budget',
+        current_value: realBudget,
+        suggested_value: Math.round(bounded * 100) / 100,
+        meta_object_id: objectId,
+      };
+      s.type = bounded >= realBudget ? 'increase_budget' : 'decrease_budget';
     }
 
     console.log(`✅ [AI-EVAL] Generated ${suggestions.length} suggestions via ${provider}`);

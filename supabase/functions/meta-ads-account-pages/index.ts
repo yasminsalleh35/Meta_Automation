@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { resolveMetaIntegration } from "../_shared/metaIntegration.ts";
+import { fetchAllGraphPages } from "../_shared/metaPaging.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -73,19 +74,18 @@ serve(async (req) => {
 
     const accessToken = integration.access_token;
     const API_VERSION = "v19.0";
+    const graphInit: RequestInit = { headers: { Authorization: `Bearer ${accessToken}` } };
 
     // Fetch ad accounts
     console.log('[meta-ads-account-pages] Fetching ad accounts...');
-    let adAccounts = [];
+    let adAccounts: any[] = [];
     try {
-      const adAccountsUrl = `https://graph.facebook.com/${API_VERSION}/me/adaccounts?fields=id,name,currency,account_status,capabilities,permissions&access_token=${accessToken}`;
-      const adAccountsRes = await fetch(adAccountsUrl, {
-        signal: AbortSignal.timeout(15000)
-      });
+      // audit CMP-11: segue paging.next (limitado a MAX_GRAPH_PAGES)
+      const adAccountsUrl = `https://graph.facebook.com/${API_VERSION}/me/adaccounts?fields=id,name,currency,account_status,capabilities,permissions&limit=100`;
+      const adAccountsRes = await fetchAllGraphPages(adAccountsUrl, graphInit, { timeoutMs: 15000 });
 
       if (adAccountsRes.ok) {
-        const adAccountsData = await adAccountsRes.json();
-        adAccounts = (adAccountsData.data || []).map((account: any) => ({
+        adAccounts = adAccountsRes.data.map((account: any) => ({
           id: account.id,
           name: account.name,
           currency: account.currency,
@@ -94,8 +94,7 @@ serve(async (req) => {
         }));
         console.log('[meta-ads-account-pages] Ad accounts fetched:', adAccounts.length);
       } else {
-        const errorData = await adAccountsRes.json().catch(() => ({ error: 'Unknown error' }));
-        console.error('[meta-ads-account-pages] Ad accounts fetch failed:', adAccountsRes.status, errorData);
+        console.error('[meta-ads-account-pages] Ad accounts fetch failed:', adAccountsRes.status, adAccountsRes.error);
       }
     } catch (error) {
       console.error('[meta-ads-account-pages] Ad accounts fetch error:', error);
@@ -103,16 +102,13 @@ serve(async (req) => {
 
     // Fetch pages
     console.log('[meta-ads-account-pages] Fetching pages...');
-    let pages = [];
+    let pages: any[] = [];
     try {
-      const pagesUrl = `https://graph.facebook.com/${API_VERSION}/me/accounts?fields=id,name,category,followers_count&access_token=${accessToken}`;
-      const pagesRes = await fetch(pagesUrl, {
-        signal: AbortSignal.timeout(15000)
-      });
+      const pagesUrl = `https://graph.facebook.com/${API_VERSION}/me/accounts?fields=id,name,category,followers_count&limit=100`;
+      const pagesRes = await fetchAllGraphPages(pagesUrl, graphInit, { timeoutMs: 15000 });
 
       if (pagesRes.ok) {
-        const pagesData = await pagesRes.json();
-        pages = (pagesData.data || []).map((page: any) => ({
+        pages = pagesRes.data.map((page: any) => ({
           id: page.id,
           name: page.name,
           category: page.category,
@@ -120,8 +116,7 @@ serve(async (req) => {
         }));
         console.log('[meta-ads-account-pages] Pages fetched:', pages.length);
       } else {
-        const errorData = await pagesRes.json().catch(() => ({ error: 'Unknown error' }));
-        console.error('[meta-ads-account-pages] Pages fetch failed:', pagesRes.status, errorData);
+        console.error('[meta-ads-account-pages] Pages fetch failed:', pagesRes.status, pagesRes.error);
       }
     } catch (error) {
       console.error('[meta-ads-account-pages] Pages fetch error:', error);

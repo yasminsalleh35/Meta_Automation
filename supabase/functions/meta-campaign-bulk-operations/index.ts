@@ -1,6 +1,14 @@
 
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
+import {
+  ACTIVATION_ERROR_STATES,
+  activateCascade,
+  fetchEffectiveStatus,
+  pauseCascade,
+  type CascadeIds,
+} from "../_shared/metaCascade.ts";
+import { mapMetaEffectiveStatus } from "../_shared/status.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -75,8 +83,8 @@ serve(async (req) => {
       try {
         console.log(`Processing campaign ${i + 1}/${requestData.metaCampaignIds.length}:`, metaCampaignId);
         
-        let response;
-        let newStatus;
+        let response: Response | null;
+        let newStatus: string;
 
         switch (requestData.action) {
           case 'pause':
@@ -91,25 +99,47 @@ serve(async (req) => {
             newStatus = 'paused';
             break;
 
-          case 'activate':
-            response = await fetch(`${baseUrl}/${metaCampaignId}`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                status: 'ACTIVE',
-                access_token: accessToken
-              })
-            });
-            newStatus = 'active';
+          case 'activate': {
+            // audit CMP-09: ativa em cascata Campaign → AdSet → Ad (mesma lógica de simple-campaign-activate)
+            const { data: row, error: rowError } = await supabaseClient
+              .from('campaigns')
+              .select('meta_campaign_id, meta_adset_id, meta_ad_id')
+              .eq('id', campaignId)
+              .eq('user_id', userData.user.id)
+              .maybeSingle();
+
+            if (rowError || !row) {
+              throw new Error('Campanha não encontrada');
+            }
+
+            const cascadeIds: CascadeIds = {
+              campaignId: row.meta_campaign_id || metaCampaignId,
+              adsetId: row.meta_adset_id,
+              adId: row.meta_ad_id,
+            };
+            await activateCascade(cascadeIds, accessToken);
+
+            const effective = await fetchEffectiveStatus(cascadeIds.campaignId, 'Campaign', accessToken);
+            if (effective && ACTIVATION_ERROR_STATES.includes(effective)) {
+              await pauseCascade(cascadeIds, accessToken);
+              newStatus = 'paused';
+              await supabaseClient
+                .from('campaigns')
+                .update({ status: newStatus, status_at_sync: effective, updated_at: new Date().toISOString() })
+                .eq('id', campaignId)
+                .eq('user_id', userData.user.id);
+              throw new Error(`Não foi possível ativar: ${effective}`);
+            }
+            newStatus = mapMetaEffectiveStatus(effective) === 'pending_review' ? 'pending_review' : 'active';
+            response = null; // cascata já validou as respostas
             break;
+          }
 
           case 'delete':
+            // Graph API: token no header, não no body (DELETE não tem body confiável)
             response = await fetch(`${baseUrl}/${metaCampaignId}`, {
               method: 'DELETE',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                access_token: accessToken
-              })
+              headers: { Authorization: `Bearer ${accessToken}` }
             });
             newStatus = 'deleted';
             break;
@@ -118,7 +148,7 @@ serve(async (req) => {
             throw new Error(`Unknown action: ${requestData.action}`);
         }
 
-        if (!response.ok) {
+        if (response && !response.ok) {
           const error = await response.json();
           throw new Error(`Meta API Error: ${error.error?.message || 'Unknown error'}`);
         }

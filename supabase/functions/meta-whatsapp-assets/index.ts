@@ -16,8 +16,17 @@ const rateLimits = new Map<string, { count: number; resetTime: number }>();
 const MAX_REQUESTS_PER_5MIN = 5;
 const RATE_LIMIT_WINDOW = 5 * 60 * 1000; // 5 minutes
 
-// Circuit breaker - simple in-memory state
-const circuitBreaker = { isOpen: false, openUntil: 0, failureCount: 0 };
+// Circuit breaker - in-memory, por usuário (audit CMP-11: antes um token ruim abria o circuito para todos)
+type BreakerState = { isOpen: boolean; openUntil: number; failureCount: number };
+const circuitBreakers = new Map<string, BreakerState>();
+function breakerFor(userId: string): BreakerState {
+  let state = circuitBreakers.get(userId);
+  if (!state) {
+    state = { isOpen: false, openUntil: 0, failureCount: 0 };
+    circuitBreakers.set(userId, state);
+  }
+  return state;
+}
 const MAX_FAILURES = 3;
 const CIRCUIT_BREAKER_TIMEOUT = 60 * 1000; // 1 minute
 
@@ -99,34 +108,37 @@ function checkRateLimit(userId: string): boolean {
   return true;
 }
 
-function checkCircuitBreaker(): boolean {
+function checkCircuitBreaker(userId: string): boolean {
   const now = Date.now();
-  
+  const circuitBreaker = breakerFor(userId);
+
   if (circuitBreaker.isOpen && now < circuitBreaker.openUntil) {
     return false; // Circuit is open
   }
-  
+
   if (circuitBreaker.isOpen && now >= circuitBreaker.openUntil) {
     // Reset circuit breaker
     circuitBreaker.isOpen = false;
     circuitBreaker.failureCount = 0;
-    logInfo('[meta-whatsapp-assets]', 'Circuit breaker reset');
+    logInfo('[meta-whatsapp-assets]', `Circuit breaker reset for user ${userId}`);
   }
-  
+
   return true;
 }
 
-function recordFailure() {
+function recordFailure(userId: string) {
+  const circuitBreaker = breakerFor(userId);
   circuitBreaker.failureCount++;
   if (circuitBreaker.failureCount >= MAX_FAILURES) {
     circuitBreaker.isOpen = true;
     circuitBreaker.openUntil = Date.now() + CIRCUIT_BREAKER_TIMEOUT;
-    logInfo('[meta-whatsapp-assets]', `Circuit breaker opened for ${CIRCUIT_BREAKER_TIMEOUT/1000}s`);
+    logInfo('[meta-whatsapp-assets]', `Circuit breaker opened for user ${userId} for ${CIRCUIT_BREAKER_TIMEOUT/1000}s`);
   }
 }
 
-function recordSuccess() {
-  circuitBreaker.failureCount = 0;
+function recordSuccess(userId: string) {
+  // sem estado pendente, libera a entrada do Map
+  circuitBreakers.delete(userId);
 }
 
 async function fetchFromGraph(path: string, accessToken: string) {
@@ -160,7 +172,7 @@ serve(async (req) => {
     }
     
     // Circuit breaker
-    if (!checkCircuitBreaker()) {
+    if (!checkCircuitBreaker(user.id)) {
       logInfo('[meta-whatsapp-assets]', 'Circuit breaker is open');
       return json(503, { error: 'Service temporarily unavailable. Please try again later.' });
     }
@@ -195,10 +207,23 @@ serve(async (req) => {
       for (const biz of bizList) {
         try {
           const wabasResponse = await fetchFromGraph(
-            `/${biz.id}/owned_whatsapp_business_accounts?fields=id,name`, 
+            `/${biz.id}/owned_whatsapp_business_accounts?fields=id,name`,
             accessToken
           );
-          const wabasList = wabasResponse.data ?? [];
+          const wabasList: any[] = [...(wabasResponse.data ?? [])];
+
+          // audit CMP-11: inclui também WABAs de clientes (compartilhadas com o business); best-effort
+          try {
+            const clientWabas = await fetchFromGraph(
+              `/${biz.id}/client_whatsapp_business_accounts?fields=id,name`,
+              accessToken
+            );
+            for (const w of clientWabas.data ?? []) {
+              if (!wabasList.some((x) => x.id === w.id)) wabasList.push(w);
+            }
+          } catch (clientErr) {
+            logError('[meta-whatsapp-assets]', `Error fetching client WABAs for business ${biz.id}: ${clientErr}`);
+          }
           
           logInfo('[meta-whatsapp-assets]', '[WABAS]', `business=${biz.id} count=${wabasList.length}`);
 
@@ -251,7 +276,7 @@ serve(async (req) => {
         }
       }
 
-      recordSuccess();
+      recordSuccess(user.id);
       
       const result = { businesses };
       
@@ -261,7 +286,7 @@ serve(async (req) => {
       return json(200, result);
 
     } catch (apiError) {
-      recordFailure();
+      recordFailure(user.id);
       logError('[meta-whatsapp-assets]', `Graph API error: ${apiError}`);
       
       if ((apiError as any).fbTraceId) {

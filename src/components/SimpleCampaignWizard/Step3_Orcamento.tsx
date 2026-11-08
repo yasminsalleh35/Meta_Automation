@@ -7,7 +7,7 @@ import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Button } from '@/components/ui/button';
 import { CalendarIcon } from 'lucide-react';
-import { format } from 'date-fns';
+import { format, startOfDay } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { SimpleCampaignFormData } from '@/types/simpleCampaign.types';
 import { cn } from '@/lib/utils';
@@ -72,7 +72,7 @@ export const Step3Orcamento: React.FC<Step3OrcamentoProps> = ({ formData, update
                 mode="single"
                 selected={formData.startDate}
                 onSelect={(date) => date && updateFormData('startDate', date)}
-                disabled={(date) => date < new Date()}
+                disabled={(date) => date < startOfDay(new Date())}
                 initialFocus
                 className="pointer-events-auto"
               />
@@ -104,7 +104,7 @@ export const Step3Orcamento: React.FC<Step3OrcamentoProps> = ({ formData, update
                 mode="single"
                 selected={formData.endDate || undefined}
                 onSelect={(date) => updateFormData('endDate', date || null)}
-                disabled={(date) => date <= (formData.startDate || new Date())}
+                disabled={(date) => date < startOfDay(formData.startDate || new Date())}
                 initialFocus
                 className="pointer-events-auto"
               />

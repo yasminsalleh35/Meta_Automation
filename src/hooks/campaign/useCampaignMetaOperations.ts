@@ -12,15 +12,12 @@ export const useCampaignMetaOperations = (campaigns: RealCampaign[], updateCampa
       return;
     }
 
-    const success = await metaManagement.pauseCampaign(
+    // audit CMP-09: só atualiza o DB (via callback) se a Meta confirmou; sem fallback em falha
+    await metaManagement.pauseCampaign(
       campaignId,
       campaign.meta_campaign_id,
       () => updateCampaignStatus(campaignId, 'paused')
     );
-
-    if (!success) {
-      await updateCampaignStatus(campaignId, 'paused');
-    }
   };
 
   const activateCampaignWithMeta = async (campaignId: string) => {
@@ -31,32 +28,24 @@ export const useCampaignMetaOperations = (campaigns: RealCampaign[], updateCampa
     }
 
     // Usar ativação em cascata com todos os IDs se disponíveis
-    const success = await metaManagement.activateCampaign(
+    await metaManagement.activateCampaign(
       campaignId,
       campaign.meta_campaign_id,
       campaign.meta_adset_id || '',
       campaign.meta_ad_id || '',
       () => updateCampaignStatus(campaignId, 'active')
     );
-
-    if (!success) {
-      await updateCampaignStatus(campaignId, 'active');
-    }
   };
 
   const deleteCampaignWithMeta = async (campaignId: string) => {
     const campaign = campaigns.find(c => c.id === campaignId);
     
     if (campaign?.meta_campaign_id) {
-      const success = await metaManagement.deleteCampaign(
+      await metaManagement.deleteCampaign(
         campaignId,
         campaign.meta_campaign_id,
         () => deleteCampaign(campaignId)
       );
-
-      if (!success) {
-        await deleteCampaign(campaignId);
-      }
     } else {
       await deleteCampaign(campaignId);
     }

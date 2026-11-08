@@ -196,30 +196,8 @@ export class InstagramIdResolutionService {
         }
       }
 
-      // Method 2: Get accounts from user's permissions (fallback)
-      if (accounts.length === 0) {
-        console.log('📱 Trying alternative method to find Instagram accounts...');
-        
-        try {
-          const accountsResponse = await fetch(
-            `https://graph.facebook.com/v19.0/me/accounts?fields=instagram_business_account{id,name,username}&access_token=${accessToken}`
-          );
-          
-          if (accountsResponse.ok) {
-            const accountsData = await accountsResponse.json();
-            
-            accountsData.data?.forEach((page: any) => {
-              if (page.instagram_business_account) {
-                accounts.push(page.instagram_business_account);
-              }
-            });
-          }
-        } catch (fallbackError) {
-          console.warn('⚠️ Fallback method failed:', fallbackError);
-        }
-      }
-
-      console.log('📱 Final Instagram accounts found:', accounts);
+      // Sem Instagram ligado a ESTA página → lista vazia (posicionamentos só do Facebook).
+      // O antigo fallback via /me/accounts devolvia o Instagram de OUTRAS páginas (audit CMP-03).
       return accounts;
 
     } catch (error) {

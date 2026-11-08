@@ -10,6 +10,7 @@ const corsHeaders = {
 };
 
 const META_API_VERSION = Deno.env.get('META_API_VERSION') ?? 'v23.0';
+const LLM_TIMEOUT_MS = 30_000;
 
 interface AIConfig {
   provider: 'openai' | 'deepseek';
@@ -100,6 +101,7 @@ Regras:
       temperature: 0.7,
       max_tokens: 500,
     }),
+    signal: AbortSignal.timeout(LLM_TIMEOUT_MS),
   });
 
   if (!response.ok) {
@@ -118,7 +120,20 @@ Regras:
     cleaned = cleaned.replace(/^```(?:json)?\s*/, '').replace(/\s*```$/, '');
   }
 
-  const parsed = JSON.parse(cleaned);
+  let parsed: any;
+  try {
+    parsed = JSON.parse(cleaned);
+  } catch {
+    const match = cleaned.match(/\{[\s\S]*\}/);
+    try {
+      parsed = match ? JSON.parse(match[0]) : null;
+    } catch {
+      parsed = null;
+    }
+  }
+  if (!parsed || typeof parsed !== 'object') {
+    throw new Error('Resposta da IA em formato inválido');
+  }
 
   return {
     interests: Array.isArray(parsed.interests) ? parsed.interests.slice(0, 10) : [],
@@ -177,11 +192,12 @@ serve(async (req) => {
       .from('ai_configurations')
       .select('provider, api_key, model_name')
       .eq('is_active', true)
-      .eq('is_default', true)
-      .single();
+      .order('is_default', { ascending: false })
+      .limit(1)
+      .maybeSingle();
 
     if (aiErr || !aiConfig?.api_key) {
-      return json(500, { error: 'AI not configured. Set up AI in admin settings.' });
+      return json(503, { error: 'AI not configured. Set up AI in admin settings.', code: 'AI_UNAVAILABLE' });
     }
 
     // 4. Generate profile via AI

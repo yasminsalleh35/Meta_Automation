@@ -121,7 +121,7 @@ export const useMediaLibrary = () => {
               detail: { filename: file.name, percentage, bytesUploaded, bytesTotal }
             }));
           },
-          onSuccess: async (publicUrl) => {
+          onSuccess: async (publicUrl, finalPath) => {
             try {
               const uploadDuration = (Date.now() - uploadStartTime) / 1000;
               
@@ -178,8 +178,8 @@ export const useMediaLibrary = () => {
                       filename: file.name,
                       file_type: fileToUpload.type,
                       file_size: fileToUpload.size,
-                      file_path: storagePath,
-                      storage_path: storagePath,
+                      file_path: finalPath,
+                      storage_path: finalPath,
                       public_url: publicUrl,
                       source: 'upload',
                       metadata: {

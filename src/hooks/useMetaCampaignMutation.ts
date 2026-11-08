@@ -1,7 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
-import { useMemo, useRef, useCallback } from 'react';
+import { useEffect, useRef, useCallback, useState } from 'react';
 
 type CampaignAction = 'activate' | 'pause';
 
@@ -17,23 +17,15 @@ interface CachedCampaign {
   [key: string]: any;
 }
 
-// Debounce helper inline
-const debounce = <T extends (...args: any[]) => any>(
-  func: T,
-  wait: number
-): ((...args: Parameters<T>) => void) => {
-  let timeout: NodeJS.Timeout | null = null;
-  
-  return (...args: Parameters<T>) => {
-    if (timeout) clearTimeout(timeout);
-    timeout = setTimeout(() => func(...args), wait);
-  };
-};
+const DEBOUNCE_MS = 300;
 
 export const useMetaCampaignMutation = () => {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const snapshotRef = useRef<Map<string, CachedCampaign>>(new Map());
+  // audit CMP-09: debounce por campanha (Map<id, timer>) — pausar A e B em sequência não descarta A
+  const timersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+  const [pendingDebounces, setPendingDebounces] = useState(0);
 
   const mutation = useMutation({
     mutationFn: async ({ campaignId, metaCampaignId, action }: MutationParams) => {
@@ -150,11 +142,34 @@ export const useMetaCampaignMutation = () => {
     }
   });
 
-  // Debounced mutations (300ms)
-  const debouncedMutate = useMemo(
-    () => debounce((params: MutationParams) => mutation.mutate(params), 300),
-    [mutation]
-  );
+  // Ref para o mutate mais recente: o debounce fica estável entre renders
+  const mutateRef = useRef(mutation.mutate);
+  mutateRef.current = mutation.mutate;
+
+  // Debounced mutations (300ms), uma janela por campanha
+  const debouncedMutate = useCallback((params: MutationParams) => {
+    const timers = timersRef.current;
+    const existing = timers.get(params.campaignId);
+    if (existing) {
+      clearTimeout(existing);
+    } else {
+      setPendingDebounces((n) => n + 1);
+    }
+    timers.set(params.campaignId, setTimeout(() => {
+      timers.delete(params.campaignId);
+      setPendingDebounces((n) => Math.max(0, n - 1));
+      mutateRef.current(params);
+    }, DEBOUNCE_MS));
+  }, []);
+
+  // Limpa timers pendentes no unmount
+  useEffect(() => {
+    const timers = timersRef.current;
+    return () => {
+      timers.forEach((t) => clearTimeout(t));
+      timers.clear();
+    };
+  }, []);
 
   const activateCampaign = useCallback((campaignId: string, metaCampaignId: string) => {
     debouncedMutate({ campaignId, metaCampaignId, action: 'activate' });
@@ -167,7 +182,8 @@ export const useMetaCampaignMutation = () => {
   return {
     activateCampaign,
     pauseCampaign,
-    isLoading: mutation.isPending,
+    // inclui a janela de debounce, para a UI não aceitar cliques repetidos
+    isLoading: mutation.isPending || pendingDebounces > 0,
     isError: mutation.isError,
     error: mutation.error
   };

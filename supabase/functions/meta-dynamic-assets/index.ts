@@ -2,6 +2,7 @@ import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { handlePreflight, jsonWithCors } from "../_shared/cors.ts";
 import { assertRateLimit } from "../_shared/rateLimit.ts";
+import { fetchAllGraphPages } from "../_shared/metaPaging.ts";
 
 const API_VERSION = Deno.env.get("META_API_VERSION") ?? "v22.0"; // ✅ PHASE 4: Updated to latest stable version
 
@@ -60,15 +61,6 @@ serve(async (req) => {
   const requestId = crypto.randomUUID();
   console.log(`[meta-dynamic-assets] Request ${requestId} received`);
 
-  // Rate limit global da API
-  const rateLimitResult = assertRateLimit(req, {
-    key: 'meta-dynamic-assets-global',
-    limit: 10,
-    window: 60
-  });
-  
-  if (rateLimitResult) return rateLimitResult;
-
   try {
     // Supabase clients
     const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_ANON_KEY")!);
@@ -106,6 +98,14 @@ serve(async (req) => {
     }
 
     console.log(`[meta-dynamic-assets] Request ${requestId} - User authenticated:`, user.id);
+
+    // audit CMP-11: limite por usuário (antes era uma chave global compartilhada por todos)
+    const rateLimitResult = assertRateLimit(req, {
+      key: `meta-dynamic-assets:${user.id}`,
+      limit: 10,
+      window: 60
+    });
+    if (rateLimitResult) return rateLimitResult;
 
     // Verificar rate limit por usuário
     const userRateLimitCheck = checkUserRateLimit(user.id);
@@ -186,14 +186,16 @@ serve(async (req) => {
     
     try {
       // ✅ PHASE 2: Simplified query (testing without nested fields)
-      const pagesRes = await fetch(
-        `https://graph.facebook.com/${API_VERSION}/me/accounts?fields=id,name,picture{url},whatsapp_number&access_token=${accessToken}`,
-        { signal: AbortSignal.timeout(15000) },
+      // audit CMP-11: segue paging.next (limitado a MAX_GRAPH_PAGES)
+      const pagesRes = await fetchAllGraphPages(
+        `https://graph.facebook.com/${API_VERSION}/me/accounts?fields=id,name,picture{url},whatsapp_number&limit=100`,
+        { headers: { Authorization: `Bearer ${accessToken}` } },
+        { timeoutMs: 15000 },
       );
-      
+
       if (!pagesRes.ok) {
-        console.error(`[meta-dynamic-assets] Request ${requestId} - Pages fetch failed:`, pagesRes.status, pagesRes.statusText);
-        const err = await pagesRes.json().catch(() => ({ error: 'Unknown error' }));
+        console.error(`[meta-dynamic-assets] Request ${requestId} - Pages fetch failed:`, pagesRes.status);
+        const err: any = { error: pagesRes.error ?? 'Unknown error' };
         console.error(`[meta-dynamic-assets] Request ${requestId} - Pages error details:`, err);
         
         // Handle rate limiting with exponential backoff
@@ -228,13 +230,11 @@ serve(async (req) => {
           details: err 
         };
         
-        // Cache error response for shorter time (1 minute)
-        assetsCache.set(user.id, { data: errorResponse, timestamp: Date.now() - (CACHE_TTL_MS - 60000) });
-        
+        // audit CMP-11: não cacheia falhas (antes o erro ficava 1 min no cache)
         return jsonWithCors(origin, errorResponse, { status: pagesRes.status });
       }
-    
-    const pagesData = await pagesRes.json();
+
+    const pagesData = { data: pagesRes.data };
     console.log('[meta-dynamic-assets] Pages fetched:', pagesData?.data?.length || 0);
 
     // Build assets
@@ -243,19 +243,29 @@ serve(async (req) => {
 
     // ✅ FASE 1 OTIMIZAÇÃO: Batch request para Instagram e WhatsApp
     if (pagesData.data && pagesData.data.length > 0) {
-      const pageIds = pagesData.data.map((p: any) => p.id).join(',');
-      
-      console.log('[meta-dynamic-assets] 🚀 BATCH REQUEST para Instagram de todas as páginas:', pageIds);
-      
-      try {
-        // Batch request com timeout maior para múltiplas páginas
-        const batchRes = await fetch(
-          `https://graph.facebook.com/${API_VERSION}?ids=${pageIds}&fields=id,name,picture{url},whatsapp_number{display_phone_number,verified_name},instagram_business_account{id,username,name,profile_picture_url}&access_token=${accessToken}`,
-          { signal: AbortSignal.timeout(20000) }
-        );
+      const allPageIds: string[] = pagesData.data.map((p: any) => p.id);
 
-        if (batchRes.ok) {
-          const batchData = await batchRes.json();
+      console.log('[meta-dynamic-assets] 🚀 BATCH REQUEST para Instagram de todas as páginas:', allPageIds.join(','));
+
+      try {
+        // Batch request com timeout maior para múltiplas páginas.
+        // ?ids= aceita no máximo 50 IDs, então com paginação dividimos em blocos.
+        const batchData: Record<string, any> = {};
+        let batchOk = true;
+        for (let i = 0; i < allPageIds.length; i += 50) {
+          const pageIds = allPageIds.slice(i, i + 50).join(',');
+          const batchRes = await fetch(
+            `https://graph.facebook.com/${API_VERSION}?ids=${pageIds}&fields=id,name,picture{url},whatsapp_number{display_phone_number,verified_name},instagram_business_account{id,username,name,profile_picture_url}&access_token=${accessToken}`,
+            { signal: AbortSignal.timeout(20000) }
+          );
+          if (!batchRes.ok) {
+            batchOk = false;
+            break;
+          }
+          Object.assign(batchData, await batchRes.json());
+        }
+
+        if (batchOk) {
           console.log('[meta-dynamic-assets] ✅ Batch response recebido para', Object.keys(batchData).length, 'páginas');
 
           // Processar dados do batch

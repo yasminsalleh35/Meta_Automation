@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from './use-toast';
 import { metaCache } from '@/lib/metaCache';
@@ -34,8 +34,15 @@ interface UnifiedAssetsData {
   timestamp?: number;
 }
 
-const MAX_RETRIES = 2;
-const RETRY_DELAYS = [1000, 2000]; // 1s, 2s
+// audit CMP-11: no máximo 3 tentativas no total, backoff exponencial (1s, 2s)
+const MAX_ATTEMPTS = 3;
+const BASE_RETRY_DELAY_MS = 1000;
+export const NO_META_INTEGRATION_MESSAGE = 'Conecte sua conta Meta';
+
+// Sem integração Meta não adianta repetir: o backend devolve code NO_INTEGRATION (200) ou 404
+const isNoIntegrationError = (data: any, err: any): boolean =>
+  data?.code === 'NO_INTEGRATION' ||
+  err?.context?.status === 404;
 
 export const useUnifiedMetaAssets = () => {
   const [adAccounts, setAdAccounts] = useState<MetaAdAccount[]>([]);
@@ -46,9 +53,37 @@ export const useUnifiedMetaAssets = () => {
   const [retryCount, setRetryCount] = useState(0);
 
   const isRequestInProgressRef = useRef(false);
+  // Contador em ref: o state ficava preso no closure e o retry nunca parava
+  const retryCountRef = useRef(0);
+  const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isMountedRef = useRef(true);
+  const doFetchRef = useRef<(forceRefresh: boolean, isRetry: boolean) => Promise<void>>();
   const { toast } = useToast();
 
-  const fetchAllAssets = useCallback(async (forceRefresh = false): Promise<void> => {
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+      if (retryTimerRef.current) {
+        clearTimeout(retryTimerRef.current);
+        retryTimerRef.current = null;
+      }
+    };
+  }, []);
+
+  const doFetch = useCallback(async (forceRefresh: boolean, isRetry: boolean): Promise<void> => {
+    if (!isMountedRef.current) return;
+
+    // Chamada externa (não-retry) reinicia o ciclo de tentativas
+    if (!isRetry) {
+      if (retryTimerRef.current) {
+        clearTimeout(retryTimerRef.current);
+        retryTimerRef.current = null;
+      }
+      retryCountRef.current = 0;
+      setRetryCount(0);
+    }
+
     // Prevent concurrent requests
     if (isRequestInProgressRef.current) {
       console.log('[useUnifiedMetaAssets] Request already in progress');
@@ -90,6 +125,15 @@ export const useUnifiedMetaAssets = () => {
         }
       );
 
+      if (isNoIntegrationError(data, functionError)) {
+        console.log('[useUnifiedMetaAssets] No Meta integration — not retrying');
+        setAdAccounts([]);
+        setFacebookPages([]);
+        setInstagramAccounts([]);
+        setError(NO_META_INTEGRATION_MESSAGE);
+        return;
+      }
+
       if (functionError) {
         throw functionError;
       }
@@ -107,6 +151,7 @@ export const useUnifiedMetaAssets = () => {
       setFacebookPages(assetsData.facebookPages);
       setInstagramAccounts(assetsData.instagramAccounts);
       setError(null);
+      retryCountRef.current = 0;
       setRetryCount(0);
 
       // Cache response
@@ -133,19 +178,20 @@ export const useUnifiedMetaAssets = () => {
     } catch (err: any) {
       console.error('[useUnifiedMetaAssets] Error:', err);
 
-      // Retry logic with exponential backoff
-      const currentRetry = retryCount;
-      if (currentRetry < MAX_RETRIES) {
-        const delay = RETRY_DELAYS[currentRetry];
-        console.log(`[useUnifiedMetaAssets] Retrying in ${delay}ms (attempt ${currentRetry + 1}/${MAX_RETRIES})`);
-        
+      // Retry logic with exponential backoff (limitado por MAX_ATTEMPTS)
+      const currentRetry = retryCountRef.current;
+      if (currentRetry < MAX_ATTEMPTS - 1 && isMountedRef.current) {
+        const delay = BASE_RETRY_DELAY_MS * Math.pow(2, currentRetry);
+        console.log(`[useUnifiedMetaAssets] Retrying in ${delay}ms (attempt ${currentRetry + 2}/${MAX_ATTEMPTS})`);
+
+        retryCountRef.current = currentRetry + 1;
         setRetryCount(currentRetry + 1);
-        
-        setTimeout(() => {
-          isRequestInProgressRef.current = false;
-          fetchAllAssets(forceRefresh);
+
+        retryTimerRef.current = setTimeout(() => {
+          retryTimerRef.current = null;
+          doFetchRef.current?.(forceRefresh, true);
         }, delay);
-        
+
         return;
       }
 
@@ -174,7 +220,14 @@ export const useUnifiedMetaAssets = () => {
       setIsLoading(false);
       isRequestInProgressRef.current = false;
     }
-  }, [toast, retryCount]);
+  }, [toast]);
+
+  doFetchRef.current = doFetch;
+
+  const fetchAllAssets = useCallback(
+    (forceRefresh = false): Promise<void> => doFetch(forceRefresh, false),
+    [doFetch]
+  );
 
   // Clear cache and refetch
   const clearCacheAndRefetch = useCallback(async () => {

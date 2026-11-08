@@ -1,12 +1,15 @@
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { FunctionsHttpError } from '@supabase/supabase-js';
 import { useToast } from '@/hooks/use-toast';
 import { useSupabase } from '@/hooks/useSupabase';
 import { SimpleCampaignFormData, SimpleCampaignPayload, SimpleCampaignWizardStep } from '@/types/simpleCampaign.types';
-import { useMetaAdsIntegration } from '@/hooks/useMetaAdsIntegration';
 import { useBusinessSettings } from '@/hooks/useBusinessSettings';
+import { waLinkFromPhone } from '@/lib/phone';
 
-const initialFormData: SimpleCampaignFormData = {
+// Fábrica (não constante de módulo): a data de início é "agora" quando o wizard abre/reinicia,
+// e não o momento em que o módulo carregou (audit CMP-07).
+const makeInitialFormData = (): SimpleCampaignFormData => ({
   campaignName: '',
   adTitle: '',
   adText: '',
@@ -36,7 +39,7 @@ const initialFormData: SimpleCampaignFormData = {
   // WhatsApp per-campaign (null = automatic, resolved from the page's linked number)
   selectedWhatsappPhoneId: null,
   whatsapp_meta: null,
-};
+});
 
 const steps: SimpleCampaignWizardStep[] = [
   { id: 1, title: 'Informações', description: 'Dados básicos da campanha', isComplete: false, isActive: true },
@@ -44,6 +47,8 @@ const steps: SimpleCampaignWizardStep[] = [
   { id: 3, title: 'Orçamento', description: 'Investimento e cronograma', isComplete: false, isActive: false },
   { id: 4, title: 'Localização', description: 'Público e região', isComplete: false, isActive: false }
 ];
+
+const hourToMinutes = (time: string | null): number => parseInt((time || '0').split(':')[0], 10) * 60;
 
 // ✅ Phase 4.4: Build Meta adset_schedule from dayparting config
 const buildAdSchedule = (
@@ -54,53 +59,57 @@ const buildAdSchedule = (
 ): Array<{ start_minute: number; end_minute: number; days: number[]; timezone_type: string }> | null => {
   if (!enabled || !startTime || !endTime || !days.length) return null;
 
-  const startHour = parseInt(startTime.split(':')[0], 10);
-  const endHour = parseInt(endTime.split(':')[0], 10);
-
-  // Meta API uses minutes from midnight (0-1439)
-  const startMinute = startHour * 60;
-  const endMinute = endHour * 60;
+  // Meta API uses minutes from midnight (0-1440); "24:00" = fim do dia
+  const startMinute = hourToMinutes(startTime);
+  const endMinute = hourToMinutes(endTime);
 
   // If start >= end, it means the schedule wraps around midnight — not supported in simple mode
   if (startMinute >= endMinute) return null;
 
-  // If all day (0:00-23:00) and all days, no schedule needed
-  if (startMinute === 0 && endMinute >= 23 * 60 && days.length === 7) return null;
+  // If all day and all days, no schedule needed
+  if (startMinute === 0 && endMinute >= 1440 && days.length === 7) return null;
 
   return [{
     start_minute: startMinute,
     end_minute: endMinute,
     days,
-    timezone_type: 'USER',
+    // a UI diz "fuso horário da conta de anúncios" (audit CMP-07)
+    timezone_type: 'ADVERTISER',
   }];
 };
 
-// ✅ NOVO: Função utilitária para canonizar WhatsApp link
-const buildWhatsappLink = (input: string): string | null => {
-  if (!input) return null;
-  
-  // Se já é um link, validar e normalizar
-  if (input.startsWith('http')) {
-    const waRegex = /https:\/\/(wa\.me|api\.whatsapp\.com\/send\?phone=)(\d+)/;
-    const match = input.match(waRegex);
-    if (match && match[2] && match[2].length >= 8) {
-      return `https://wa.me/${match[2]}`;
+// Datas no fuso de São Paulo (UTC-3, sem horário de verão desde 2019), a partir do dia escolhido no calendário.
+const ymd = (d: Date) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+const isToday = (d: Date) => ymd(d) === ymd(new Date());
+const toStartIso = (d: Date) => (isToday(d) ? new Date().toISOString() : `${ymd(d)}T00:00:00-03:00`);
+// Término = fim do dia escolhido (antes: meia-noite local via toISOString(), cortando o último dia)
+const toEndIso = (d: Date) => `${ymd(d)}T23:59:59-03:00`;
+
+// Objeto único (o projeto compila sem strictNullChecks, então união discriminada não estreita)
+export interface SubmitCampaignResult {
+  success: boolean;
+  data?: any;
+  queued?: boolean;
+  code?: string;
+  error?: string;
+}
+
+// supabase.functions.invoke transforma não-2xx em FunctionsHttpError: o corpo tem a mensagem real.
+async function readFunctionError(error: unknown): Promise<{ code?: string; userMessage?: string }> {
+  if (error instanceof FunctionsHttpError) {
+    try {
+      return await error.context.json();
+    } catch {
+      return {};
     }
-    return null;
   }
-  
-  // Se é número, limpar e montar link
-  const cleanNumber = input.replace(/\D/g, '');
-  if (cleanNumber.length >= 8) {
-    return `https://wa.me/${cleanNumber}`;
-  }
-  
-  return null;
-};
+  return {};
+}
 
 export const useSimpleCampaignWizard = () => {
   const [currentStep, setCurrentStep] = useState(1);
-  const [formData, setFormData] = useState<SimpleCampaignFormData>(initialFormData);
+  const [formData, setFormData] = useState<SimpleCampaignFormData>(makeInitialFormData);
   const [wizardSteps, setWizardSteps] = useState(steps);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitProgress, setSubmitProgress] = useState<{
@@ -112,26 +121,29 @@ export const useSimpleCampaignWizard = () => {
   });
   const { toast } = useToast();
   const supabase = useSupabase();
-  const { existingIntegration } = useMetaAdsIntegration();
   const { businessData } = useBusinessSettings();
+  // audit CMP-08: uma chave por "abertura" do wizard; reenvios/duplo clique reutilizam a mesma
+  const idempotencyKeyRef = useRef<string>(crypto.randomUUID());
+  const submittingRef = useRef(false);
+
+  // Estável entre renders: os efeitos dos steps dependem dela (audit CMP-04)
+  const updateFormData = useCallback((field: keyof SimpleCampaignFormData, value: any) => {
+    setFormData(prev => (prev[field] === value ? prev : { ...prev, [field]: value }));
+  }, []);
 
   // ✅ Auto-popular WhatsApp de business_settings
   useEffect(() => {
     if (businessData.whatsappNumber && !formData.whatsappNumber) {
-      console.log('✅ Auto-populando WhatsApp de business_settings:', businessData.whatsappNumber);
       updateFormData('whatsappNumber', businessData.whatsappNumber);
-      
+
       toast({
         title: "WhatsApp preenchido automaticamente",
         description: `Usando ${businessData.whatsappNumber} do seu negócio`,
         duration: 3000
       });
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [businessData.whatsappNumber]);
-
-  const updateFormData = (field: keyof SimpleCampaignFormData, value: any) => {
-    setFormData(prev => ({ ...prev, [field]: value }));
-  };
 
   // ✅ Limpeza de estado ao alternar creativeType
   useEffect(() => {
@@ -152,156 +164,62 @@ export const useSimpleCampaignWizard = () => {
     }
   }, [formData.creativeType]);
 
-  const validateCurrentStep = (): boolean => {
-    console.log(`[VALIDATION] Validating step ${currentStep}`);
-    console.log('[VALIDATION] Form data:', formData);
-    
+  // Calculada uma vez por mudança de dados, não a cada render (audit CMP-04)
+  const isCurrentStepValid = useMemo((): boolean => {
     switch (currentStep) {
       case 1:
-        // Step 1: Only validate basic campaign info fields that are actually collected
-        const step1Valid = !!(formData.campaignName && formData.adTitle && formData.adText);
-        console.log('[VALIDATION] Step 1 validation:', {
-          campaignName: !!formData.campaignName,
-          adTitle: !!formData.adTitle,
-          adText: !!formData.adText,
-          isValid: step1Valid
-        });
-        return step1Valid;
-      case 2:
-        // Step 2: Validate media file and Meta assets
-        const hasMedia = formData.creativeType === 'upload' 
-          ? !!formData.selectedMediaFile 
+        return !!(formData.campaignName && formData.adTitle && formData.adText);
+      case 2: {
+        const hasMedia = formData.creativeType === 'upload'
+          ? !!formData.selectedMediaFile
           : !!formData.selectedInstagramPost;
-        
-        // ✅ CTWA NATIVO: WhatsApp NÃO é obrigatório
-        // O promoted_object.page_id será usado para buscar o WA automaticamente
-        const step2Valid = formData.creativeType === 'upload'
-          ? !!(hasMedia && formData.fanpage) // ✅ Apenas mídia + fanpage
-          : !!(hasMedia && formData.fanpage && formData.instagram); // Post IG precisa do Instagram
-          
-        console.log('[VALIDATION] Step 2 validation (CTWA Native Mode):', {
-          creativeType: formData.creativeType,
-          selectedMediaFile: !!formData.selectedMediaFile,
-          selectedInstagramPost: !!formData.selectedInstagramPost,
-          hasMedia,
-          fanpage: !!formData.fanpage,
-          instagram: !!formData.instagram,
-          whatsappNumber: !!formData.whatsappNumber,
-          note: 'WhatsApp NÃO é obrigatório - será buscado via promoted_object.page_id',
-          isValid: step2Valid
-        });
-        return step2Valid;
+        // ✅ CTWA NATIVO: WhatsApp NÃO é obrigatório (resolvido pela Página via promoted_object.page_id),
+        // mas um número digitado precisa ser válido.
+        const whatsappOk = !formData.whatsappNumber || !!waLinkFromPhone(formData.whatsappNumber);
+        return whatsappOk && (formData.creativeType === 'upload'
+          ? !!(hasMedia && formData.fanpage)
+          : !!(hasMedia && formData.fanpage && formData.instagram));
+      }
       case 3: {
-        // Step 3: Validate budget + scheduling
         const budgetOk = formData.dailyBudget >= 30;
-
-        // Phase 4.4: Dayparting validation
         let scheduleOk = true;
         if (formData.enableDayparting) {
           // Meta API requires end_time when using adset_schedule
-          if (!formData.endDate) {
+          if (!formData.endDate) scheduleOk = false;
+          if (formData.scheduleStartTime && formData.scheduleEndTime &&
+              hourToMinutes(formData.scheduleStartTime) >= hourToMinutes(formData.scheduleEndTime)) {
             scheduleOk = false;
-            console.log('[VALIDATION] Dayparting requires end date');
           }
-          // Validate start < end time
-          if (formData.scheduleStartTime && formData.scheduleEndTime) {
-            const startH = parseInt(formData.scheduleStartTime.split(':')[0], 10);
-            const endH = parseInt(formData.scheduleEndTime.split(':')[0], 10);
-            if (startH >= endH) {
-              scheduleOk = false;
-              console.log('[VALIDATION] Schedule start time must be before end time');
-            }
-          }
-          // Must have at least 1 day selected
-          if (!formData.daypartingDays || formData.daypartingDays.length === 0) {
-            scheduleOk = false;
-            console.log('[VALIDATION] Dayparting requires at least 1 day');
-          }
+          if (!formData.daypartingDays || formData.daypartingDays.length === 0) scheduleOk = false;
         }
-
-        const step3Valid = budgetOk && scheduleOk;
-        console.log('[VALIDATION] Step 3 validation:', {
-          dailyBudget: formData.dailyBudget,
-          budgetOk,
-          enableDayparting: formData.enableDayparting,
-          scheduleOk,
-          isValid: step3Valid
-        });
-        return step3Valid;
+        return budgetOk && scheduleOk;
       }
       case 4:
-        // Step 4: Validate location
-        const step4Valid = !!(formData.city && formData.cityCoordinates);
-        console.log('[VALIDATION] Step 4 validation:', {
-          city: !!formData.city,
-          cityCoordinates: !!formData.cityCoordinates,
-          isValid: step4Valid
-        });
-        return step4Valid;
+        // A lista é o que vai para a Meta: sem localização, sem avanço (audit CMP-05)
+        return (formData.selected_locations?.length ?? 0) > 0;
       default:
         return false;
     }
-  };
+  }, [currentStep, formData]);
+
+  const validateCurrentStep = useCallback(() => isCurrentStepValid, [isCurrentStepValid]);
 
   const updateStepStatus = (stepId: number, isComplete: boolean, isActive: boolean) => {
-    setWizardSteps(prev => prev.map(step => 
-      step.id === stepId 
+    setWizardSteps(prev => prev.map(step =>
+      step.id === stepId
         ? { ...step, isComplete, isActive }
-        : step.id < stepId 
+        : step.id < stepId
           ? { ...step, isComplete: true, isActive: false }
           : { ...step, isComplete: false, isActive: false }
     ));
   };
 
   const nextStep = () => {
-    console.log(`[WIZARD] Attempting to go from step ${currentStep} to ${currentStep + 1}`);
-    
-    // ✅ RELATÓRIO: Log detalhado ao avançar para Step 3
-    if (currentStep === 2) {
-      console.log('🔍 [DIAGNOSTIC-REPORT] ADVANCING TO STEP 3 - FORM DATA ANALYSIS:');
-      console.log('📋 [FORM-DATA] Complete form structure:', {
-        timestamp: new Date().toISOString(),
-        currentStep,
-        formData: {
-          creativeType: formData.creativeType,
-          useExistingInstagramPost: formData.useExistingInstagramPost,
-          selectedInstagramPostId: formData.selectedInstagramPostId,
-          instagram: formData.instagram,
-          fanpage: formData.fanpage,
-          selectedMediaMeta: formData.selectedMediaFile ? {
-            file_type: formData.selectedMediaFile.file_type,
-            public_url: formData.selectedMediaFile.public_url,
-            filename: formData.selectedMediaFile.filename,
-            id: formData.selectedMediaFile.id
-          } : null,
-          whatsappNumber: formData.whatsappNumber,
-          whatsappLink: formData.whatsappLink,
-          campaignName: formData.campaignName,
-          adTitle: formData.adTitle,
-          adText: formData.adText
-        }
-      });
-      
-      console.log('🎯 [FLOW-ANALYSIS] Upload vs Existing Post Flow:', {
-        selectedFlow: formData.creativeType,
-        isUploadFlow: formData.creativeType === 'upload',
-        isExistingPostFlow: formData.creativeType === 'post',
-        hasMediaFile: !!formData.selectedMediaFile,
-        hasInstagramPost: !!formData.selectedInstagramPost,
-        instagramActorIdSource: formData.creativeType === 'upload' ? 'from_integration_backend' : 'derived_from_post',
-        whatsappRequired: formData.creativeType === 'upload',
-        whatsappProvided: !!(formData.whatsappNumber || formData.whatsappLink)
-      });
-    }
-    
-    if (currentStep < steps.length && validateCurrentStep()) {
+    if (currentStep < steps.length && isCurrentStepValid) {
       updateStepStatus(currentStep, true, false);
       const nextStepNum = currentStep + 1;
       setCurrentStep(nextStepNum);
       updateStepStatus(nextStepNum, false, true);
-      console.log(`[WIZARD] Successfully moved to step ${nextStepNum}`);
-    } else {
-      console.log('[WIZARD] Cannot proceed - validation failed');
     }
   };
 
@@ -315,55 +233,17 @@ export const useSimpleCampaignWizard = () => {
 
   const resetWizard = () => {
     setCurrentStep(1);
-    setFormData(initialFormData);
+    setFormData(makeInitialFormData());
     setWizardSteps(steps);
     setIsSubmitting(false);
+    idempotencyKeyRef.current = crypto.randomUUID();
   };
 
-  // Retry helper with exponential backoff
-  const invokeFunctionWithRetry = async <T,>(
-    functionName: string,
-    payload: any,
-    maxRetries = 2,
-  ): Promise<T> => {
-    let lastError: Error | null = null;
-    
-    for (let attempt = 0; attempt <= maxRetries; attempt++) {
-      try {
-        if (attempt > 0) {
-          console.log(`🔄 Retry ${attempt}/${maxRetries} for ${functionName}`);
-          setSubmitProgress({ 
-            stage: 'creating-campaign', 
-            message: `Tentativa ${attempt + 1} de ${maxRetries + 1}...` 
-          });
-          await new Promise(resolve => setTimeout(resolve, 1000 * attempt)); // backoff
-        }
-        
-        const response = await supabase.functions.invoke(functionName, {
-          body: payload
-        });
-        
-        if (response.error) {
-          throw new Error(response.error.message);
-        }
-        
-        return response.data as T;
-        
-      } catch (error) {
-        lastError = error as Error;
-        console.error(`❌ Attempt ${attempt + 1} failed:`, error);
-        
-        // Don't retry on validation errors (4xx)
-        if (error instanceof Error && error.message.includes('validation')) {
-          throw error;
-        }
-      }
-    }
-    
-    throw lastError || new Error('Function invocation failed after retries');
-  };
+  const submitCampaign = async (): Promise<SubmitCampaignResult> => {
+    // Duplo clique: a segunda chamada nem sai do navegador (o servidor também barra pela chave)
+    if (submittingRef.current) return { success: false, code: 'IN_PROGRESS', error: 'A campanha já está sendo criada.' };
+    submittingRef.current = true;
 
-  const submitCampaign = async () => {
     // Timers used to advance the progress message while the single long-running edge call is
     // in flight (there is no server push). Always cleared in `finally`.
     const progressTimers: ReturnType<typeof setTimeout>[] = [];
@@ -371,52 +251,21 @@ export const useSimpleCampaignWizard = () => {
       setIsSubmitting(true);
       setSubmitProgress({ stage: 'validating', message: 'Validando dados da campanha...' });
 
-      // Log detalhado do submit da campanha conforme especificação
-      console.log('🔍 [SUBMIT] CAMPAIGN SUBMISSION STARTED:');
-      console.log('📋 [SUBMIT-FORM-DATA] Resumo do payload (sem arquivos):', {
-        timestamp: new Date().toISOString(),
-        creativeType: formData.creativeType,
-        fanpage: formData.fanpage,
-        instagram: formData.instagram,
-        hasSelectedMediaMeta: !!formData.selectedMediaFile,
-        useExistingInstagramPost: formData.useExistingInstagramPost,
-        selectedInstagramPostId: formData.selectedInstagramPostId,
-        campaignName: formData.campaignName,
-        city: formData.city,
-        dailyBudget: formData.dailyBudget
-      });
+      const whatsappLink = waLinkFromPhone(formData.whatsappNumber || formData.whatsappLink);
+      if ((formData.whatsappNumber || formData.whatsappLink) && !whatsappLink) {
+        return { success: false, code: 'INVALID_WHATSAPP', error: 'O número de WhatsApp informado é inválido. Use DDD + número.' };
+      }
 
-      // Canonizar WhatsApp link usando função utilitária
-      const whatsappLink = buildWhatsappLink(formData.whatsappNumber || formData.whatsappLink);
-
-      console.log('🔗 [WHATSAPP-PROCESSING] WhatsApp link canonization:', {
-        original_whatsapp_number: formData.whatsappNumber,
-        original_whatsapp_link: formData.whatsappLink,
-        canonized_whatsapp_link: whatsappLink,
-        is_valid: !!whatsappLink,
-        note: 'Se não fornecido, backend usará promoted_object.page_id'
-      });
-
-      // ✅ CTWA NATIVO: WhatsApp opcional no upload flow
-      // Backend usa promoted_object.page_id se whatsappLink for null
-      if (formData.creativeType === 'upload' && !whatsappLink && !formData.fanpage) {
-        console.log('❌ [VALIDATION-FAILED] Fanpage é obrigatória para CTWA');
-        toast({
-          variant: "destructive",
-          title: "Fanpage obrigatória",
-          description: "Selecione uma Página do Facebook para criar a campanha."
-        });
-        return { success: false, error: "Fanpage obrigatória" };
+      if (!formData.fanpage) {
+        return { success: false, code: 'PAGE_NOT_ALLOWED', error: 'Selecione uma Página do Facebook para criar a campanha.' };
       }
 
       if (formData.creativeType === 'post' && (!formData.instagram || !formData.selectedInstagramPostId)) {
-        console.log('❌ [VALIDATION-FAILED] Instagram data validation failed for existing post flow');
-        toast({
-          variant: "destructive", 
-          title: "Dados do Instagram ausentes",
-          description: "Selecione uma conta do Instagram e um post para promover."
-        });
-        return { success: false, error: "Dados do Instagram ausentes" };
+        return { success: false, code: 'IG_MEDIA_MISSING', error: 'Selecione uma conta do Instagram e um post para promover.' };
+      }
+
+      if (!formData.selected_locations?.length) {
+        return { success: false, code: 'NO_LOCATION', error: 'Escolha pelo menos uma cidade ou estado.' };
       }
 
       // ✅ NOVO: Preparar dados da mídia para upload na Meta API
@@ -426,27 +275,18 @@ export const useSimpleCampaignWizard = () => {
         filename: formData.selectedMediaFile.filename
       } : null;
 
-      console.log('📷 [MEDIA-PREPARATION] Media metadata for Meta API:', {
-        has_media_file: !!formData.selectedMediaFile,
-        selectedMediaMeta,
-        is_upload_flow: formData.creativeType === 'upload',
-        is_existing_post_flow: formData.creativeType === 'post'
-      });
-
-      // ✅ NOVO: Preparar dados do WhatsApp Business (REMOVIDO)
-      // Não será mais necessário pois agora é CTWA exclusivo
-
       // ✅ Payload discriminado por creativeType (campos que a Edge precisa)
       const commonPayload = {
+        idempotencyKey: idempotencyKeyRef.current,
         campaignName: formData.campaignName,
         adTitle: formData.adTitle,
         adText: formData.adText,
         fanpage: formData.fanpage,
         instagram: formData.instagram,
-        whatsappLink,
+        whatsappLink: whatsappLink || '',
         dailyBudget: formData.dailyBudget,
-        startDate: formData.startDate.toISOString(),
-        endDate: formData.endDate ? formData.endDate.toISOString() : null,
+        startDate: toStartIso(formData.startDate),
+        endDate: formData.endDate ? toEndIso(formData.endDate) : null,
         city: formData.city,
         cityCoordinates: formData.cityCoordinates,
         radius: formData.radius,
@@ -458,7 +298,7 @@ export const useSimpleCampaignWizard = () => {
         specialCategories: [],
         // ✅ NOVO: Localização internacional
         countryCode: formData.countryCode || 'BR',
-        selected_locations: formData.selected_locations || [],
+        selected_locations: formData.selected_locations,
         // ✅ Phase 4.4: Scheduling — dayparting
         scheduleStartTime: formData.enableDayparting ? formData.scheduleStartTime : null,
         scheduleEndTime: formData.enableDayparting ? formData.scheduleEndTime : null,
@@ -507,19 +347,6 @@ export const useSimpleCampaignWizard = () => {
         };
       }
 
-      console.log('🚀 [PAYLOAD-ANALYSIS] Final payload sendo enviado à edge function:', {
-        timestamp: new Date().toISOString(),
-        creativeType: payload.creativeType,
-        fanpage: payload.fanpage,
-        instagram: payload.instagram,
-        whatsappLink: payload.whatsappLink,
-        hasSelectedMediaMeta: !!payload.selectedMediaMeta,
-        useExistingInstagramPost: payload.useExistingInstagramPost,
-        selectedInstagramPostId: payload.selectedInstagramPostId,
-        // Conforme especificação: não deriva instagram_actor_id no frontend
-        backend_responsibility: 'Backend deve validar instagram_actor_id via integração'
-      });
-
       setSubmitProgress({ stage: 'uploading', message: 'Enviando mídia para o Meta Ads...' });
 
       // The edge function does the whole Meta creation server-side (media upload + campaign +
@@ -533,32 +360,38 @@ export const useSimpleCampaignWizard = () => {
       showAfter(45_000, 'Criando a campanha e o anúncio...');
       showAfter(90_000, 'Quase lá, finalizando a criação...');
 
-      // ⚠️ Sem retry no cliente: criar campanha NÃO é idempotente — reenviar após um timeout
-      // duplicaria a campanha na Meta. A própria edge function já tem retries internos para
-      // erros transitórios da Meta API.
-      const result = await invokeFunctionWithRetry<{success: boolean, data: any, error?: string}>(
-        'simple-campaign-create',
-        payload,
-        0 // no client-side retries — avoid duplicate campaigns
-      );
+      // Sem retry no cliente: a idempotência é garantida pela chave no servidor (audit CMP-08).
+      const { data, error } = await supabase.functions.invoke('simple-campaign-create', { body: payload });
 
-      progressTimers.forEach(t => clearTimeout(t));
+      if (error) {
+        const body = await readFunctionError(error);
+        return {
+          success: false,
+          code: body.code,
+          error: body.userMessage || 'Não foi possível criar a campanha. Tente novamente em instantes.'
+        };
+      }
 
-      if (!result.success) {
-        throw new Error(result.error || 'Erro ao criar campanha');
+      // 202: pedido recebido, NÃO criado (audit CMP-01)
+      if (data?.status === 'queued') {
+        return { success: false, queued: true, code: data.code, error: data.userMessage };
+      }
+
+      if (!data?.success || data.status !== 'created') {
+        return { success: false, code: data?.code, error: data?.userMessage || 'Erro ao criar campanha' };
       }
 
       setSubmitProgress({ stage: 'done', message: 'Campanha criada com sucesso!' });
-      
-      return { success: true, data: result.data };
+      return { success: true, data };
     } catch (error) {
       console.error('❌ Erro ao criar campanha:', error);
-      return { 
-        success: false, 
+      return {
+        success: false,
         error: error instanceof Error ? error.message : 'Erro desconhecido'
       };
     } finally {
       progressTimers.forEach(t => clearTimeout(t));
+      submittingRef.current = false;
       setIsSubmitting(false);
       setSubmitProgress({ stage: 'idle', message: '' });
     }
@@ -572,6 +405,7 @@ export const useSimpleCampaignWizard = () => {
     submitProgress,
     updateFormData,
     validateCurrentStep,
+    isCurrentStepValid,
     nextStep,
     prevStep,
     submitCampaign,

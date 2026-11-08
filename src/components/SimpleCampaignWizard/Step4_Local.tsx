@@ -47,6 +47,19 @@ const INITIAL_COUNTRIES = [
 // ✅ Limite máximo Meta API
 const MAX_LOCATIONS = 50;
 
+type SelectedLocation = NonNullable<SimpleCampaignFormData['selected_locations']>[number];
+
+const hasValidCoords = (lat?: number, lng?: number): boolean =>
+  Number.isFinite(lat) && Number.isFinite(lng) && !(lat === 0 && lng === 0);
+
+// Mesma localização = mesma key Meta, ou mesmo tipo + mesma posição (~10 m)
+const sameLocation = (a: SelectedLocation, b: SelectedLocation): boolean => {
+  if (a.type !== b.type) return false;
+  if (a.key || b.key) return a.key === b.key;
+  return hasValidCoords(a.latitude, a.longitude) && hasValidCoords(b.latitude, b.longitude) &&
+    a.latitude!.toFixed(4) === b.latitude!.toFixed(4) && a.longitude!.toFixed(4) === b.longitude!.toFixed(4);
+};
+
 export const Step4Local: React.FC<Step4LocalProps> = ({ formData, updateFormData }) => {
   const { toast } = useToast();
   
@@ -167,7 +180,7 @@ export const Step4Local: React.FC<Step4LocalProps> = ({ formData, updateFormData
     const countryName = suggestion.context?.find(c => c.id.startsWith('country'))?.text || '';
     
     const displayLabel = [cityName, region, countryName].filter(Boolean).join(', ');
-    
+
     // ✅ Atualizar form com dados legados (apenas para compatibilidade)
     updateFormData('city', displayLabel);
     updateFormData('cityCoordinates', {
@@ -175,8 +188,8 @@ export const Step4Local: React.FC<Step4LocalProps> = ({ formData, updateFormData
       longitude: lng,
       center: [lng, lat]
     });
-
-    console.log(`📍 Cidade selecionada: ${displayLabel} (${countryCode})`);
+    // mostra o card da cidade e o slider de raio (audit CMP-05)
+    setSelectedCity(displayLabel);
 
     // ✅ Criar nova localização
     const newLocation = {
@@ -190,11 +203,9 @@ export const Step4Local: React.FC<Step4LocalProps> = ({ formData, updateFormData
       distance_unit: 'kilometer' as const
     };
     
-    // ✅ Evitar duplicatas
-    const isDuplicate = currentLocations.some(
-      loc => loc.name === cityName && loc.type === 'city'
-    );
-    
+    // ✅ Evitar duplicatas pela posição, não pelo nome (há cidades homônimas em estados diferentes)
+    const isDuplicate = currentLocations.some(loc => sameLocation(loc, newLocation));
+
     if (!isDuplicate) {
       updateFormData('selected_locations', [...currentLocations, newLocation]);
       toast({
@@ -202,7 +213,6 @@ export const Step4Local: React.FC<Step4LocalProps> = ({ formData, updateFormData
         description: `${cityName} foi adicionada (Total: ${currentLocations.length + 1})`,
         duration: 2000
       });
-      console.log(`✅ Cidade adicionada: ${cityName} (Total: ${currentLocations.length + 1})`);
     } else {
       toast({
         title: "⚠️ Cidade já adicionada",
@@ -210,7 +220,6 @@ export const Step4Local: React.FC<Step4LocalProps> = ({ formData, updateFormData
         variant: "destructive",
         duration: 2000
       });
-      console.warn(`⚠️ Cidade "${cityName}" já foi adicionada`);
     }
     
     // ✅ Limpar campo de busca
@@ -218,14 +227,29 @@ export const Step4Local: React.FC<Step4LocalProps> = ({ formData, updateFormData
     setShowSuggestions(false);
   };
 
-  // ✅ Limpar seleção
+  // ✅ Limpar só a busca (o "X" do campo não apaga mais a lista inteira)
   const handleClearCity = () => {
     setCityQuery('');
-    setSelectedCity('');
     setShowSuggestions(false);
-    updateFormData('city', '');
-    updateFormData('cityCoordinates', null);
-    updateFormData('selected_locations', []);
+  };
+
+  // Campos legados (city/cityCoordinates/radius) acompanham a lista — audit CMP-05
+  const applyLocations = (locations: NonNullable<SimpleCampaignFormData['selected_locations']>) => {
+    updateFormData('selected_locations', locations);
+    const lastWithCoords = [...locations].reverse().find(l => hasValidCoords(l.latitude, l.longitude));
+    if (locations.length === 0) {
+      updateFormData('city', '');
+      updateFormData('cityCoordinates', null);
+      setSelectedCity('');
+      setSelectedRegion(null);
+      return;
+    }
+    const last = locations[locations.length - 1];
+    updateFormData('city', last.name);
+    updateFormData('cityCoordinates', lastWithCoords
+      ? { latitude: lastWithCoords.latitude!, longitude: lastWithCoords.longitude!, center: [lastWithCoords.longitude!, lastWithCoords.latitude!] }
+      : null);
+    if (!locations.some(l => l.type === 'city')) setSelectedCity('');
   };
 
   // ✅ FASE 1: Buscar regiões/estados via Meta API oficial (com fallback Mapbox)
@@ -373,14 +397,20 @@ export const Step4Local: React.FC<Step4LocalProps> = ({ formData, updateFormData
       willUseOfficialTargeting: hasMetaKey
     });
 
-    // ✅ Atualizar campos legados para validação funcionar
-    const [lng, lat] = suggestion.center || [0, 0];
+    // Estados da Meta vêm com center [0,0]: nunca guardar 0,0 como coordenada (audit CMP-05)
+    const [lng, lat] = suggestion.center || [];
+    const coordsOk = hasValidCoords(lat, lng);
+    if (!hasMetaKey && !coordsOk) {
+      toast({
+        title: "⚠️ Não foi possível localizar este estado",
+        description: "Tente outro resultado da busca ou conecte a Meta para usar o targeting oficial.",
+        variant: "destructive",
+        duration: 3000
+      });
+      return;
+    }
     updateFormData('city', displayLabel);
-    updateFormData('cityCoordinates', {
-      latitude: lat,
-      longitude: lng,
-      center: [lng, lat]
-    });
+    updateFormData('cityCoordinates', coordsOk ? { latitude: lat, longitude: lng, center: [lng, lat] } : null);
 
     // ✅ Criar nova localização
     const newLocation: any = {
@@ -402,10 +432,8 @@ export const Step4Local: React.FC<Step4LocalProps> = ({ formData, updateFormData
       console.warn(`⚠️ [FALLBACK-TARGETING] Estado sem key Meta (Mapbox)`);
     }
     
-    // ✅ Evitar duplicatas
-    const isDuplicate = currentLocations.some(
-      loc => loc.name === regionName && loc.type === 'region'
-    );
+    // ✅ Evitar duplicatas (pela key Meta ou pela posição)
+    const isDuplicate = currentLocations.some(loc => sameLocation(loc, newLocation));
     
     if (!isDuplicate) {
       updateFormData('selected_locations', [...currentLocations, newLocation]);
@@ -451,7 +479,7 @@ export const Step4Local: React.FC<Step4LocalProps> = ({ formData, updateFormData
     const updated = currentLocations.filter(
       loc => !(loc.name === locationName && loc.type === locationType)
     );
-    updateFormData('selected_locations', updated);
+    applyLocations(updated);
     toast({
       title: "🗑️ Localização removida",
       description: `${locationName} foi removida`,
@@ -462,11 +490,9 @@ export const Step4Local: React.FC<Step4LocalProps> = ({ formData, updateFormData
 
   // ✅ Limpar todas as localizações
   const handleClearAllLocations = () => {
-    updateFormData('selected_locations', []);
+    applyLocations([]);
     setCityQuery('');
     setRegionQuery('');
-    setSelectedCity('');
-    setSelectedRegion(null);
     toast({
       title: "🗑️ Localizações limpas",
       description: "Todas as localizações foram removidas",
@@ -574,9 +600,8 @@ export const Step4Local: React.FC<Step4LocalProps> = ({ formData, updateFormData
                     key={country.code}
                     onClick={() => {
                       setCountryCode(country.code);
-                      handleClearCity();
-                      setSelectedRegion(null);
-                      setRegionQuery('');
+                      // trocar de país zera a lista (as localizações eram do país anterior)
+                      handleClearAllLocations();
                     }}
                   >
                     <span className="text-lg mr-2">{country.flag}</span>

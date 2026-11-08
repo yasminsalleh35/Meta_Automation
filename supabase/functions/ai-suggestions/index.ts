@@ -135,8 +135,9 @@ serve(async (req) => {
       .from('ai_configurations')
       .select('provider, api_key, model_name')
       .eq('is_active', true)
-      .eq('is_default', true)
-      .single();
+      .order('is_default', { ascending: false })
+      .limit(1)
+      .maybeSingle();
 
     if (configError || !aiConfig) {
       throw new Error('IA não configurada (nenhuma configuração ativa/padrão em ai_configurations)');
@@ -177,6 +178,7 @@ serve(async (req) => {
     const fallback = {
       ...generateFallbackSuggestions(businessData),
       _source: 'fallback',
+      _error_code: 'AI_UNAVAILABLE',
       _warning: toMessage(err),
     };
     return jsonResponse(fallback);
@@ -217,6 +219,7 @@ async function generateAISuggestions(
       temperature: 0.7,
       max_tokens: 1500,
     }),
+    signal: AbortSignal.timeout(30_000),
   });
 
   if (!response.ok) {

@@ -33,9 +33,9 @@ export function mapGenders(genders: 'all'|'male'|'female'|number[]|null|undefine
 }
 
 /** Clampa faixa etária para limites compatíveis com Meta. */
-export function clampAge(n: number | null | undefined, min: number, max: number): number {
+export function clampAge(n: number | null | undefined, min: number, max: number, fallback = min): number {
   const v = Number.isFinite(n as number) ? Number(n) : NaN;
-  if (Number.isNaN(v)) return min;
+  if (Number.isNaN(v)) return fallback;
   return Math.max(min, Math.min(max, v));
 }
 

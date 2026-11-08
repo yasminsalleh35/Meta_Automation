@@ -42,7 +42,7 @@ const MetaAdsConnectionStep: React.FC<MetaAdsConnectionStepProps> = ({
       <p className="text-xs text-muted-foreground max-w-sm mx-auto">
         Ao conectar, você concorda com nossa{' '}
         <a
-          href="https://iacamply.com/privacy"
+          href="/legal/privacy"
           target="_blank"
           rel="noopener noreferrer"
           className="underline hover:text-foreground"
@@ -51,7 +51,7 @@ const MetaAdsConnectionStep: React.FC<MetaAdsConnectionStepProps> = ({
         </a>
         {' '}e{' '}
         <a
-          href="https://iacamply.com/terms"
+          href="/legal/terms"
           target="_blank"
           rel="noopener noreferrer"
           className="underline hover:text-foreground"

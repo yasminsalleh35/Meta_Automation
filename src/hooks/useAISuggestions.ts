@@ -27,9 +27,13 @@ interface AISuggestion {
   };
 }
 
+const AI_UNAVAILABLE_TITLE = 'Sugestões indisponíveis no momento';
+const AI_UNAVAILABLE_DESCRIPTION = 'Você pode continuar preenchendo a campanha normalmente, sem a IA.';
+
 export const useAISuggestions = () => {
   const [isAILoading, setIsAILoading] = useState(false);
   const [aiSuggestions, setAiSuggestions] = useState<AISuggestion | null>(null);
+  const [aiUnavailable, setAiUnavailable] = useState(false);
   const { toast } = useToast();
 
   const handleAISuggestion = async (
@@ -46,10 +50,9 @@ export const useAISuggestions = () => {
     }
 
     setIsAILoading(true);
+    setAiUnavailable(false);
 
     try {
-      console.log('🤖 Solicitando sugestões de IA via Edge Function...');
-      
       // Chamar edge function usando cliente AI com timeout estendido
       const { data, error } = await supabaseAI.functions.invoke('ai-suggestions', {
         body: { objective }
@@ -57,14 +60,26 @@ export const useAISuggestions = () => {
 
       if (error) {
         console.error('❌ Erro na Edge Function:', error);
-        throw new Error(error.message || 'Erro ao processar sugestões de IA');
+        const status = (error as { context?: Response }).context?.status;
+        setAiUnavailable(true);
+        toast({
+          title: AI_UNAVAILABLE_TITLE,
+          description: status === 429
+            ? 'Limite de uso da IA atingido. Você pode continuar sem as sugestões e tentar mais tarde.'
+            : AI_UNAVAILABLE_DESCRIPTION,
+        });
+        return;
       }
 
-      if (!data) {
-        throw new Error('Nenhuma sugestão retornada pela IA');
+      // A função devolve sugestões genéricas com _source='fallback' quando a IA falha (audit CMP-15):
+      // não aplicamos textos genéricos na campanha; o usuário segue sem IA.
+      if (!data || data._source === 'fallback') {
+        if (data?._warning) console.warn('IA indisponível:', data._warning);
+        setAiUnavailable(true);
+        toast({ title: AI_UNAVAILABLE_TITLE, description: AI_UNAVAILABLE_DESCRIPTION });
+        return;
       }
 
-      console.log('✅ Sugestões recebidas:', data);
       setAiSuggestions(data);
       
       // Chamar callback se fornecido
@@ -79,28 +94,8 @@ export const useAISuggestions = () => {
 
     } catch (error) {
       console.error('❌ Erro ao gerar sugestões:', error);
-      
-      let errorMessage = 'Erro ao gerar sugestões de IA';
-      
-      if (error instanceof Error) {
-        if (error.message.includes('não configurada') || error.message.includes('não encontrada')) {
-          errorMessage = 'IA não configurada. Entre em contato com o administrador para configurar a integração de IA.';
-        } else if (error.message.includes('API Key inválida')) {
-          errorMessage = 'Configuração de IA inválida. Entre em contato com o administrador.';
-        } else if (error.message.includes('Limite de requisições')) {
-          errorMessage = 'Limite de requisições atingido. Tente novamente em alguns minutos.';
-        } else if (error.message.includes('sem créditos')) {
-          errorMessage = 'Sem créditos disponíveis na conta de IA. Entre em contato com o administrador.';
-        } else {
-          errorMessage = error.message;
-        }
-      }
-      
-      toast({
-        title: "Erro na IA",
-        description: errorMessage,
-        variant: "destructive"
-      });
+      setAiUnavailable(true);
+      toast({ title: AI_UNAVAILABLE_TITLE, description: AI_UNAVAILABLE_DESCRIPTION });
     } finally {
       setIsAILoading(false);
     }
@@ -138,6 +133,7 @@ export const useAISuggestions = () => {
   return {
     isAILoading,
     aiSuggestions,
+    aiUnavailable,
     handleAISuggestion,
     checkAIStatus,
     // Manter compatibilidade com hooks antigos

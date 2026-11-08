@@ -1,5 +1,32 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.49.8'
 import { corsHeadersFor, handlePreflight } from '../_shared/cors.ts'
+import { serviceClient } from '../_shared/auth.ts'
+import { mapMetaEffectiveStatus, type CampaignStatus } from '../_shared/status.ts'
+
+// audit CMP-10: lê o effective_status real na Meta (best-effort) com o token do dono da campanha
+async function fetchCanonicalStatus(userId: string, metaCampaignId: string): Promise<CampaignStatus | null> {
+  try {
+    const { data: integ } = await serviceClient()
+      .from('integrations')
+      .select('access_token')
+      .eq('user_id', userId)
+      .eq('provider', 'meta_ads')
+      .eq('status', 'active')
+      .maybeSingle();
+    if (!integ?.access_token) return null;
+
+    const res = await fetch(
+      `https://graph.facebook.com/v23.0/${encodeURIComponent(metaCampaignId)}?fields=effective_status`,
+      { headers: { Authorization: `Bearer ${integ.access_token}` } }
+    );
+    if (!res.ok) return null;
+    const json = await res.json();
+    return mapMetaEffectiveStatus(json?.effective_status);
+  } catch (e) {
+    console.warn('⚠️ Could not fetch effective_status:', e);
+    return null;
+  }
+}
 
 interface ManualSyncPayload {
   contingency_id: string;
@@ -65,6 +92,8 @@ Deno.serve(async (req) => {
 
     console.log('📦 Contingency data loaded for user:', contingency.user_id);
 
+    const metaStatus = await fetchCanonicalStatus(contingency.user_id, payload.meta_campaign_id);
+
     // 2. Verificar se já existe campanha com esse meta_campaign_id
     const { data: existingCampaign } = await supabaseClient
       .from('campaigns')
@@ -84,6 +113,7 @@ Deno.serve(async (req) => {
           meta_ad_id: payload.meta_ad_id,
           meta_integration_status: 'active',
           processing_status: 'completed',
+          ...(metaStatus ? { status: metaStatus } : {}),
           updated_at: new Date().toISOString()
         })
         .eq('id', existingCampaign.id);
@@ -101,8 +131,8 @@ Deno.serve(async (req) => {
         user_id: contingency.user_id,
         name: campaignData.campaignName || 'Campanha Contingência',
         objective: 'OUTCOME_ENGAGEMENT',
-        status: 'active',
-        
+        status: metaStatus ?? 'active',
+
         // Meta IDs
         meta_campaign_id: payload.meta_campaign_id,
         meta_adset_id: payload.meta_adset_id,
@@ -193,8 +223,8 @@ Deno.serve(async (req) => {
     console.error('❌ Manual sync error:', error);
     return new Response(
       JSON.stringify({
-        error: error.message,
-        details: error.toString()
+        error: error instanceof Error ? error.message : String(error),
+        details: String(error)
       }),
       {
         headers: { ...corsHeadersFor(origin), 'Content-Type': 'application/json' },

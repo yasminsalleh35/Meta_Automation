@@ -45,7 +45,10 @@ const AdminOpenAI = () => {
   useEffect(() => {
     const savedConfig = localStorage.getItem('camply_ai_config');
     if (savedConfig) {
-      setConfig(JSON.parse(savedConfig));
+      // A chave nunca fica no navegador (audit CMP-15): descarta qualquer apiKey de versões antigas
+      const parsed = { ...JSON.parse(savedConfig), apiKey: '' };
+      localStorage.setItem('camply_ai_config', JSON.stringify(parsed));
+      setConfig(parsed);
     } else {
       // Configurar contextos padrão
       setConfig(prev => ({
@@ -97,7 +100,6 @@ Quando responder, considere sempre o contexto específico da plataforma (Meta ou
       case 'openai':
         return {
           name: 'OpenAI',
-          url: 'https://api.openai.com/v1/chat/completions',
           keyPrefix: 'sk-',
           models: [
             { value: 'gpt-4o-mini', label: 'GPT-4o Mini (Rápido e Econômico)' },
@@ -109,7 +111,6 @@ Quando responder, considere sempre o contexto específico da plataforma (Meta ou
       case 'deepseek':
         return {
           name: 'DeepSeek',
-          url: 'https://api.deepseek.com/v1/chat/completions',
           keyPrefix: 'sk-',
           models: [
             { value: 'deepseek-chat', label: 'DeepSeek Chat (Recomendado)' },
@@ -222,8 +223,8 @@ Quando responder, considere sempre o contexto específico da plataforma (Meta ou
         }
       }
 
-      // Cache local para melhor UX (opcional)
-      localStorage.setItem('camply_ai_config', JSON.stringify(config));
+      // Cache local para melhor UX (sem a API key)
+      localStorage.setItem('camply_ai_config', JSON.stringify({ ...config, apiKey: '' }));
 
       console.log('✅ Configuração salva globalmente com sucesso');
 
@@ -254,76 +255,37 @@ Quando responder, considere sempre o contexto específico da plataforma (Meta ou
     }
   };
 
+  // Testa a configuração SALVA pelo servidor (edge function ai-suggestions); o navegador
+  // não chama mais o provedor de IA diretamente (audit CMP-15).
   const handleTestConnection = async () => {
-    if (!config.apiKey) {
-      toast({
-        title: 'API Key necessária',
-        description: `Por favor, insira a API Key do ${getProviderInfo()?.name} antes de testar.`,
-        variant: 'destructive',
-      });
-      return;
-    }
-
-    const providerInfo = getProviderInfo();
-    if (!providerInfo) return;
-
     setIsLoading(true);
     setTestResult(null);
 
     try {
-      console.log(`Testando conexão com ${providerInfo.name}...`);
-      console.log('API Key formato:', config.apiKey.substring(0, 7) + '...');
-      
-      const response = await fetch(providerInfo.url, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${config.apiKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: config.model,
-          messages: [
-            {
-              role: 'user',
-              content: 'Teste de conexão. Responda apenas "OK".'
-            }
-          ],
-          max_tokens: 10,
-        }),
+      const { supabaseAI } = await import('@/integrations/supabase/aiClient');
+      const { data, error } = await supabaseAI.functions.invoke('ai-suggestions', {
+        body: { objective: 'teste de conexão da integração de IA' }
       });
 
-      console.log('Status da resposta:', response.status);
-      
-      if (response.ok) {
-        const data = await response.json();
-        console.log(`Resposta do ${providerInfo.name}:`, data);
-        
-        setTestResult({
-          success: true,
-          message: `Conexão estabelecida com sucesso! Provedor: ${providerInfo.name}, Modelo: ${config.model}`
-        });
-        
-        toast({
-          title: 'Teste bem-sucedido!',
-          description: `A API Key do ${providerInfo.name} está válida e funcionando.`,
-        });
-      } else {
-        const errorData = await response.text();
-        console.error('Erro na resposta:', errorData);
-        
-        let errorMessage = `Erro na conexão com ${providerInfo.name}.`;
-        
-        if (response.status === 401) {
-          errorMessage = 'API Key inválida. Verifique se está correta.';
-        } else if (response.status === 429) {
-          errorMessage = 'Limite de requisições atingido. Tente novamente mais tarde.';
-        } else if (response.status === 402) {
-          errorMessage = 'Conta sem créditos. Adicione créditos na sua conta.';
-        }
-        
+      if (error) {
+        const status = (error as { context?: Response }).context?.status;
         setTestResult({
           success: false,
-          message: `${errorMessage} (Status: ${response.status})`
+          message: `Falha ao chamar a função de IA${status ? ` (Status: ${status})` : ''}.`
+        });
+      } else if (data?._source === 'fallback') {
+        setTestResult({
+          success: false,
+          message: `A IA não respondeu com a configuração salva: ${data._warning || 'motivo desconhecido'}`
+        });
+      } else {
+        setTestResult({
+          success: true,
+          message: 'Conexão estabelecida com sucesso usando a configuração salva no servidor.'
+        });
+        toast({
+          title: 'Teste bem-sucedido!',
+          description: 'A integração de IA salva está funcionando.',
         });
       }
     } catch (error) {
@@ -490,7 +452,7 @@ Quando responder, considere sempre o contexto específico da plataforma (Meta ou
 
               <Button onClick={handleTestConnection} disabled={isLoading}>
                 <TestTube className="w-4 h-4 mr-2" />
-                {isLoading ? 'Testando...' : 'Testar Conexão'}
+                {isLoading ? 'Testando...' : 'Testar Configuração Salva'}
               </Button>
             </div>
 

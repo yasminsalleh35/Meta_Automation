@@ -3,6 +3,7 @@ import { serve } from 'https://deno.land/std@0.190.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { FacebookAdsApi, AdAccount, Campaign, AdSet, AdCreative, Ad } from 'https://esm.sh/facebook-nodejs-business-sdk@19.0.3';
 import { toMessage, toObject } from '../_shared/errors.ts';
+import type { CampaignStatus } from '../_shared/status.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -285,7 +286,8 @@ serve(async (req) => {
         ad_text: payload.copy,
         whatsapp_number: payload.whatsapp_number,
         destination_url: whatsappLink,
-        status: 'PAUSED',
+        // audit CMP-10: DB usa o vocabulário canônico minúsculo ('paused'), não o da Meta
+        status: 'paused' satisfies CampaignStatus,
         processing_status: 'completed',
         meta_integration_status: 'active',
         created_at: new Date().toISOString()

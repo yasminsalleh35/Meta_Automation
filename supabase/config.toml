@@ -163,8 +163,6 @@ verify_jwt = true
 [functions.contingency-manual-sync]
 verify_jwt = true
 
-[functions.contingency-auto-retry-walink]
-verify_jwt = false
 
 [functions.test-wa-link-campaign-create]
 verify_jwt = false

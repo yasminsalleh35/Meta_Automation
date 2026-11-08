@@ -4,6 +4,7 @@
 
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
+import { fetchAllGraphPages } from "../_shared/metaPaging.ts";
 
 const ASSETS_TTL = 24 * 60 * 60 * 1000; // 24 horas
 const API_VERSION = 'v23.0';
@@ -83,12 +84,14 @@ serve(async (req) => {
 
     if (intError) {
       console.error('[META-ASSETS-CACHED] Error fetching integration:', intError);
-      return j({ error: 'Integration not found' }, { status: 404, headers });
+      return j({ error: 'Integration not found', code: 'NO_INTEGRATION' }, { status: 404, headers });
     }
 
     if (!integration) {
-      return j({ 
+      return j({
         error: 'No active Meta Ads integration found',
+        code: 'NO_INTEGRATION', // audit CMP-11: o cliente não deve repetir a chamada
+
         facebookPages: [],
         instagramAccounts: [],
         adAccounts: [],
@@ -129,65 +132,73 @@ serve(async (req) => {
 
     const accessToken = integration.access_token;
 
-    async function get(path: string, params: Record<string, string>) {
+    // audit CMP-11: segue paging.next (limitado a MAX_GRAPH_PAGES)
+    async function getAll(path: string, params: Record<string, string>) {
       const url = new URL(`https://graph.facebook.com/${API_VERSION}/${path}`);
       for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
-      const r = await fetch(url.toString(), { 
-        headers: { authorization: `Bearer ${accessToken}` } 
+      return await fetchAllGraphPages(url.toString(), {
+        headers: { authorization: `Bearer ${accessToken}` }
       });
-      const text = await r.text();
-      let json: any;
-      try { json = JSON.parse(text); } catch { json = { raw: text }; }
-      return { ok: r.ok, status: r.status, json };
     }
 
     // Fetch Facebook Pages + Instagram
-    const pagesRes = await get("me/accounts", { 
+    const pagesRes = await getAll("me/accounts", {
       fields: "id,name,picture,whatsapp_number,instagram_business_account{id,username,profile_picture_url}",
       limit: "100"
     });
 
-    const facebookPages: any[] = [];
-    const instagramAccounts: any[] = [];
-
-    if (pagesRes.ok && pagesRes.json?.data) {
-      for (const page of pagesRes.json.data) {
-        facebookPages.push({
-          id: page.id,
-          name: page.name,
-          pictureUrl: page.picture?.data?.url ?? null,
-          whatsappNumber: page.whatsapp_number ?? null,
-          whatsappVerifiedName: null
-        });
-
-        if (page.instagram_business_account) {
-          instagramAccounts.push({
-            id: page.instagram_business_account.id,
-            name: page.instagram_business_account.username ?? page.name,
-            pageId: page.id,
-            profilePictureUrl: page.instagram_business_account.profile_picture_url ?? null
-          });
-        }
-      }
-    }
-
     // Fetch Ad Accounts
-    const adAccountsRes = await get("me/adaccounts", {
+    const adAccountsRes = await getAll("me/adaccounts", {
       fields: "id,name,currency,account_status",
       limit: "100"
     });
 
-    const adAccounts: any[] = [];
-    if (adAccountsRes.ok && adAccountsRes.json?.data) {
-      for (const acc of adAccountsRes.json.data) {
-        adAccounts.push({
-          id: acc.id,
-          name: acc.name,
-          currency: acc.currency ?? 'BRL',
-          status: acc.account_status === 1 ? 'ACTIVE' : 'INACTIVE',
-          permissions: []
+    // audit CMP-11: falha na Meta NÃO sobrescreve o cache — devolve o erro e mantém o cache anterior
+    if (!pagesRes.ok || !adAccountsRes.ok) {
+      const failed = !pagesRes.ok ? pagesRes : adAccountsRes;
+      console.error('[META-ASSETS-CACHED] Meta API error, keeping previous cache:', failed.status, failed.error);
+      return j({
+        error: failed.error?.message ?? 'Meta API error',
+        code: 'META_API_ERROR',
+        facebookPages: cachedAssets?.facebookPages ?? [],
+        instagramAccounts: cachedAssets?.instagramAccounts ?? [],
+        adAccounts: cachedAssets?.adAccounts ?? [],
+        cached: !!cachedAssets,
+        stale: !!cachedAssets,
+      }, { status: 502, headers });
+    }
+
+    const facebookPages: any[] = [];
+    const instagramAccounts: any[] = [];
+
+    for (const page of pagesRes.data) {
+      facebookPages.push({
+        id: page.id,
+        name: page.name,
+        pictureUrl: page.picture?.data?.url ?? null,
+        whatsappNumber: page.whatsapp_number ?? null,
+        whatsappVerifiedName: null
+      });
+
+      if (page.instagram_business_account) {
+        instagramAccounts.push({
+          id: page.instagram_business_account.id,
+          name: page.instagram_business_account.username ?? page.name,
+          pageId: page.id,
+          profilePictureUrl: page.instagram_business_account.profile_picture_url ?? null
         });
       }
+    }
+
+    const adAccounts: any[] = [];
+    for (const acc of adAccountsRes.data) {
+      adAccounts.push({
+        id: acc.id,
+        name: acc.name,
+        currency: acc.currency ?? 'BRL',
+        status: acc.account_status === 1 ? 'ACTIVE' : 'INACTIVE',
+        permissions: []
+      });
     }
 
     // STEP 4: Update DB cache

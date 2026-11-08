@@ -18,7 +18,7 @@ export const MediaUpload: React.FC<MediaUploadProps> = ({
   onUpload,
   isUploading,
   accept = "image/*,video/*",
-  maxSize = 100,
+  maxSize,
   multiple = false
 }) => {
   const { toast } = useToast();
@@ -26,17 +26,22 @@ export const MediaUpload: React.FC<MediaUploadProps> = ({
   const [dragActive, setDragActive] = React.useState(false);
   const [selectedFiles, setSelectedFiles] = React.useState<File[]>([]);
   const [uploadProgress, setUploadProgress] = React.useState<Record<string, number>>({});
+  const [localUploading, setLocalUploading] = React.useState(false);
+  const busy = isUploading || localUploading;
 
   const validateFile = (file: File): boolean => {
-    const validTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'video/mp4', 'video/mov', 'video/avi'];
+    // video/quicktime = MOV do iPhone; video/x-msvideo = AVI (tipos MIME reais enviados pelos navegadores)
+    const validTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'video/mp4', 'video/quicktime', 'video/x-msvideo', 'video/mov', 'video/avi'];
     if (!validTypes.includes(file.type)) {
       toast({ title: 'Formato não suportado', description: `${file.name}: Use JPG, PNG, WebP, GIF, MP4, MOV ou AVI.`, variant: 'destructive' });
       return false;
     }
     const isImage = file.type.startsWith('image/');
-    const maxFileSize = isImage ? 50 * 1024 * 1024 : 1024 * 1024 * 1024;
+    const typeLimit = isImage ? 50 * 1024 * 1024 : 1024 * 1024 * 1024;
+    // maxSize (em MB) só pode reduzir o limite do tipo
+    const maxFileSize = maxSize ? Math.min(typeLimit, maxSize * 1024 * 1024) : typeLimit;
     if (file.size > maxFileSize) {
-      toast({ title: 'Arquivo muito grande', description: `${isImage ? 'Imagens' : 'Vídeos'} devem ter no máximo ${isImage ? '50MB' : '1GB'}`, variant: 'destructive' });
+      toast({ title: 'Arquivo muito grande', description: `${isImage ? 'Imagens' : 'Vídeos'} devem ter no máximo ${formatFileSize(maxFileSize)}`, variant: 'destructive' });
       return false;
     }
     return true;
@@ -93,15 +98,21 @@ export const MediaUpload: React.FC<MediaUploadProps> = ({
   }, []);
 
   const uploadFiles = async () => {
-    for (const file of selectedFiles) {
-      try {
-        setUploadProgress(prev => ({ ...prev, [file.name]: 0 }));
-        await onUpload(file);
-        // Remoção agora é tratada pelo evento upload-complete
-      } catch (error) {
-        console.error('Erro no upload:', error);
-        // Remoção em caso de erro também é tratada pelo evento upload-complete
+    if (busy) return;
+    setLocalUploading(true);
+    try {
+      for (const file of selectedFiles) {
+        try {
+          setUploadProgress(prev => ({ ...prev, [file.name]: 0 }));
+          await onUpload(file);
+          // Remoção agora é tratada pelo evento upload-complete
+        } catch (error) {
+          console.error('Erro no upload:', error);
+          // Remoção em caso de erro também é tratada pelo evento upload-complete
+        }
       }
+    } finally {
+      setLocalUploading(false);
     }
   };
 
@@ -119,13 +130,13 @@ export const MediaUpload: React.FC<MediaUploadProps> = ({
       <CardHeader><CardTitle className="flex items-center gap-2"><Upload className="w-5 h-5" />Upload de Mídias</CardTitle></CardHeader>
       <CardContent className="space-y-4">
         <div className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors ${dragActive ? 'border-blue-500 bg-blue-50' : 'border-gray-300 hover:border-gray-400'}`} onDragEnter={handleDrag} onDragLeave={handleDrag} onDragOver={handleDrag} onDrop={handleDrop}>
-          <input ref={fileInputRef} type="file" accept={accept} multiple={multiple} onChange={(e) => handleFiles(e.target.files)} className="hidden" disabled={isUploading} />
+          <input ref={fileInputRef} type="file" accept={accept} multiple={multiple} onChange={(e) => handleFiles(e.target.files)} className="hidden" disabled={busy} />
           <div className="cursor-pointer" onClick={() => fileInputRef.current?.click()}>
             <Upload className="w-12 h-12 text-gray-400 mx-auto mb-4" />
             <h3 className="text-lg font-medium text-gray-900 mb-2">Arraste arquivos aqui ou clique para selecionar</h3>
             <p className="text-gray-600 mb-4">Imagens: JPG, PNG, WebP, GIF | Vídeos: MP4, MOV, AVI<br /><span className="text-xs">Imagens até 50MB • Vídeos até 1GB</span></p>
           </div>
-          <Button variant="outline" disabled={isUploading} onClick={() => fileInputRef.current?.click()} className="mt-2">Selecionar Arquivos</Button>
+          <Button variant="outline" disabled={busy} onClick={() => fileInputRef.current?.click()} className="mt-2">Selecionar Arquivos</Button>
         </div>
         {selectedFiles.length > 0 && (
           <div className="space-y-3">
@@ -146,7 +157,7 @@ export const MediaUpload: React.FC<MediaUploadProps> = ({
                       <span className="text-xs text-gray-600">{uploadProgress[file.name]}%</span>
                     </div>
                   )}
-                  <Button variant="ghost" size="sm" onClick={() => setSelectedFiles(prev => prev.filter((_, i) => i !== index))} disabled={isUploading}><X className="w-4 h-4" /></Button>
+                  <Button variant="ghost" size="sm" onClick={() => setSelectedFiles(prev => prev.filter((_, i) => i !== index))} disabled={busy}><X className="w-4 h-4" /></Button>
                 </div>
               </div>
             ))}
@@ -154,8 +165,8 @@ export const MediaUpload: React.FC<MediaUploadProps> = ({
         )}
         {selectedFiles.length > 0 && (
           <div className="flex justify-end">
-            <Button onClick={uploadFiles} disabled={isUploading || selectedFiles.length === 0}>
-              {isUploading ? 'Enviando...' : `Enviar ${selectedFiles.length} arquivo(s)`}
+            <Button onClick={uploadFiles} disabled={busy || selectedFiles.length === 0}>
+              {busy ? 'Enviando...' : `Enviar ${selectedFiles.length} arquivo(s)`}
             </Button>
           </div>
         )}

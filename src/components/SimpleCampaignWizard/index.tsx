@@ -27,7 +27,7 @@ export const SimpleCampaignWizard: React.FC = () => {
     isSubmitting,
     submitProgress,
     updateFormData,
-    validateCurrentStep,
+    isCurrentStepValid,
     nextStep,
     prevStep,
     submitCampaign,
@@ -62,13 +62,22 @@ export const SimpleCampaignWizard: React.FC = () => {
         toastInstance.dismiss();
         navigate('/dashboard/campaigns');
       }, 2000);
-    } else {
-      // ❌ ERRO: Mostrar mensagem de erro sem navegar
+    } else if (result.queued) {
+      // ⏳ Pedido recebido, mas a campanha AINDA NÃO existe — nunca mostrar como sucesso (audit CMP-01)
       toast({
-        title: "❌ Erro ao criar campanha",
+        title: "⏳ Recebemos seu pedido",
+        description: result.error,
+        duration: 8000
+      });
+      resetWizard();
+      navigate('/dashboard/campaigns');
+    } else if (result.code !== 'IN_PROGRESS') {
+      // ❌ ERRO: Mostrar a mensagem do servidor sem navegar (o usuário corrige e tenta de novo)
+      toast({
+        title: "❌ Não foi possível criar a campanha",
         description: result.error || "Ocorreu um erro inesperado. Tente novamente.",
         variant: "destructive",
-        duration: 5000
+        duration: 8000
       });
     }
   };
@@ -199,7 +208,7 @@ export const SimpleCampaignWizard: React.FC = () => {
               {currentStep < steps.length ? (
                 <Button
                   onClick={nextStep}
-                  disabled={!validateCurrentStep()}
+                  disabled={!isCurrentStepValid}
                   className="flex items-center gap-2"
                 >
                   Próximo
@@ -208,7 +217,7 @@ export const SimpleCampaignWizard: React.FC = () => {
               ) : (
                 <Button
                   onClick={handleSubmit}
-                  disabled={!validateCurrentStep() || isSubmitting}
+                  disabled={!isCurrentStepValid || isSubmitting}
                   className="flex items-center gap-2 bg-green-600 hover:bg-green-700"
                 >
                   {isSubmitting ? (

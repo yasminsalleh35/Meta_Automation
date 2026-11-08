@@ -30,7 +30,14 @@ export const MediaSelector: React.FC<MediaSelectorProps> = ({
   updateFormData 
 }) => {
   const [isOpen, setIsOpen] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
   const { mediaFiles, isLoading, uploadFile } = useMediaLibrary();
+
+  // Fechar o painel no meio do envio perderia o progresso (audit CMP-16)
+  const handleOpenChange = (open: boolean) => {
+    if (!open && isUploading) return;
+    setIsOpen(open);
+  };
 
   const handleMediaSelect = (media: any) => {
     const selectedMedia = {
@@ -50,7 +57,13 @@ export const MediaSelector: React.FC<MediaSelectorProps> = ({
   };
 
   const handleUpload = async (file: File) => {
-    const uploadedMedia = await uploadFile(file);
+    setIsUploading(true);
+    let uploadedMedia: Awaited<ReturnType<typeof uploadFile>> = null;
+    try {
+      uploadedMedia = await uploadFile(file);
+    } finally {
+      setIsUploading(false);
+    }
     if (uploadedMedia) {
       const selectedMedia = {
         id: uploadedMedia.id,
@@ -94,7 +107,7 @@ export const MediaSelector: React.FC<MediaSelectorProps> = ({
             
             <ResponsiveSheet
               open={isOpen}
-              onOpenChange={setIsOpen}
+              onOpenChange={handleOpenChange}
               title="Selecionar Mídia para o Anúncio"
               side="bottom"
               trigger={
@@ -133,7 +146,7 @@ export const MediaSelector: React.FC<MediaSelectorProps> = ({
                   <TabsContent value="upload" className="mt-3 sm:mt-4">
                     <MediaUpload
                       onUpload={handleUpload}
-                      isUploading={false}
+                      isUploading={isUploading}
                       accept="image/*,video/*"
                       multiple={false}
                     />
@@ -183,7 +196,7 @@ export const MediaSelector: React.FC<MediaSelectorProps> = ({
                 </Button>
                 <ResponsiveSheet
                   open={isOpen}
-                  onOpenChange={setIsOpen}
+                  onOpenChange={handleOpenChange}
                   title="Selecionar Nova Mídia"
                   side="bottom"
                   trigger={
@@ -221,7 +234,7 @@ export const MediaSelector: React.FC<MediaSelectorProps> = ({
                       <TabsContent value="upload" className="mt-3 sm:mt-4">
                         <MediaUpload
                           onUpload={handleUpload}
-                          isUploading={false}
+                          isUploading={isUploading}
                           accept="image/*,video/*"
                           multiple={false}
                         />

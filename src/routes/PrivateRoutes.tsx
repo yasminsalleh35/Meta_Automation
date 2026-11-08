@@ -1,5 +1,5 @@
 import React, { Suspense } from 'react';
-import { Routes, Route, Navigate } from 'react-router-dom';
+import { Routes, Route, Navigate, useParams } from 'react-router-dom';
 import DashboardLayout from '@/components/layouts/DashboardLayout';
 import AdminLayout from '@/components/layouts/AdminLayout';
 import AdminRoute from '@/components/AdminRoute';
@@ -20,7 +20,6 @@ import SimpleCampaignListPage from '@/pages/dashboard/SimpleCampaignList';
 import SimpleCampaignInsightsPage from '@/pages/dashboard/SimpleCampaignInsights';
 import Media from '@/pages/dashboard/Media';
 import AdvantageCampaignPage from '@/pages/dashboard/AdvantageCampaign';
-import CreateCampaign from '@/pages/dashboard/CreateCampaign';
 import MyBusiness from '@/pages/dashboard/MyBusiness';
 import AdvancedAnalytics from '@/pages/dashboard/AdvancedAnalytics';
 import AdSetVerification from '@/pages/dashboard/AdSetVerification';
@@ -33,7 +32,14 @@ import StrategyReports from '@/pages/dashboard/StrategyReports';
 import StrategyReportView from '@/pages/dashboard/StrategyReportView';
 import Notifications from '@/pages/dashboard/Notifications';
 import Settings from '@/pages/dashboard/Settings';
-import { CampaignPage } from '@/pages/CampaignPage';
+import NotFound from '@/pages/NotFound';
+import { IntegrationTutorial } from '@/components/admin/meta-ads/IntegrationTutorial';
+
+// CampaignPage is a stub; send campaign detail links to the insights page with the real id.
+const CampaignInsightsRedirect: React.FC = () => {
+  const { id } = useParams<{ id: string }>();
+  return <Navigate to={id ? `/dashboard/simple-campaign-insights/${id}` : '/dashboard/campaigns'} replace />;
+};
 
 // ── Phase 6+7: Lazy loaded pages (monitoring + admin) ───────────────────────
 const Monitoring = React.lazy(() => import('@/pages/dashboard/Monitoring'));
@@ -105,16 +111,17 @@ const PrivateRoutes: React.FC = () => {
         <Route path="/dashboard" element={<DashboardLayout />}>
           <Route index element={<Dashboard />} />
           <Route path="campaigns" element={<Campaigns />} />
-          <Route path="campaign/:id" element={<CampaignPage />} />
+          <Route path="campaign/:id" element={<CampaignInsightsRedirect />} />
+          <Route path="campaigns/:id" element={<CampaignInsightsRedirect />} />
           <Route path="simple-campaign-wizard" element={<SimpleCampaignWizardPage />} />
           <Route path="simple-campaign-list" element={<SimpleCampaignListPage />} />
           <Route path="simple-campaign-insights/:campaignId" element={<SimpleCampaignInsightsPage />} />
           <Route path="media" element={<Media />} />
-          <Route path="advantage-campaign" element={<AdvantageCampaignPage />} />
-          <Route path="create-campaign" element={<CreateCampaign />} />
+          {/* audit CMP-12: legacy wizard retired; demo pages moved under /admin */}
+          <Route path="create-campaign" element={<Navigate to="/dashboard/simple-campaign-wizard" replace />} />
+          <Route path="campaigns/create" element={<Navigate to="/dashboard/simple-campaign-wizard" replace />} />
           <Route path="advanced-analytics" element={<AdvancedAnalytics />} />
           <Route path="monitoring" element={<Monitoring />} />
-          <Route path="adset-verification" element={<AdSetVerification />} />
           <Route path="integrations" element={<Integrations />} />
           <Route path="integrations/meta-success" element={<MetaIntegrationSuccess />} />
           <Route path="tutorials" element={<Tutorials />} />
@@ -126,6 +133,7 @@ const PrivateRoutes: React.FC = () => {
           <Route path="notifications" element={<Notifications />} />
           <Route path="settings" element={<Settings />} />
           <Route path="subscription" element={<SubscriptionPageDashboard />} />
+          <Route path="*" element={<NotFound />} />
         </Route>
 
         {/* Admin Routes */}
@@ -152,6 +160,9 @@ const PrivateRoutes: React.FC = () => {
           <Route path="integrations/pagarme" element={<AdminPagarme />} />
           <Route path="integrations/asaas" element={<AdminAsaas />} />
           <Route path="integrations/meta-ads" element={<AdminMetaAds />} />
+          <Route path="integrations/meta-ads-tutorial" element={<IntegrationTutorial />} />
+          <Route path="advantage-campaign" element={<AdvantageCampaignPage />} />
+          <Route path="adset-verification" element={<AdSetVerification />} />
           <Route path="campaign-profiles" element={<AdminCampaignProfiles />} />
           <Route path="meta-test-lab" element={<MetaTestLab />} />
           <Route path="contingency" element={<AdminContingency />} />
@@ -164,13 +175,16 @@ const PrivateRoutes: React.FC = () => {
           <Route path="edge-logs" element={<AdminEdgeLogs />} />
           <Route path="settings" element={<AdminSettings />} />
           <Route path="settings/mapbox" element={<MapboxSettings />} />
+          <Route path="*" element={<NotFound />} />
         </Route>
 
         {/* Legacy Routes - Redirect to dashboard */}
         <Route path="/campaigns" element={<Navigate to="/dashboard/campaigns" replace />} />
-        <Route path="/campaign/:id" element={<Navigate to="/dashboard/campaign/:id" replace />} />
+        <Route path="/campaign/:id" element={<CampaignInsightsRedirect />} />
         <Route path="/settings" element={<Navigate to="/dashboard/settings" replace />} />
         <Route path="/subscription" element={<Navigate to="/dashboard/subscription" replace />} />
+
+        <Route path="*" element={<NotFound />} />
       </Routes>
     </Suspense>
   );

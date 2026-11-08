@@ -1,6 +1,7 @@
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { mapMetaEffectiveStatus, type CampaignStatus } from '../_shared/status.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -12,6 +13,26 @@ interface SimpleCampaignListFilters {
   dateFrom?: string;
   dateTo?: string;
 }
+
+type DisplayStatus = 'ACTIVE' | 'PAUSED' | 'REJECTED';
+
+// audit CMP-10: status canônico → status de exibição da lista (3 valores)
+const DISPLAY_BY_CANONICAL: Record<CampaignStatus, DisplayStatus> = {
+  active: 'ACTIVE',
+  pending_review: 'ACTIVE',
+  paused: 'PAUSED',
+  draft: 'PAUSED',
+  finished: 'REJECTED',
+  error: 'REJECTED',
+  deleted: 'REJECTED',
+};
+
+// filtro de exibição → status canônicos correspondentes
+const CANONICAL_BY_DISPLAY: Record<DisplayStatus, CampaignStatus[]> = {
+  ACTIVE: ['active', 'pending_review'],
+  PAUSED: ['paused', 'draft'],
+  REJECTED: ['finished', 'error'],
+};
 
 serve(async (req) => {
   // Handle CORS preflight requests
@@ -74,13 +95,10 @@ serve(async (req) => {
 
     // Apply status filter
     if (filters.status && filters.status.trim() !== '') {
-      // Map internal status to Meta status
-      const statusMap = {
-        'ACTIVE': 'active',
-        'PAUSED': 'paused',
-        'REJECTED': 'finished'
-      };
-      query = query.eq('status', statusMap[filters.status] || filters.status.toLowerCase());
+      const canonical = CANONICAL_BY_DISPLAY[filters.status as DisplayStatus];
+      query = canonical
+        ? query.in('status', canonical)
+        : query.eq('status', filters.status.toLowerCase());
     }
 
     // Apply date filters
@@ -107,13 +125,8 @@ serve(async (req) => {
 
     // Transform campaigns to the expected format with real metrics
     const transformedCampaigns = (campaigns || []).map(campaign => {
-      // Map internal status to display status
-      const statusMap = {
-        'active': 'ACTIVE',
-        'paused': 'PAUSED',
-        'finished': 'REJECTED',
-        'draft': 'PAUSED'
-      };
+      // Map internal status to display status (aceita valores legados via mapMetaEffectiveStatus)
+      const canonicalStatus = mapMetaEffectiveStatus(campaign.status);
 
       // Extract metrics from database (already synced by meta-campaign-auto-sync)
       const m = campaign.metrics || {};
@@ -121,7 +134,7 @@ serve(async (req) => {
       return {
         campaignId: campaign.id,
         name: campaign.name || 'Campanha sem nome',
-        status: (statusMap as any)[campaign.status] || 'PAUSED',
+        status: canonicalStatus ? DISPLAY_BY_CANONICAL[canonicalStatus] : 'PAUSED',
         createdAt: campaign.created_at,
         impressions: m.impressions || 0,
         clicks: m.clicks || 0,

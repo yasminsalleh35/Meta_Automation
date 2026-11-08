@@ -21,6 +21,7 @@ export const Step1Info: React.FC<Step1InfoProps> = ({ formData, updateFormData }
   const {
     isAILoading,
     aiSuggestions,
+    aiUnavailable,
     handleAISuggestion
   } = useAISuggestions();
 
@@ -185,6 +186,13 @@ export const Step1Info: React.FC<Step1InfoProps> = ({ formData, updateFormData }
             )}
           </div>
         </Button>
+
+        {/* audit CMP-15: IA fora do ar não bloqueia — o usuário segue preenchendo sozinho */}
+        {aiUnavailable && !isAILoading && (
+          <p className="text-sm text-muted-foreground text-center" role="status">
+            Sugestões indisponíveis no momento. Você pode continuar preenchendo a campanha normalmente.
+          </p>
+        )}
 
         {/* AI Full Suggestions Card — shows audience, budget, location after generation */}
         {aiSuggestions && (

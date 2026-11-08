@@ -44,7 +44,7 @@ export const RecentCampaigns: React.FC = () => {
   };
 
   const handleViewDetails = (campaignId: string) => {
-    navigate('/dashboard/campaigns');
+    navigate(`/dashboard/simple-campaign-insights/${campaignId}`);
   };
 
   if (isLoading) {

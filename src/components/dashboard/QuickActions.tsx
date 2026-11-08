@@ -13,7 +13,7 @@ export const QuickActions: React.FC = () => {
       icon: Plus,
       title: 'Nova Campanha',
       description: 'Criar campanha Meta Ads',
-      action: () => navigate('/dashboard/create-campaign'),
+      action: () => navigate('/dashboard/simple-campaign-wizard'),
       color: 'bg-blue-500'
     },
     {

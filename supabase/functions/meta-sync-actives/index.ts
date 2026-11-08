@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
+import { mapMetaEffectiveStatus } from "../_shared/status.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -65,13 +66,13 @@ serve(async (req) => {
 
     console.log(`🔄 [meta-sync-actives] Syncing ACTIVE campaigns for user=${user.id}, ad_account=${ad_account_id}`);
 
-    // Get ACTIVE campaigns only
+    // Ativas + em análise (audit CMP-10: senão pending_review nunca vira active)
     const { data: activeCampaigns } = await admin
       .from("campaigns")
-      .select("id, meta_campaign_id, name")
+      .select("id, meta_campaign_id, name, status")
       .eq("user_id", user.id)
       .eq("ad_account_id", ad_account_id)
-      .eq("status", "active")
+      .in("status", ["active", "pending_review"])
       .not("meta_campaign_id", "is", null)
       .limit(page_size);
 
@@ -177,10 +178,13 @@ serve(async (req) => {
           updateData.metrics = metrics;
         }
 
-        // If status changed from ACTIVE, update it
-        if (effectiveStatus && effectiveStatus !== 'ACTIVE') {
-          updateData.status = effectiveStatus.toLowerCase();
+        // Atualiza o status sempre que o canônico mudar (inclui pending_review → active)
+        const canonicalStatus = mapMetaEffectiveStatus(effectiveStatus);
+        if (effectiveStatus) {
           updateData.status_at_sync = effectiveStatus;
+        }
+        if (canonicalStatus && canonicalStatus !== campaign.status) {
+          updateData.status = canonicalStatus;
         }
 
         const { error } = await admin

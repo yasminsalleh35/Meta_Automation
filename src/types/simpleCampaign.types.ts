@@ -97,6 +97,8 @@ export interface SimpleCampaignPayload {
   selectedInstagramPostId: string | null;
   instagramUserId?: string | null;
   forceLinkCreative?: boolean;
+  // audit CMP-08: mesma chave = mesma criação (gerada quando o wizard abre)
+  idempotencyKey?: string;
   campaignType: string;
   status: string;
   // ✅ Campos forçados pela Edge Function (v23.0 CTWA):

@@ -2,6 +2,9 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { corsHeadersFor, handlePreflight } from '../_shared/cors.ts';
+import { normalizeBrPhone, waLinkFromPhone } from '../_shared/phone.ts';
+import { CampaignError, classifyMetaError, toCampaignError } from './errors.ts';
+import { buildGeoLocations, countScheduledDays, normalizeAdSchedule, normalizeAgeRange } from './targeting.ts';
 
 // Build a Bearer auth header for Meta Graph GET/POST calls so the access token never
 // appears in a URL query string (which can leak into request logs).
@@ -108,6 +111,8 @@ interface SimpleCampaignPayload {
     ageMax?: number;
     genders?: 'all' | 'male' | 'female' | number[];
   } | null;
+  // audit CMP-08: gerado pelo wizard ao abrir; mesma chave = mesma criação
+  idempotencyKey?: string | null;
 }
 
 // Garante o formato "act_123..." exatamente uma vez para qualquer entrada.
@@ -206,7 +211,7 @@ async function saveToContingency(
   //  - rolledBack:        the partial Meta campaign was deleted (safe to recreate from scratch)
   //  - needsDbReconcile:  all Meta objects exist & are valid; only the local DB row is missing
   extra: { rolledBack?: boolean; needsDbReconcile?: boolean } = {}
-): Promise<void> {
+): Promise<string | null> {
   logger('warn', 'CONTINGENCY-SAVE', '💾 Salvando campanha em modo contingência', {
     userId,
     errorStage,
@@ -299,11 +304,85 @@ async function saveToContingency(
       // Auto-retry wa.me removido (audit CMP-02): criava uma campanha OUTCOME_TRAFFIC diferente
       // da configurada pelo usuário. A contingência agora é tratada manualmente pelo admin
       // (contingency-manual-sync).
+      return data?.id ?? null;
     }
   } catch (saveError) {
     logger('error', 'CONTINGENCY-SAVE-CRITICAL', '❌ Erro crítico ao salvar contingência', {
       error: saveError instanceof Error ? saveError.message : String(saveError)
     });
+  }
+  return null;
+}
+
+// audit CMP-03: a Página do payload só vale se pertencer ao usuário. Primeiro as páginas salvas na
+// integração; se não estiver lá, confere em /me/accounts (com paginação) usando o token do usuário.
+async function resolveAllowedPage(requested: string | null | undefined, integration: any): Promise<string> {
+  const stored = new Set<string>(
+    [integration?.page_id, ...(integration?.selected_page_ids ?? [])].filter(Boolean).map(String),
+  );
+  const pageId = requested ? String(requested) : (integration?.page_id ? String(integration.page_id) : '');
+  if (!pageId) {
+    throw new CampaignError('PAGE_NOT_ALLOWED', 'Selecione a Página do Facebook da campanha.');
+  }
+  if (stored.has(pageId)) return pageId;
+
+  let url: string | null = 'https://graph.facebook.com/v23.0/me/accounts?fields=id&limit=100';
+  for (let page = 0; url && page < 10; page++) {
+    const res: Response = await fetch(url, { headers: metaAuthHeaders(integration.access_token), signal: AbortSignal.timeout(10_000) });
+    if (!res.ok) {
+      const body = await res.json().catch(() => null);
+      throw classifyMetaError(res.status, body, 'lista de páginas');
+    }
+    const body: any = await res.json();
+    if ((body?.data ?? []).some((p: any) => String(p.id) === pageId)) return pageId;
+    url = body?.paging?.next ?? null;
+  }
+  throw new CampaignError('PAGE_NOT_ALLOWED',
+    'A Página selecionada não está entre as Páginas que sua conta Meta administra. Reconecte a Meta ou escolha outra Página.');
+}
+
+// audit CMP-08: idempotência por (user_id, chave). Não lança: se a tabela falhar, segue sem trava.
+const IN_PROGRESS_STALE_MS = 10 * 60 * 1000;
+
+async function claimIdempotencyKey(
+  db: any, userId: string, key: string,
+): Promise<{ replay?: unknown; inProgress?: boolean }> {
+  try {
+    const { error } = await db.from('campaign_create_requests')
+      .insert({ user_id: userId, idempotency_key: key, status: 'in_progress' });
+    if (!error) return {};
+    if (error.code !== '23505') {
+      logger('warn', 'IDEMPOTENCY', 'claim failed, continuing without lock', { error: error.message });
+      return {};
+    }
+    const { data: row } = await db.from('campaign_create_requests')
+      .select('status, response, updated_at')
+      .eq('user_id', userId).eq('idempotency_key', key).maybeSingle();
+    if (row?.status === 'done') return { replay: row.response };
+    if (row?.status === 'in_progress' && Date.now() - new Date(row.updated_at).getTime() < IN_PROGRESS_STALE_MS) {
+      return { inProgress: true };
+    }
+    // falhou antes (usuário corrigiu os dados) ou travou: reivindica de novo
+    await db.from('campaign_create_requests')
+      .update({ status: 'in_progress', response: null, updated_at: new Date().toISOString() })
+      .eq('user_id', userId).eq('idempotency_key', key);
+    return {};
+  } catch (e) {
+    logger('warn', 'IDEMPOTENCY', 'claim exception, continuing without lock', { error: (e as Error).message });
+    return {};
+  }
+}
+
+async function finishIdempotencyKey(
+  db: any, userId: string, key: string | null, status: 'done' | 'failed', response: unknown,
+): Promise<void> {
+  if (!key) return;
+  try {
+    await db.from('campaign_create_requests')
+      .update({ status, response, updated_at: new Date().toISOString() })
+      .eq('user_id', userId).eq('idempotency_key', key);
+  } catch (e) {
+    logger('warn', 'IDEMPOTENCY', 'finish failed', { error: (e as Error).message });
   }
 }
 
@@ -459,9 +538,10 @@ export async function createAdSetWithInterestRetries({
       }
 
       // Auto-cura do número de WhatsApp por campanha: se um whatsapp_phone_number_id específico foi
-      // fixado no promoted_object e a Meta reclamou, removemos ele e tentamos novamente com o número
-      // padrão da Página (page_id apenas) — config CTWA conhecida como válida. Sem regressão.
-      if ((payload as any)?.promoted_object?.whatsapp_phone_number_id) {
+      // fixado no promoted_object e a Meta reclamou DELE, removemos e tentamos com o número padrão
+      // da Página. Só para erros sobre WhatsApp/telefone (audit CMP-07) — outros erros não descartam o número.
+      const aboutWhatsapp = /whatsapp|phone|telefone|n[uú]mero/i.test(`${fbMsg} ${body?.error?.message ?? ''}`);
+      if ((payload as any)?.promoted_object?.whatsapp_phone_number_id && aboutWhatsapp && subcode !== 2446885) {
         const removedPhone = (payload as any).promoted_object.whatsapp_phone_number_id;
         delete (payload as any).promoted_object.whatsapp_phone_number_id;
         logger('warn', 'ADSET-RETRY-WHATSAPP', 'Removido whatsapp_phone_number_id específico; tentando com o número padrão da página', {
@@ -496,7 +576,13 @@ export async function createAdSetWithInterestRetries({
     }
   }
 
-  throw new Error((lastErr as any)?.userMessage || 'Ad set creation failed after retries: ' + (lastErr?.message || lastErr?.body?.error?.error_user_msg || lastErr?.body?.error?.message || 'Unknown error'));
+  if (lastErr?.body?.error?.error_subcode === 2446885) {
+    throw new CampaignError('PAGE_NO_WHATSAPP', lastErr.userMessage, {
+      code: lastErr.body.error.code, subcode: 2446885, message: lastErr.body.error.message,
+    });
+  }
+  if (lastErr?.body) throw classifyMetaError(lastErr.status, lastErr.body, 'conjunto de anúncios');
+  throw toCampaignError(lastErr ?? new Error('Ad set creation failed after retries'));
 }
 
 
@@ -729,13 +815,13 @@ function buildImageCreativePayload(opts: {
 
   // ✅ CTWA v23.0 CRITICAL FIX: Campo "link" é SEMPRE obrigatório para modo whatsapp_native
   if (opts.usedMode === 'whatsapp_native') {
-    // Para CTWA, SEMPRE incluir link (Meta API exige mesmo sem CTA visível)
-    link_data.link = opts.ctaLink || `https://wa.me/${opts.pageId}`;
-    logger('info', 'CREATIVE-LINK-ADDED', 'Link CTWA obrigatório incluído', { 
-      link: link_data.link.substring(0, 30) + '...',
-      source: opts.ctaLink ? 'provided' : 'page_fallback',
-      mode: opts.usedMode
-    });
+    // Para CTWA, SEMPRE incluir link (Meta API exige mesmo sem CTA visível). O antigo fallback
+    // wa.me/<pageId> gerava um link quebrado (audit CMP-06); o handler garante um número válido.
+    if (!opts.ctaLink) {
+      throw new CampaignError('INVALID_WHATSAPP',
+        'Informe um número de WhatsApp válido (com DDD) para anúncios de imagem.');
+    }
+    link_data.link = opts.ctaLink;
   } else if (opts.ctaLink) {
     // Para outros modos, usar link se fornecido
     link_data.link = opts.ctaLink;
@@ -776,7 +862,10 @@ function buildImageCreativePayload(opts: {
 async function fetchWithBackoff(
   url: string,
   options: RequestInit,
-  maxRetries = 3
+  maxRetries = 3,
+  // POST não idempotente (ex.: /advideos): após erro de rede não sabemos se a Meta recebeu, então
+  // não reenviamos às cegas (audit CMP-07). Rate limit (resposta explícita da Meta) continua com retry.
+  retryOnNetworkError = true
 ): Promise<Response> {
   let lastError: Error | null = null;
   
@@ -846,7 +935,7 @@ async function fetchWithBackoff(
       lastError = error as Error;
       
       // Network errors - retry with backoff
-      if (attempt < maxRetries) {
+      if (attempt < maxRetries && retryOnNetworkError) {
         const delay = 1000 * Math.pow(2, attempt) + Math.random() * 1000;
         logger('warn', 'NETWORK-ERROR-RETRY', `Erro de rede, retry em ${Math.round(delay / 1000)}s`, {
           attempt: attempt + 1,
@@ -898,7 +987,7 @@ async function uploadMediaToMeta(params: {
       method: "POST",
       headers: metaAuthHeaders(accessToken),
       body: formData
-    }, 3);
+    }, 3, false);
 
     let body: any = null;
     try { body = await res.json(); } catch {}
@@ -910,7 +999,7 @@ async function uploadMediaToMeta(params: {
         body,
         endpoint: url
       });
-      throw new Error(`Video upload failed: ${JSON.stringify(body)}`);
+      throw classifyMetaError(res.status, body, 'envio do vídeo');
     }
 
     const videoId = body?.id;
@@ -949,7 +1038,9 @@ async function uploadMediaToMeta(params: {
     if (!uploadResponse.ok) {
       const errorText = await uploadResponse.text();
       logger('error', 'image-upload', 'Erro no upload da imagem', { error: errorText });
-      throw new Error(`Image upload failed: ${errorText}`);
+      let errorBody: any = null;
+      try { errorBody = JSON.parse(errorText); } catch { /* não-JSON */ }
+      throw classifyMetaError(uploadResponse.status, errorBody, 'envio da imagem');
     }
 
     const result = await uploadResponse.json();
@@ -1121,14 +1212,14 @@ async function createAdCreativeWithRetries(
 
       // If this is the last retry, throw the error
       if (config === retryConfigs[retryConfigs.length - 1]) {
-        throw new Error(`Creative creation failed: ${errorData.error?.message || 'Unknown error'}`);
+        throw classifyMetaError(response.status, errorData, 'criativo');
       }
 
     } catch (error: any) {
       logger('error', 'creative-attempt-error', `Erro na tentativa ${config.name}`, { error: error.message });
-      
-      // If this is the last retry, re-throw the error
-      if (config === retryConfigs[retryConfigs.length - 1]) {
+
+      // If this is the last retry (or the input itself is invalid), re-throw the error
+      if (config === retryConfigs[retryConfigs.length - 1] || (error instanceof CampaignError && error.code === 'INVALID_WHATSAPP')) {
         throw error;
       }
     }
@@ -1163,45 +1254,46 @@ export async function handleRequest(req: Request): Promise<Response> {
   let creativeId: string | null = null;
   let adResult: any = null;
   let uploadResult: { hash?: string; video_id?: string; file_type: string } | null = null;
+  let idempotencyKey: string | null = null;
+
+  const json = (body: unknown, status: number) =>
+    new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+
+  // Auth primeiro (audit CMP-01): sem usuário = 401, nunca "contingência" com HTTP 200.
+  const authHeader = req.headers.get('Authorization');
+  if (authHeader?.startsWith('Bearer ')) {
+    const { data } = await supabaseClient.auth.getUser(authHeader.split(' ')[1]);
+    user = data?.user ?? null;
+  }
+  if (!user) {
+    return json({ success: false, status: 'failed', code: 'UNAUTHENTICATED', userMessage: 'Sua sessão expirou. Entre novamente.' }, 401);
+  }
 
   try {
     // Get request body
-    payload = await req.json();
+    payload = await req.json().catch(() => null);
     // Narrow once: every happy-path access below assumes a non-null payload. This guard both
     // validates the request and lets the type-checker treat `payload` as non-null hereafter
     // (the outer `let payload | null` is kept so the catch block can still inspect it).
-    if (!payload) {
-      throw new Error('Empty or invalid campaign payload');
+    if (!payload || !payload.campaignName || !(Number(payload.dailyBudget) > 0)) {
+      throw new CampaignError('INVALID_PAYLOAD', 'Dados da campanha incompletos. Revise o formulário e tente de novo.');
     }
     logger('info', 'payload-received', 'Payload da campanha recebido', {
       campaignName: payload.campaignName,
       creativeType: payload.creativeType,
-      hasMedia: !!payload.selectedMediaMeta 
+      hasMedia: !!payload.selectedMediaMeta
     });
 
-    // Get Meta Ads config
-    const { data: metaConfig } = await supabaseClient
-      .rpc('get_meta_ads_config')
-      .single();
-
-    if (!metaConfig) {
-      throw new Error('Meta Ads configuration not found');
+    // audit CMP-08: reivindica a chave antes de qualquer chamada à Meta
+    if (payload.idempotencyKey) {
+      idempotencyKey = String(payload.idempotencyKey).slice(0, 100);
+      const claim = await claimIdempotencyKey(supabaseClient, user.id, idempotencyKey);
+      if (claim.replay) return json(claim.replay, 200);
+      if (claim.inProgress) {
+        idempotencyKey = null; // não sobrescrever o registro da requisição original
+        return json({ success: false, status: 'in_progress', code: 'IN_PROGRESS', userMessage: 'Esta campanha já está sendo criada. Aguarde alguns instantes.' }, 409);
+      }
     }
-
-    // Get user's integration
-    const authHeader = req.headers.get('Authorization');
-    if (!authHeader?.startsWith('Bearer ')) {
-      throw new Error('Authorization header missing');
-    }
-
-    const token = authHeader.split(' ')[1];
-    const { data: { user: authUser } } = await supabaseClient.auth.getUser(token);
-    
-    if (!authUser) {
-      throw new Error('User not authenticated');
-    }
-
-    user = authUser; // ✅ ATRIBUIR (não declarar)
 
     const { data: integrationData } = await supabaseClient
       .from('integrations')
@@ -1209,17 +1301,18 @@ export async function handleRequest(req: Request): Promise<Response> {
       .eq('user_id', user.id)
       .eq('provider', 'meta_ads')
       .eq('status', 'active')
-      .single();
+      .maybeSingle();
 
-    if (!integrationData) {
-      throw new Error('Meta Ads integration not found or inactive');
+    if (!integrationData?.access_token || !integrationData?.ad_account_id) {
+      throw new CampaignError('NO_INTEGRATION', 'Conecte sua conta Meta em Integrações antes de criar campanhas.');
     }
 
     integration = integrationData; // ✅ ATRIBUIR (não declarar)
 
     const accessToken = integration.access_token;
     const adAccountId = integration.ad_account_id;
-    const pageId = integration.page_id;
+    // audit CMP-03: a Página escolhida no Step 2, validada contra as páginas do usuário
+    const pageId = await resolveAllowedPage(payload.fanpage, integration);
     const whatsappPhoneId = integration.selected_whatsapp_phone_id ?? null;
     // Per-campaign WhatsApp override (Step 2). When present, we pin this specific number on the ad
     // set's promoted_object; otherwise Meta resolves it from the Page's linked WABA (default).
@@ -1270,10 +1363,12 @@ export async function handleRequest(req: Request): Promise<Response> {
         : 'WhatsApp será buscado automaticamente via promoted_object.page_id'
     });
 
-    // Validação obrigatória apenas da página
-    if (!pageId) {
-      throw new Error('Página do Facebook é obrigatória para campanhas CTWA');
+    // audit CMP-06: número digitado inválido = erro claro (antes ia um link quebrado para a Meta)
+    if (payload.whatsappLink && !normalizeBrPhone(payload.whatsappLink)) {
+      throw new CampaignError('INVALID_WHATSAPP',
+        'O número de WhatsApp informado é inválido. Use DDD + número, ex.: (11) 91234-5678.');
     }
+    let pageWhatsappDisplay: string | null = null;
 
     // ✅ PHASE 6: WhatsApp pre-validation (non-blocking)
     // Checks if the page has WhatsApp connected before attempting campaign creation.
@@ -1292,12 +1387,13 @@ export async function handleRequest(req: Request): Promise<Response> {
               pageId,
               solution: `https://business.facebook.com/latest/settings/pages/${pageId}/whatsapp`
             });
-            throw new Error(
+            throw new CampaignError('PAGE_NO_WHATSAPP',
               'A Página selecionada não possui WhatsApp Business conectado. ' +
               'Acesse o Meta Business Suite e vincule uma conta WhatsApp Business à sua Página, ' +
               'ou selecione um número de WhatsApp na tela de integrações.'
             );
           }
+          pageWhatsappDisplay = pageData.whatsapp_number.display_phone_number ?? null;
           logger('info', 'CTWA-VALIDATION', '✅ WhatsApp verificado via página', {
             pageId,
             whatsappNumber: pageData.whatsapp_number.display_phone_number
@@ -1311,7 +1407,7 @@ export async function handleRequest(req: Request): Promise<Response> {
         }
       } catch (whatsappCheckError: any) {
         // If this is our own validation error, re-throw it
-        if (whatsappCheckError.message?.includes('WhatsApp Business conectado')) {
+        if (whatsappCheckError instanceof CampaignError) {
           throw whatsappCheckError;
         }
         // Network/timeout errors: log and proceed — Meta API will be the final validator
@@ -1326,6 +1422,23 @@ export async function handleRequest(req: Request): Promise<Response> {
         whatsappDisplay: integration.selected_whatsapp_display ?? null
       });
     }
+
+    // Link wa.me normalizado: número digitado → número escolhido no Step 2 → integração → Página
+    const ctwaLink =
+      waLinkFromPhone(payload.whatsappLink) ||
+      waLinkFromPhone(payload.whatsapp_meta?.display_phone_number) ||
+      waLinkFromPhone(integration.selected_whatsapp_display) ||
+      waLinkFromPhone(pageWhatsappDisplay);
+    const isImageUpload = payload.creativeType !== 'post' && !!payload.selectedMediaMeta &&
+      !/video/i.test(payload.selectedMediaMeta.file_type || '');
+    if (isImageUpload && !ctwaLink) {
+      throw new CampaignError('INVALID_WHATSAPP',
+        'Informe o número de WhatsApp (com DDD) no passo de mídia para anúncios com imagem.');
+    }
+
+    // audit CMP-05: localização validada ANTES de criar qualquer objeto na Meta
+    const geo_locations = buildGeoLocations(payload.selected_locations, payload.radius || 10);
+    const adSchedule = normalizeAdSchedule(payload.adSchedule);
 
     logger('info', 'CTWA-CONFIG', 'Configuração CTWA detectada', {
       hasWhatsAppLink: !!payload.whatsappLink,
@@ -1399,7 +1512,7 @@ export async function handleRequest(req: Request): Promise<Response> {
         api_version: 'v23.0'
       });
       
-      throw new Error(`Campaign creation failed: ${errorData.error?.message || 'Unknown error'}`);
+      throw classifyMetaError(campaignResponse.status, errorData, 'campanha');
     }
 
     campaignResult = await campaignResponse.json(); // ✅ ATRIBUIR (não declarar)
@@ -1427,20 +1540,19 @@ export async function handleRequest(req: Request): Promise<Response> {
     const gendersArray = genderMap[payload.gender] || [0];
 
     // ✅ Phase 4.4: Dayparting requires lifetime_budget + end_time (Meta API constraint)
-    const hasDayparting = payload.adSchedule && payload.adSchedule.length > 0 && payload.endDate;
+    const hasDayparting = !!(adSchedule && payload.endDate);
     const budgetInCents = Math.round(payload.dailyBudget * 100);
 
     const adSetPayload: any = {
       name: adSetName,
       campaign_id: campaignResult.id,
-      // When dayparting is active: use lifetime_budget (daily * days remaining)
+      // When dayparting is active: lifetime_budget = diário × dias AGENDADOS no período (audit CMP-07)
       // When no dayparting: use daily_budget as before
       ...(hasDayparting
         ? (() => {
-            const startMs = new Date(payload.startDate).getTime();
-            const endMs = new Date(payload.endDate!).getTime();
-            const days = Math.max(1, Math.ceil((endMs - startMs) / (1000 * 60 * 60 * 24)));
-            return { lifetime_budget: String(budgetInCents * days) };
+            const scheduledDays = new Set(adSchedule!.flatMap((s) => s.days));
+            const days = countScheduledDays(payload.startDate, payload.endDate!, [...scheduledDays]);
+            return { lifetime_budget: String(budgetInCents * days), pacing_type: ['day_parting'] };
           })()
         : { daily_budget: String(budgetInCents) }),
       billing_event: 'IMPRESSIONS',
@@ -1451,7 +1563,7 @@ export async function handleRequest(req: Request): Promise<Response> {
       ...(payload.endDate ? { end_time: payload.endDate } : {}),
       // ✅ Phase 4.4: Dayparting — ad delivery schedule (only with lifetime_budget + end_time)
       ...(hasDayparting
-        ? { adset_schedule: JSON.stringify(payload.adSchedule) }
+        ? { adset_schedule: JSON.stringify(adSchedule) }
         : {}),
       status: 'PAUSED',
       promoted_object: {
@@ -1464,166 +1576,8 @@ export async function handleRequest(req: Request): Promise<Response> {
       access_token: accessToken
     };
 
-    // [TARGETING-BASE] — ✅ Suportar regions + custom_locations
-    let geo_locations: any = {
-      location_types: ['home', 'recent']
-    };
-    
-    if (payload.selected_locations && payload.selected_locations.length > 0) {
-      logger('info', 'GEO-LOCATIONS-BUILD', 'Building from selected_locations', {
-        count: payload.selected_locations.length
-      });
-      
-      const customLocations = [];
-      const regions = [];
-      
-      for (const loc of payload.selected_locations) {
-        console.log(`📍 Processando localização:`, {
-          name: loc.name,
-          type: loc.type,
-          hasKey: !!loc.key,
-          hasCoordinates: !!(loc.latitude && loc.longitude)
-        });
+    // [TARGETING-BASE] geo_locations já validado acima por buildGeoLocations (audit CMP-05)
 
-        // ✅ FASE 2: REGIÃO/ESTADO com logs detalhados
-        if (loc.type === 'region') {
-          // ✅ PRIORIDADE 1: Key Meta oficial (targeting oficial v23)
-          if (loc.key) {
-            regions.push({ key: loc.key });
-            
-            logger('info', '🎯 OFFICIAL-REGION-TARGETING', 'Using Meta API official region key', {
-              name: loc.name,
-              key: loc.key,
-              country: loc.country_code,
-              source: loc.source || 'meta_api',
-              targeting_type: 'geo_locations.regions',
-              precision: 'OFFICIAL',
-              note: '✅ Estado segmentado via Meta API oficial (v23 compliant)'
-            });
-            
-            console.log(`✅ [OFFICIAL-TARGETING] Estado "${loc.name}" usando key oficial: ${loc.key}`);
-            console.log(`   → Payload: geo_locations.regions[{ key: "${loc.key}" }]`);
-          } 
-          // ✅ FALLBACK 1: Coordenadas com raio amplo (80km max)
-          else if (loc.latitude && loc.longitude) {
-            customLocations.push({
-              latitude: loc.latitude,
-              longitude: loc.longitude,
-              radius: 80, // Raio máximo permitido pela Meta API
-              distance_unit: 'kilometer'
-            });
-            
-            logger('warn', '⚠️ FALLBACK-REGION-COORDINATES', 'Region without Meta key, using custom_location', {
-              name: loc.name,
-              lat: loc.latitude,
-              lng: loc.longitude,
-              radius: 80,
-              country: loc.country_code,
-              source: loc.source || 'mapbox',
-              targeting_type: 'custom_locations',
-              precision: 'APPROXIMATE',
-              note: '⚠️ Targeting aproximado - Meta key não disponível. Recomenda-se conectar Meta API.'
-            });
-            
-            console.warn(`⚠️ [FALLBACK-COORDINATES] Estado "${loc.name}" SEM key Meta`);
-            console.log(`   → Usando: custom_locations[{ lat: ${loc.latitude}, lng: ${loc.longitude}, radius: 80km }]`);
-            console.log(`   → Precisão: APROXIMADA (recomenda-se Meta API para targeting oficial)`);
-          }
-          // ❌ FALLBACK 2: País inteiro (última opção)
-          else {
-            if (!geo_locations.countries) geo_locations.countries = [];
-            if (!geo_locations.countries.includes(payload.countryCode || 'BR')) {
-              geo_locations.countries.push(payload.countryCode || 'BR');
-            }
-            
-            logger('error', '❌ FALLBACK-REGION-COUNTRY', 'Region targeting fell back to entire country', {
-              name: loc.name,
-              country: payload.countryCode || 'BR',
-              reason: 'No Meta key AND no coordinates available',
-              targeting_type: 'geo_locations.countries',
-              precision: 'COUNTRY-WIDE',
-              note: '❌ TARGETING MUITO AMPLO - Configurar Meta API ou fornecer coordenadas'
-            });
-            
-            console.error(`❌ [FALLBACK-COUNTRY] Estado "${loc.name}" caiu em fallback de país inteiro!`);
-            console.error(`   → CRÍTICO: Nenhuma key Meta nem coordenadas disponíveis`);
-            console.error(`   → Usando: geo_locations.countries = ["${payload.countryCode || 'BR'}"]`);
-          }
-        }
-        
-        // ✅ CIDADE com lat/lng (custom_locations)
-        else if (loc.type === 'city' && loc.latitude && loc.longitude) {
-          customLocations.push({
-            latitude: loc.latitude,
-            longitude: loc.longitude,
-            radius: loc.radius || payload.radius || 10,
-            distance_unit: 'kilometer'
-          });
-          logger('info', 'GEO-CITY-LATLNG', 'Adding city via lat/lng', {
-            name: loc.name,
-            lat: loc.latitude,
-            lng: loc.longitude,
-            radius: loc.radius || payload.radius || 10
-          });
-        }
-        // ✅ Cidade com key Meta (alternativa)
-        else if (loc.type === 'city' && loc.key) {
-          customLocations.push({
-            key: loc.key,
-            radius: loc.radius || payload.radius || 10,
-            distance_unit: 'kilometer'
-          });
-          logger('info', 'GEO-CITY-KEY', 'Adding city via Meta key', {
-            name: loc.name,
-            key: loc.key,
-            radius: loc.radius || payload.radius || 10
-          });
-        }
-      }
-      
-      // ✅ Aplicar regions se houver
-      if (regions.length > 0) {
-        geo_locations.regions = regions;
-        logger('info', 'GEO-TARGETING', 'Using regions targeting', { 
-          count: regions.length,
-          example: regions[0]
-        });
-      }
-      
-      // ✅ Aplicar custom_locations se houver
-      if (customLocations.length > 0) {
-        geo_locations.custom_locations = customLocations;
-        logger('info', 'GEO-TARGETING', 'Using custom_locations', { 
-          count: customLocations.length 
-        });
-      }
-      
-      // ✅ Fallback se nenhum válido
-      if (regions.length === 0 && customLocations.length === 0) {
-        geo_locations.countries = [payload.countryCode || 'BR'];
-        logger('info', 'GEO-TARGETING', 'Fallback to country', { 
-          country: payload.countryCode || 'BR' 
-        });
-      }
-    } 
-    // ✅ Fallback legado para cityCoordinates
-    else if (payload.cityCoordinates) {
-      geo_locations.custom_locations = [{
-        latitude: payload.cityCoordinates.latitude,
-        longitude: payload.cityCoordinates.longitude,
-        radius: payload.radius || 10,
-        distance_unit: 'kilometer'
-      }];
-      logger('info', 'GEO-TARGETING', 'Using legacy cityCoordinates');
-    } 
-    // ✅ Fallback final
-    else {
-      geo_locations.countries = [payload.countryCode || 'BR'];
-      logger('info', 'GEO-TARGETING', 'Final fallback to country', { 
-        country: payload.countryCode || 'BR' 
-      });
-    }
-    
     // Record<string, any> so dynamic Meta targeting fields (flexible_spec, targeting_automation,
     // languages) can be assigned without `as any` casts further down.
     let targeting: Record<string, any> = {
@@ -1634,8 +1588,7 @@ export async function handleRequest(req: Request): Promise<Response> {
       instagram_positions: ['stream', 'story', 'reels'],
       device_platforms: ['mobile'],
       geo_locations,
-      age_min: payload.ageMin || 18,
-      age_max: payload.ageMax || 65,
+      ...normalizeAgeRange(payload.ageMin, payload.ageMax),
       genders: gendersArray
     };
 
@@ -1643,7 +1596,7 @@ export async function handleRequest(req: Request): Promise<Response> {
     try {
       if (payload.useAISuggestions && payload.aiTargeting) {
         // ✅ AI TARGETING MODE: Use AI-generated targeting instead of profile
-        const { resolveInterestNames, sanitizeInterests, mapGenders, clampAge } = await import('./utils.ts');
+        const { resolveInterestNames, sanitizeInterests, mapGenders } = await import('./utils.ts');
 
         // Resolve AI interest names to Meta IDs
         const resolvedInterests = await resolveInterestNames(
@@ -1653,8 +1606,8 @@ export async function handleRequest(req: Request): Promise<Response> {
 
         const sanitized = sanitizeInterests(resolvedInterests);
 
-        targeting.age_min = clampAge(payload.aiTargeting.ageMin, 13, 65);
-        targeting.age_max = clampAge(payload.aiTargeting.ageMax, 13, 65);
+        // clampAge(undefined) virava 13 para a idade MÁXIMA (audit CMP-07)
+        Object.assign(targeting, normalizeAgeRange(payload.aiTargeting.ageMin, payload.aiTargeting.ageMax));
         targeting.genders = mapGenders(payload.aiTargeting.genders);
 
         if (sanitized.length > 0) {
@@ -1683,7 +1636,8 @@ export async function handleRequest(req: Request): Promise<Response> {
       logger('warn', 'TARGETING-APPLY-ERROR', 'Failed to apply targeting overlay', { message: (err as Error).message });
     }
 
-    // Apply targeting to adSetPayload
+    // Apply targeting to adSetPayload (o perfil também pode mexer na idade: reaplica 18 ≤ min ≤ max ≤ 65)
+    Object.assign(targeting, normalizeAgeRange(targeting.age_min, targeting.age_max));
     adSetPayload.targeting = targeting;
 
     // ✅ Sempre explicite a flag exigida pela Meta
@@ -1739,19 +1693,19 @@ export async function handleRequest(req: Request): Promise<Response> {
     } catch (adSetError: any) {
       // Detectar erro específico de WhatsApp não vinculado
       const errorMessage = adSetError?.message || JSON.stringify(adSetError);
-      
-      if (errorMessage.includes('whatsapp') || 
-          errorMessage.includes('phone number') || 
-          errorMessage.includes('not linked')) {
+
+      if (adSetError instanceof CampaignError && adSetError.code === 'META_INVALID_PARAM' &&
+          /whatsapp|phone number|not linked/i.test(errorMessage)) {
         logger('error', 'ADSET-WHATSAPP-ERROR', '❌ WhatsApp não vinculado à página', {
           pageId: pageId,
           error: errorMessage,
           solution: 'Vincular WhatsApp à página no Meta Business Suite'
         });
         
-        throw new Error(
+        throw new CampaignError('PAGE_NO_WHATSAPP',
           `WhatsApp não vinculado à página selecionada. ` +
-          `Configure em: https://business.facebook.com/latest/settings/pages/${pageId}/whatsapp`
+          `Configure em: https://business.facebook.com/latest/settings/pages/${pageId}/whatsapp`,
+          adSetError.metaError
         );
       }
       
@@ -1776,9 +1730,11 @@ export async function handleRequest(req: Request): Promise<Response> {
     await smartDelay(500, 'post-adset-creation');
 
     // [IG-RESOLVE] — ADICIONAR (não remova nada existente)
+    // audit CMP-03: a conta escolhida no Step 2 primeiro; a da integração só vale para a Página padrão
+    // dela (senão seria o Instagram de OUTRA página). Sem IG → posicionamentos só do Facebook.
     const instagramUserId: string | null =
-      (integration?.selected_instagram_ids && integration.selected_instagram_ids[0]) ||
-      payload?.instagram || // caso front envie
+      payload?.instagram ||
+      (pageId === integration?.page_id ? integration?.selected_instagram_ids?.[0] : null) ||
       null;
 
     logger('info', 'IG-RESOLVED', 'Resolved instagram user id', {
@@ -1792,7 +1748,7 @@ export async function handleRequest(req: Request): Promise<Response> {
       const igUserId = payload.instagramUserId || instagramUserId;
 
       if (!igUserId || !mediaId) {
-        throw new Error('Instagram User ID e Media ID são obrigatórios para promover post existente');
+        throw new CampaignError('IG_MEDIA_MISSING', 'Selecione a conta do Instagram e o post que deseja promover.');
       }
 
       const objectStoryId = `${igUserId}_${mediaId}`;
@@ -1805,20 +1761,12 @@ export async function handleRequest(req: Request): Promise<Response> {
       // WHATSAPP_MESSAGE CTA, so we treat it as CTWA either way.
       const isCTWA = true;
 
-      // Build the wa.me link for the CTA value. Priority:
-      //   1. Manual link from payload (user provided)
-      //   2. Constructed from integration's selected WhatsApp display number
-      //   3. null — Meta will resolve from page's linked WABA via promoted_object.page_id
-      const whatsappDisplay = integration.selected_whatsapp_display ?? null;
-      const ctwaLink = payload.whatsappLink
-        || (whatsappDisplay ? `https://wa.me/${whatsappDisplay.replace(/\D/g, '')}` : null);
-
+      // ctwaLink (normalizado, resolvido acima): null = Meta resolve pela WABA da Página
       logger('info', 'CREATIVE-EXISTING-POST', '🔄 Criando creative com post existente do Instagram (V23)', {
         instagram_user_id: igUserId,
         media_id: mediaId,
         object_story_id: objectStoryId,
         is_ctwa: isCTWA,
-        ctwa_link_source: payload.whatsappLink ? 'manual' : (whatsappDisplay ? 'derived_from_display' : 'auto_from_page'),
         has_ctwa_link: !!ctwaLink
       });
 
@@ -1833,11 +1781,15 @@ export async function handleRequest(req: Request): Promise<Response> {
         let postThumbnailUrl = '';
 
         try {
-          const mediaCheckUrl = `https://graph.facebook.com/v23.0/${mediaId}?fields=media_type,media_url,thumbnail_url`;
+          // audit CMP-07: Reels vêm como media_type=VIDEO + media_product_type=REELS; carrossel usa o 1º item
+          const mediaCheckUrl = `https://graph.facebook.com/v23.0/${mediaId}?fields=media_type,media_product_type,media_url,thumbnail_url,children{media_type,media_url,thumbnail_url}`;
           const mediaCheckRes = await fetch(mediaCheckUrl, { headers: metaAuthHeaders(accessToken) });
           if (mediaCheckRes.ok) {
-            const mediaInfo = await mediaCheckRes.json();
-            postMediaType = mediaInfo.media_type || 'IMAGE';
+            let mediaInfo = await mediaCheckRes.json();
+            if (mediaInfo.media_type === 'CAROUSEL_ALBUM' && mediaInfo.children?.data?.[0]) {
+              mediaInfo = { ...mediaInfo.children.data[0], media_product_type: mediaInfo.media_product_type };
+            }
+            postMediaType = mediaInfo.media_product_type === 'REELS' ? 'REELS' : (mediaInfo.media_type || 'IMAGE');
             postMediaUrl = mediaInfo.media_url || '';
             postThumbnailUrl = mediaInfo.thumbnail_url || '';
             logger('info', 'CTWA-MEDIA-CHECK', 'Post media info fetched', {
@@ -1885,12 +1837,15 @@ export async function handleRequest(req: Request): Promise<Response> {
             video_id: videoUploadResult.video_id
           });
 
-          // Wait for video processing
-          await smartDelay(3000, 'video-processing-wait');
+          // Espera o processamento de verdade (antes: 3s fixos) — audit CMP-07
+          const processed = await waitVideoReady(videoUploadResult.video_id, accessToken);
+          if (!processed.ready) {
+            throw new Error('Video processing failed or timed out');
+          }
 
           // image_url (thumbnail) é OBRIGATÓRIO para creative de vídeo (senão erro 1443226).
           // Se o post do Instagram não trouxe thumbnail, buscamos a do vídeo já enviado à conta.
-          let videoThumb = postThumbnailUrl;
+          let videoThumb = postThumbnailUrl || processed.thumbUrl || '';
           if (!videoThumb) {
             videoThumb = (await getBestVideoThumb(videoUploadResult.video_id, accessToken)) || '';
             logger('info', 'CTWA-VIDEO-THUMB-FALLBACK', 'Thumbnail derivado do vídeo enviado', { hasThumb: !!videoThumb });
@@ -1955,7 +1910,7 @@ export async function handleRequest(req: Request): Promise<Response> {
             error_code: darkPostError.error?.code,
             media_type: postMediaType,
           });
-          throw new Error(`CTWA dark post creative failed: ${darkPostError.error?.message}`);
+          throw classifyMetaError(darkPostResponse.status, darkPostError, 'criativo');
         }
 
         const darkPostResult = await darkPostResponse.json();
@@ -1991,7 +1946,7 @@ export async function handleRequest(req: Request): Promise<Response> {
             error_message: errorData.error?.message,
             object_story_id: objectStoryId
           });
-          throw new Error(`Creative creation failed: ${errorData.error?.message}`);
+          throw classifyMetaError(creativeResponse.status, errorData, 'criativo');
         }
 
         const creativeResult = await creativeResponse.json();
@@ -2025,7 +1980,7 @@ export async function handleRequest(req: Request): Promise<Response> {
         uploadResult,
         payload.adText,
         payload.adTitle,
-        payload.whatsappLink || `https://wa.me/${pageId}`, // ✅ CTWA: Use actual wa.me link when available
+        ctwaLink || '', // link normalizado (audit CMP-06); imagem sem número já foi barrada acima
         accessToken,
         'whatsapp_native' // ✅ CTWA: sempre usar WHATSAPP_MESSAGE CTA
       );
@@ -2043,7 +1998,7 @@ export async function handleRequest(req: Request): Promise<Response> {
     
     // ✅ VALIDAÇÃO: Garantir que creative foi criado
     if (!creativeId) {
-      throw new Error('Creative não foi criado. Verifique se mídia foi enviada ou post do Instagram foi selecionado.');
+      throw new CampaignError('INVALID_PAYLOAD', 'Selecione uma imagem, um vídeo ou um post do Instagram para o anúncio.');
     }
 
     // Create ad - ROUTE A (with retry for transient Meta errors)
@@ -2098,7 +2053,7 @@ export async function handleRequest(req: Request): Promise<Response> {
           error: errorMsg,
           error_code: errorData.error?.code
         });
-        throw new Error(`Ad creation failed: ${errorMsg}`);
+        throw classifyMetaError(adResponse.status, errorData, 'anúncio');
       }
     }
 
@@ -2114,7 +2069,7 @@ export async function handleRequest(req: Request): Promise<Response> {
         budget_daily: payload.dailyBudget,
         ad_title: payload.adTitle,
         ad_text: payload.adText,
-        whatsapp_number: payload.whatsappLink,
+        whatsapp_number: ctwaLink,
         meta_campaign_id: campaignResult.id,
         meta_adset_id: adSetResult.id,
         meta_ad_id: adResult.id,
@@ -2132,29 +2087,41 @@ export async function handleRequest(req: Request): Promise<Response> {
         // Phase 4.4: Scheduling fields
         ...(payload.scheduleStartTime ? { schedule_start_time: payload.scheduleStartTime } : {}),
         ...(payload.scheduleEndTime ? { schedule_end_time: payload.scheduleEndTime } : {}),
-        ...(payload.adSchedule ? { ad_schedule: payload.adSchedule } : {}),
-        facebook_page: payload.fanpage,
-        instagram_account: payload.instagram,
+        ...(adSchedule ? { ad_schedule: adSchedule } : {}),
+        facebook_page: pageId,
+        instagram_account: instagramUserId,
         location_city: payload.city,
         location_radius: payload.radius,
         selected_locations: payload.selected_locations,
         gender: payload.gender,
-        age_min: payload.ageMin,
-        age_max: payload.ageMax,
+        age_min: targeting.age_min,
+        age_max: targeting.age_max,
         interests: payload.interests,
         processing_status: 'completed',
         meta_integration_status: 'active',
         needs_immediate_sync: true,
         last_status_sync_at: new Date().toISOString(),
         source: 'camply',
-        metrics_window: 'last_30d'
+        metrics_window: 'last_30d',
+        ...(idempotencyKey ? { client_request_id: idempotencyKey } : {})
       });
+
+    const created = {
+      success: true,
+      status: 'created',
+      contingency_mode: false,
+      message: 'Campaign created successfully!',
+      campaignId: campaignResult.id,
+      metaCampaignId: campaignResult.id,
+      adSetId: adSetResult.id,
+      adId: adResult.id,
+      creativeId
+    };
 
     if (dbError) {
       // D2: All four Meta objects exist and are valid, but the local mirror row failed to save.
-      // Do NOT silently report success — that causes permanent Meta/DB drift (the campaign runs
-      // but never appears in the user's dashboard). Persist a contingency row carrying the REAL
-      // Meta IDs flagged for DB reconciliation (the ads are kept — only the local row is missing).
+      // A campanha EXISTE na Meta (sucesso real); registramos contingência para o time reconciliar a
+      // linha local — ela aparece no painel depois da reconciliação.
       logger('error', 'database-save', '❌ Campanha criada na Meta mas falhou ao salvar no banco — marcando para reconciliação', {
         error: dbError,
         meta_campaign_id: campaignResult.id,
@@ -2178,46 +2145,31 @@ export async function handleRequest(req: Request): Promise<Response> {
         { needsDbReconcile: true }
       );
 
-      return new Response(
-        JSON.stringify({
-          success: true,
-          status: 'contingency',
-          contingency_mode: true,
-          reason: 'db_save_error',
-          message: 'Campanha criada! Estamos finalizando o registro — ela aparecerá no seu painel em instantes.',
-          campaignId: campaignResult.id,
-          adSetId: adSetResult.id,
-          adId: adResult.id,
-          creativeId
-        }),
-        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
+      const reconciling = {
+        ...created,
+        reconcilePending: true,
+        message: 'Campanha criada! Estamos finalizando o registro — ela aparecerá no seu painel em instantes.'
+      };
+      await finishIdempotencyKey(supabaseClient, user.id, idempotencyKey, 'done', reconciling);
+      return json(reconciling, 200);
     }
 
     logger('info', 'database-saved', 'Campanha salva no banco com sucesso');
+    await finishIdempotencyKey(supabaseClient, user.id, idempotencyKey, 'done', created);
+    return json(created, 200);
 
-    return new Response(
-      JSON.stringify({
-        success: true,
-        status: 'created',
-        contingency_mode: false,
-        message: 'Campaign created successfully!',
-        campaignId: campaignResult.id,
-        adSetId: adSetResult.id,
-        adId: adResult.id,
-        creativeId
-      }),
-      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    );
-
-  } catch (error: any) {
-    logger('error', 'CAMPAIGN-CREATION-FAILED', '❌ Erro na criação da campanha - Ativando modo contingência', { 
-      error: error.message, 
-      stack: error.stack 
+  } catch (rawError: any) {
+    const error = toCampaignError(rawError);
+    logger('error', 'CAMPAIGN-CREATION-FAILED', '❌ Erro na criação da campanha', {
+      code: error.code,
+      transient: error.transient,
+      error: error.message,
+      meta: error.metaError,
+      stack: rawError instanceof Error ? rawError.stack : undefined
     });
 
     // 🧹 D1: Roll back any partially-created Meta campaign FIRST, so we don't leave orphaned
-    // paused objects in the user's ad account and so the async retry can recreate cleanly.
+    // paused objects in the user's ad account.
     // Token/account come from `integration` (the only scope-safe source inside this catch).
     let rolledBack = false;
     if (campaignResult?.id && integration?.access_token) {
@@ -2227,16 +2179,29 @@ export async function handleRequest(req: Request): Promise<Response> {
       });
     }
 
-    // 🛡️ MODO CONTINGÊNCIA: Salvar dados para criação manual / retry automático
+    // audit CMP-01: falha determinística → 422 com a mensagem para o usuário corrigir (sem contingência).
+    if (!error.transient) {
+      const failed = {
+        success: false,
+        status: 'failed',
+        code: error.code,
+        userMessage: error.userMessage,
+        ...(error.metaError ? { metaError: error.metaError } : {})
+      };
+      await finishIdempotencyKey(supabaseClient, user.id, idempotencyKey, 'failed', failed);
+      return json(failed, error.httpStatus);
+    }
+
+    // Falha transitória → contingência para o time concluir manualmente (contingency-manual-sync).
+    let contingencyId: string | null = null;
     try {
-      // ✅ VALIDAR se temos dados mínimos antes de salvar
-      if (user?.id && payload && integration) {
-        await saveToContingency(
+      if (payload && integration) {
+        contingencyId = await saveToContingency(
           supabaseClient,
           user.id,
           payload,
           integration,
-          error,
+          rawError,
           'campaign_creation_error',
           {
             // If we rolled the campaign back, the partial IDs no longer exist on Meta — clear them
@@ -2248,19 +2213,6 @@ export async function handleRequest(req: Request): Promise<Response> {
           },
           { rolledBack }
         );
-
-        logger('info', 'CONTINGENCY-SAVED', '✅ Campanha salva em modo contingência', {
-          user_id: user.id,
-          rolled_back: rolledBack,
-          has_campaign_id: !!campaignResult?.id,
-          has_adset_id: !!adSetResult?.id
-        });
-      } else {
-        logger('error', 'CONTINGENCY-SKIP', '⚠️ Dados insuficientes para contingência', {
-          hasUser: !!user,
-          hasPayload: !!payload,
-          hasIntegration: !!integration
-        });
       }
     } catch (contingencyError) {
       logger('error', 'CONTINGENCY-CRITICAL', '❌ Falha ao salvar contingência', {
@@ -2268,29 +2220,16 @@ export async function handleRequest(req: Request): Promise<Response> {
       });
     }
 
-    // ✅ Product decision: still return HTTP 200 so the client never sees a hard error, but the
-    // payload is HONEST — `status: 'contingency'` + `contingency_mode: true` let the frontend
-    // distinguish this from a true creation. Partial IDs were rolled back, so we report 'pending'.
-    logger('info', 'CONTINGENCY-MODE', '🛡️ Retornando contingência para o cliente (HTTP 200)', { rolledBack });
-
-    return new Response(
-      JSON.stringify({
-        success: true,
-        status: 'contingency',
-        contingency_mode: true,
-        reason: 'campaign_creation_error',
-        message: 'Campanha em processamento! Nossa equipe irá finalizar a configuração em breve.',
-        campaignId: 'pending',
-        adSetId: 'pending',
-        adId: 'pending',
-        creativeId: 'pending',
-        note: 'Esta campanha será processada automaticamente. Você será notificado quando estiver pronta.'
-      }),
-      {
-        status: 200, // ✅ HTTP 200, não 500!
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-      }
-    );
+    // 202 = recebido, NÃO criado: o frontend nunca trata isto como sucesso.
+    const queued = {
+      success: false,
+      status: 'queued',
+      code: error.code,
+      contingencyId,
+      userMessage: 'Recebemos seu pedido, mas a Meta não concluiu a criação agora. Nossa equipe vai finalizar a campanha em até 24 horas úteis e avisar você.'
+    };
+    await finishIdempotencyKey(supabaseClient, user.id, idempotencyKey, 'done', queued); // replay = mesma fila, sem duplicar
+    return json(queued, 202);
   }
 }
 

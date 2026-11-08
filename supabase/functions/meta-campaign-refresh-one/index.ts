@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
 import { trackApiCall } from "../_shared/trackApiCall.ts";
+import { mapMetaEffectiveStatus } from "../_shared/status.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -182,8 +183,10 @@ serve(async (req) => {
       updateData.media_preview_url = mediaPreviewUrl;
     }
 
-    if (effectiveStatus) {
-      updateData.status = effectiveStatus.toLowerCase();
+    // audit CMP-10: vocabulário canônico; status desconhecido não sobrescreve o atual
+    const canonicalStatus = mapMetaEffectiveStatus(effectiveStatus);
+    if (canonicalStatus) {
+      updateData.status = canonicalStatus;
     }
 
     console.log(`💾 Updating campaign in database...`);

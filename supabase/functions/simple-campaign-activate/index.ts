@@ -1,6 +1,13 @@
 import { serve } from 'https://deno.land/std@0.190.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { corsHeadersFor, handlePreflight } from '../_shared/cors.ts';
+import {
+  ACTIVATION_ERROR_STATES,
+  activateCascade,
+  fetchEffectiveStatus,
+  pauseCascade,
+  type CascadeIds,
+} from '../_shared/metaCascade.ts';
 
 // Version: 7.0.0 - Shared CORS + cascade verification + status tracking (2026-03-15)
 
@@ -136,96 +143,38 @@ serve(async (req) => {
       );
     }
 
-    const baseUrl = 'https://graph.facebook.com/v23.0';
+    const cascadeIds: CascadeIds = {
+      campaignId: campaign.meta_campaign_id,
+      adsetId: campaign.meta_adset_id,
+      adId: campaign.meta_ad_id,
+    };
 
-    // Helper: activate a single Meta object
-    async function activateObject(objectId: string, label: string): Promise<void> {
-      const res = await fetch(`${baseUrl}/${objectId}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: 'ACTIVE', access_token: accessToken })
-      });
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(`Erro ao ativar ${label}: ${err.error?.message || 'Unknown error'}`);
-      }
-      console.log(`✅ ${label} activated:`, objectId);
-    }
-
-    // Helper: pause a single Meta object (for rollback)
-    async function pauseObject(objectId: string, label: string): Promise<void> {
-      try {
-        await fetch(`${baseUrl}/${objectId}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ status: 'PAUSED', access_token: accessToken })
-        });
-        console.log(`🔄 ${label} rolled back to PAUSED:`, objectId);
-      } catch (e) {
-        console.error(`⚠️ Rollback failed for ${label}:`, objectId, e);
-      }
-    }
-
-    // Helper: verify effective_status of a Meta object
-    async function verifyStatus(objectId: string, label: string): Promise<string | null> {
-      try {
-        const res = await fetch(
-          `${baseUrl}/${objectId}?fields=id,status,effective_status&access_token=${accessToken}`,
-          { method: 'GET' }
-        );
-        if (res.ok) {
-          const data = await res.json();
-          console.log(`📊 ${label} verification:`, data);
-          return data.effective_status || null;
-        }
-      } catch (e) {
-        console.warn(`⚠️ Could not verify ${label} status:`, e);
-      }
-      return null;
-    }
-
-    // Activate based on mode
-    if (hasCascadeIds) {
-      // CASCADE MODE: Campaign → AdSet → Ad
-      console.log('🔄 [CASCADE] Step 1/3: Activating Campaign...');
-      await activateObject(campaign.meta_campaign_id, 'Campaign');
-
-      try {
-        console.log('🔄 [CASCADE] Step 2/3: Activating AdSet...');
-        await activateObject(campaign.meta_adset_id, 'AdSet');
-
-        try {
-          console.log('🔄 [CASCADE] Step 3/3: Activating Ad...');
-          await activateObject(campaign.meta_ad_id, 'Ad');
-        } catch (adError) {
-          console.error('❌ Ad activation failed, rolling back...', adError);
-          await pauseObject(campaign.meta_adset_id, 'AdSet');
-          await pauseObject(campaign.meta_campaign_id, 'Campaign');
-          throw new Error(`Falha ao ativar anúncio: ${(adError as any)?.message || 'Erro desconhecido'}`);
-        }
-
-      } catch (adsetError) {
-        if ((adsetError as any)?.message?.includes('anúncio')) throw adsetError; // re-throw ad error
-        console.error('❌ AdSet activation failed, rolling back Campaign...', adsetError);
-        await pauseObject(campaign.meta_campaign_id, 'Campaign');
-        throw new Error(`Falha ao ativar conjunto de anúncios: ${(adsetError as any)?.message || 'Erro desconhecido'}`);
-      }
-    } else {
-      console.log('⚠️ [CAMPAIGN-ONLY] Activating only Campaign...');
-      await activateObject(campaign.meta_campaign_id, 'Campaign');
-    }
+    // Activate based on mode (cascata compartilhada com meta-campaign-bulk-operations)
+    await activateCascade(cascadeIds, accessToken);
 
     // Verify effective_status for all cascade levels
     console.log('🔍 Verifying effective_status from Meta...');
-    const campaignEffective = await verifyStatus(campaign.meta_campaign_id, 'Campaign');
-    const adsetEffective = hasCascadeIds ? await verifyStatus(campaign.meta_adset_id, 'AdSet') : null;
-    const adEffective = hasCascadeIds ? await verifyStatus(campaign.meta_ad_id, 'Ad') : null;
+    const campaignEffective = await fetchEffectiveStatus(campaign.meta_campaign_id, 'Campaign', accessToken);
+    const adsetEffective = hasCascadeIds ? await fetchEffectiveStatus(campaign.meta_adset_id, 'AdSet', accessToken) : null;
+    const adEffective = hasCascadeIds ? await fetchEffectiveStatus(campaign.meta_ad_id, 'Ad', accessToken) : null;
 
     const successStates = ['ACTIVE', 'IN_PROCESS', 'PENDING_REVIEW'];
-    const errorStates = ['PAUSED', 'DISAPPROVED', 'ARCHIVED', 'DELETED'];
 
-    if (campaignEffective && errorStates.includes(campaignEffective)) {
+    if (campaignEffective && ACTIVATION_ERROR_STATES.includes(campaignEffective)) {
       console.error('❌ Activation failed: problematic effective_status:', campaignEffective);
+      // audit CMP-09: desfaz a ativação parcial e deixa o DB coerente com a Meta
+      await pauseCascade(cascadeIds, accessToken);
+      const { error: rollbackDbError } = await supabaseClient
+        .from('campaigns')
+        .update({
+          status: 'paused',
+          status_at_sync: campaignEffective,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', campaign.id);
+      if (rollbackDbError) {
+        console.error('⚠️ Rollback DB update failed:', rollbackDbError);
+      }
       return new Response(
         JSON.stringify({
           success: false,

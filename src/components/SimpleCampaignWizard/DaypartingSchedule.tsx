@@ -21,6 +21,11 @@ const HOURS = Array.from({ length: 24 }, (_, i) => {
   const h = String(i).padStart(2, '0');
   return { value: `${h}:00`, label: `${h}:00` };
 });
+// Término pode ser 24:00 (fim do dia) — audit CMP-07
+const END_HOURS = Array.from({ length: 24 }, (_, i) => {
+  const h = String(i + 1).padStart(2, '0');
+  return { value: `${h}:00`, label: `${h}:00` };
+});
 
 const DAYS_OF_WEEK = [
   { value: 0, label: 'Dom', fullLabel: 'Domingo' },
@@ -68,7 +73,7 @@ export const DaypartingSchedule: React.FC<DaypartingScheduleProps> = ({
   const getScheduleSummary = (): string => {
     if (!enabled) return '';
 
-    const timeRange = `${startTime || '00:00'} - ${endTime || '23:00'}`;
+    const timeRange = `${startTime || '00:00'} - ${endTime || '24:00'}`;
 
     if (selectedDays.length === 7) return `Todos os dias, ${timeRange}`;
     if (selectedDays.length === 5 && !selectedDays.includes(0) && !selectedDays.includes(6)) {
@@ -123,7 +128,7 @@ export const DaypartingSchedule: React.FC<DaypartingScheduleProps> = ({
                   <SelectValue placeholder="Término" />
                 </SelectTrigger>
                 <SelectContent>
-                  {HOURS.map(h => (
+                  {END_HOURS.map(h => (
                     <SelectItem key={h.value} value={h.value}>{h.label}</SelectItem>
                   ))}
                 </SelectContent>
