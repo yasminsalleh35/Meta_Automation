@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, Save, Package } from 'lucide-react';
+import { Loader2, Save, Package, RefreshCw } from 'lucide-react';
 import { useSupabase } from '@/hooks/useSupabase';
 
 interface Plan {
@@ -97,16 +97,11 @@ const PlansAdmin: React.FC = () => {
 
       if (saveError) throw saveError;
 
-      // 2. Sincronizar com Pagar.me v5
-      const { data: syncData, error: syncError } = await supabase.functions.invoke('pagarme-plans-sync-v5', {
-        body: { plan_type: currentPlan.plan_type }
-      });
-
-      if (syncError) throw syncError;
-
+      // ADM-05: a sincronização chamava 'pagarme-plans-sync-v5', função que não existe.
+      // Removida até existir uma função de sync; o plano é apenas salvo no banco.
       toast({
-        title: 'Sucesso!',
-        description: 'Plano salvo e sincronizado com Pagar.me v5',
+        title: 'Plano salvo',
+        description: 'O plano foi salvo. A sincronização com o Pagar.me ainda não está disponível pelo painel.',
       });
 
       // Recarregar planos
@@ -138,7 +133,7 @@ const PlansAdmin: React.FC = () => {
         <Package className="w-8 h-8 text-primary" />
         <div>
           <h1 className="text-3xl font-bold">Gerenciar Planos</h1>
-          <p className="text-muted-foreground">Configure os planos de assinatura e sincronize com Pagar.me v5</p>
+          <p className="text-muted-foreground">Configure os planos de assinatura</p>
         </div>
       </div>
 
@@ -246,15 +241,23 @@ const PlansAdmin: React.FC = () => {
             {syncing ? (
               <>
                 <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                Salvando e Sincronizando...
+                Salvando...
               </>
             ) : (
               <>
                 <Save className="w-4 h-4 mr-2" />
-                Salvar e Sincronizar com Pagar.me
+                Salvar plano
               </>
             )}
           </Button>
+
+          {/* ADM-05: sync desativado — a função de sincronização não existe */}
+          <span className="block w-full" title="Em breve: a sincronização automática com o Pagar.me ainda não está disponível.">
+            <Button type="button" variant="outline" className="w-full" size="lg" disabled>
+              <RefreshCw className="w-4 h-4 mr-2" />
+              Sincronizar com Pagar.me (em breve)
+            </Button>
+          </span>
         </CardContent>
       </Card>
     </div>

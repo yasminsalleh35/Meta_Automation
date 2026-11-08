@@ -1208,7 +1208,7 @@ Update this table as work lands. One row per task ID; the status values are ⬜ 
 | 2 | SEC-10…17 | ⬜ | |
 | 3 | PAY-01…16 | ⬜ | Blocked on Appendix C #1–4 |
 | 4 | CMP-01…16 | ✅ 2026-11-08 | No auto-retry orphans existed in production (CMP-02 clean-up not needed). Storage INSERT is already allowed by "Users can upload their own media". Close-out 2026-11-08: CMP-06 helper also in `lead-quiz-submit`, Quiz and `WhatsAppManualConfig`; CMP-07 profile schema 18–65 with `.refine`; bulk-operations returns 401; `error`/`deleted` added to `LiveCampaign.status`. `campaigns.status` has no CHECK in production (added in DATA-05). Carried to later phases: legacy wizard file deletion (PLT-01), the private bucket decision (Appendix C #5) |
-| 5 | DATA-01…07, ADM-01…06 | ⬜ | |
+| 5 | DATA-01…07, ADM-01…06 | ✅ 2026-11-08 (ADM-06 deferred) | Migrations 20261108000010–017 and 020–025 applied; 11 functions deployed. DATA-01: Advanced Analytics hidden behind `VITE_FEATURE_ADVANCED_ANALYTICS` (rebuild pending). DATA-03 DB side was already done. DATA-04 uses `last_status_sync_at` as a round-robin cursor (full status pass ≈ 1 h). DATA-07 also closed `subscribers` self-write and template RPCs. Still open: column-level grants on secret columns (Appendix A Q4), `user_roles` admin self-promotion, server pagination for profiles/leads/contingency lists, ADM-06 |
 | 6 | LGL-01…06 | ⬜ | Blocked on Appendix C #6 |
 | 7 | PLT-01…08 | ⬜ | |
 | 8 | QA-01…06 | ⬜ | |

@@ -7,6 +7,7 @@ import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Facebook, Settings, Users, AlertCircle } from 'lucide-react';
 import { useMetaAdsAdmin } from '@/hooks/useMetaAdsAdmin';
+import { ConfirmActionButton } from '@/components/admin/ConfirmActionButton';
 
 const AdminMetaAds: React.FC = () => {
   const {
@@ -137,13 +138,16 @@ const AdminMetaAds: React.FC = () => {
                 <div className="flex space-x-2">
                   {user.integration ? (
                     <>
-                      <Button
+                      <ConfirmActionButton
                         variant="outline"
                         size="sm"
-                        onClick={() => disconnectIntegration(user)}
+                        title="Desconectar Meta Ads?"
+                        description={`A integração Meta Ads de ${user.email} será removida. O cliente precisará conectar a conta novamente para criar campanhas.`}
+                        confirmLabel="Desconectar"
+                        onConfirm={() => disconnectIntegration(user)}
                       >
                         Desconectar
-                      </Button>
+                      </ConfirmActionButton>
                       <div className="text-right text-xs text-gray-500">
                         <p>Ad Account: {user.integration.ad_account_id || 'N/A'}</p>
                         <p>Page: {user.integration.page_id || 'N/A'}</p>

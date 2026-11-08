@@ -33,7 +33,7 @@ type FormData = z.infer<typeof zCampaignProfileForm>;
 interface ProfileFormDrawerProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  initial?: Partial<FormData>;
+  initial?: Partial<FormData> & { id?: string };
   onSubmit: (data: FormData) => Promise<void>;
 }
 
@@ -44,6 +44,8 @@ export function ProfileFormDrawer({
   onSubmit,
 }: ProfileFormDrawerProps) {
   const { toast } = useToast();
+  // ADM-05: edição = perfil com id. Uma cópia (Duplicar) tem slug mas não tem id → criação com slug editável.
+  const isEditing = !!initial?.id;
   
   const {
     register,
@@ -133,13 +135,16 @@ export function ProfileFormDrawer({
       await onSubmit(data);
       toast({
         title: 'Sucesso',
-        description: initial?.slug ? 'Perfil atualizado com sucesso!' : 'Perfil criado com sucesso!',
+        description: isEditing ? 'Perfil atualizado com sucesso!' : 'Perfil criado com sucesso!',
       });
       onOpenChange(false);
     } catch (error) {
+      const code = (error as { code?: string })?.code;
       toast({
         title: 'Erro',
-        description: 'Falha ao salvar o perfil. Tente novamente.',
+        description: code === '23505'
+          ? 'Já existe um perfil com este slug. Escolha outro.'
+          : 'Falha ao salvar o perfil. Tente novamente.',
         variant: 'destructive',
       });
     }
@@ -150,7 +155,7 @@ export function ProfileFormDrawer({
       <SheetContent className="sm:max-w-2xl overflow-y-auto">
         <SheetHeader>
           <SheetTitle>
-            {initial?.slug ? 'Editar Perfil de Campanha' : 'Novo Perfil de Campanha'}
+            {isEditing ? 'Editar Perfil de Campanha' : 'Novo Perfil de Campanha'}
           </SheetTitle>
           <SheetDescription>
             Configure as características de targeting que serão aplicadas automaticamente nas campanhas.
@@ -167,7 +172,8 @@ export function ProfileFormDrawer({
                   id="slug"
                   {...register('slug')}
                   placeholder="ex: dentista-premium"
-                  disabled={!!initial?.slug}
+                  readOnly={isEditing}
+                  className={isEditing ? 'bg-muted' : undefined}
                 />
                 {errors.slug && (
                   <p className="text-sm text-destructive">{errors.slug.message}</p>

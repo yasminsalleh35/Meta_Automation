@@ -4,6 +4,7 @@ import DashboardLayout from '@/components/layouts/DashboardLayout';
 import AdminLayout from '@/components/layouts/AdminLayout';
 import AdminRoute from '@/components/AdminRoute';
 import { Loader2 } from 'lucide-react';
+import { FEATURE_ADVANCED_ANALYTICS } from '@/lib/featureFlags';
 
 // ── Lazy loading fallback ───────────────────────────────────────────────────
 const PageLoader = () => (
@@ -120,7 +121,11 @@ const PrivateRoutes: React.FC = () => {
           {/* audit CMP-12: legacy wizard retired; demo pages moved under /admin */}
           <Route path="create-campaign" element={<Navigate to="/dashboard/simple-campaign-wizard" replace />} />
           <Route path="campaigns/create" element={<Navigate to="/dashboard/simple-campaign-wizard" replace />} />
-          <Route path="advanced-analytics" element={<AdvancedAnalytics />} />
+          {/* audit DATA-01: hidden behind a feature flag until the page uses real data */}
+          <Route
+            path="advanced-analytics"
+            element={FEATURE_ADVANCED_ANALYTICS ? <AdvancedAnalytics /> : <Navigate to="/dashboard" replace />}
+          />
           <Route path="monitoring" element={<Monitoring />} />
           <Route path="integrations" element={<Integrations />} />
           <Route path="integrations/meta-success" element={<MetaIntegrationSuccess />} />

@@ -37,9 +37,11 @@ interface ContingencyCampaignDetailsProps {
 }
 
 export const ContingencyCampaignDetails: React.FC<ContingencyCampaignDetailsProps> = ({
-  campaignData,
+  campaignData: rawCampaignData,
   copyToClipboard
 }) => {
+  // ADM-05: contingências antigas podem ter campaign_data nulo
+  const campaignData = rawCampaignData && typeof rawCampaignData === 'object' ? rawCampaignData : {};
   const [showRawJson, setShowRawJson] = useState(false);
 
   const formatGender = (gender: string) => {
@@ -83,7 +85,9 @@ export const ContingencyCampaignDetails: React.FC<ContingencyCampaignDetailsProp
     }
   };
 
-  const locations: Location[] = campaignData.selected_locations || [];
+  // ADM-05: o wizard grava public_url (snake_case); aceita os dois formatos
+  const mediaUrl: string = campaignData?.selectedMediaMeta?.public_url || campaignData?.selectedMediaMeta?.publicUrl || '';
+  const locations: Location[] = Array.isArray(campaignData?.selected_locations) ? campaignData.selected_locations : [];
   const hasLocations = locations && locations.length > 0;
 
   const copyAllLocationKeys = () => {
@@ -148,7 +152,7 @@ export const ContingencyCampaignDetails: React.FC<ContingencyCampaignDetailsProp
       {/* Main Info Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {/* Media Preview */}
-        {campaignData.selectedMediaMeta?.publicUrl && (
+        {mediaUrl && (
           <Card>
             <CardHeader>
               <CardTitle className="text-sm flex items-center gap-2">
@@ -159,7 +163,7 @@ export const ContingencyCampaignDetails: React.FC<ContingencyCampaignDetailsProp
             <CardContent className="space-y-3">
               <div className="relative aspect-video bg-muted rounded-lg overflow-hidden">
                 <img
-                  src={campaignData.selectedMediaMeta.publicUrl}
+                  src={safeUrl(mediaUrl)}
                   alt="Preview"
                   className="w-full h-full object-cover"
                 />
@@ -169,7 +173,7 @@ export const ContingencyCampaignDetails: React.FC<ContingencyCampaignDetailsProp
                   size="sm"
                   variant="outline"
                   className="flex-1"
-                  onClick={() => copyToClipboard(campaignData.selectedMediaMeta.publicUrl, 'URL da mídia')}
+                  onClick={() => copyToClipboard(mediaUrl, 'URL da mídia')}
                 >
                   <LinkIcon className="w-3 h-3 mr-1" />
                   Copiar URL
@@ -180,7 +184,7 @@ export const ContingencyCampaignDetails: React.FC<ContingencyCampaignDetailsProp
                   asChild
                 >
                   <a
-                    href={safeUrl(campaignData.selectedMediaMeta.publicUrl)}
+                    href={safeUrl(mediaUrl)}
                     target="_blank"
                     rel="noopener noreferrer"
                   >

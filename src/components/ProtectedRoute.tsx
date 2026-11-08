@@ -11,7 +11,7 @@ interface ProtectedRouteProps {
 }
 
 const ProtectedRoute: React.FC<ProtectedRouteProps> = memo(({ children }) => {
-  const { isAuthenticated, loading, mustChangePassword } = useAuth();
+  const { isAuthenticated, loading, mustChangePassword, accountSuspended } = useAuth();
   const location = useLocation();
 
   // 🚨 FASE 5: Fallback de segurança contra loops infinitos
@@ -19,7 +19,9 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = memo(({ children }) => {
 
   if (loading) return null;
 
-  if (!isAuthenticated) {
+  // ADM-02: conta suspensa — o AuthProvider encerra a sessão e mostra
+  // "Sua conta está suspensa. Entre em contato com o suporte."
+  if (!isAuthenticated || accountSuspended) {
     return <Navigate to={buildLoginPath(location.pathname, location.search, location.hash)} replace />;
   }
 

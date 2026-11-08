@@ -4,6 +4,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useRecoveryState } from '@/hooks/useRecoveryState';
 import { clearUserData } from '@/lib/clearUserData';
+import { toast } from '@/hooks/use-toast';
 
 // Limpeza de URL com tokens (sem navegar)
 function cleanTokensFromURL() {
@@ -12,6 +13,22 @@ function cleanTokensFromURL() {
     url.hash = '';
     window.history.replaceState({}, document.title, url.toString());
   }
+}
+
+// ADM-02: contas suspensas pelo admin (profiles.status = 'suspended') são desconectadas.
+export const ACCOUNT_SUSPENDED_MESSAGE = 'Sua conta está suspensa. Entre em contato com o suporte.';
+
+async function isAccountSuspended(userId: string): Promise<boolean> {
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('status')
+    .eq('id', userId)
+    .maybeSingle();
+  if (error) {
+    console.error('Error checking account status:', error);
+    return false; // falha de leitura não derruba a sessão; o backend também bloqueia
+  }
+  return (data as { status?: string } | null)?.status === 'suspended';
 }
 
 export interface AuthUser extends User {
@@ -29,6 +46,7 @@ interface AuthContextType {
   isAuthenticated: boolean;
   loading: boolean;
   mustChangePassword: boolean;
+  accountSuspended: boolean;
   login: (email: string, password: string) => Promise<void>;
   register: (name: string, email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
@@ -41,6 +59,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
   const [mustChangePassword, setMustChangePassword] = useState(false);
+  const [accountSuspended, setAccountSuspended] = useState(false);
   const [sessionTimeout, setSessionTimeout] = useState<NodeJS.Timeout | null>(null);
   const { isActiveRecovery } = useRecoveryState();
   const queryClient = useQueryClient();
@@ -53,12 +72,36 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     
     console.log('AuthProvider: Initializing auth state', { isActiveRecovery });
     
+    // ADM-02: encerra a sessão de uma conta suspensa e avisa o usuário.
+    const signOutSuspended = async () => {
+      if (isMounted) setAccountSuspended(true);
+      toast({
+        title: 'Conta suspensa',
+        description: ACCOUNT_SUSPENDED_MESSAGE,
+        variant: 'destructive',
+      });
+      try {
+        await supabase.auth.signOut();
+      } catch (error) {
+        console.error('Error signing out suspended account:', error);
+      }
+      clearUserData(queryClient);
+      if (isMounted) {
+        setUser(null);
+        setSession(null);
+        setMustChangePassword(false);
+      }
+    };
+
     const initializeAuth = async () => {
       try {
         const { data: { session } } = await supabase.auth.getSession();
         console.log('Initial session check:', session ? 'session found' : 'no session');
-        
-        if (session?.user && isMounted) {
+
+        const suspended = session?.user ? await isAccountSuspended(session.user.id) : false;
+        if (suspended && isMounted) {
+          await signOutSuspended();
+        } else if (session?.user && isMounted) {
           lastUserIdRef.current = session.user.id;
           const authUser: AuthUser = {
             ...session.user,
@@ -131,7 +174,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 }
               };
               setUser(authUser);
-              
+              setAccountSuspended(false);
+
+              // ADM-02: conta suspensa → sair (fora do callback, ver PLT-08)
+              const suspendedCheckUid = session.user.id;
+              setTimeout(async () => {
+                if (isMounted && await isAccountSuspended(suspendedCheckUid)) {
+                  await signOutSuspended();
+                }
+              }, 0);
+
               // Durante recovery, não forçar mudança de senha
               if (isActiveRecovery) {
                 console.log('AuthProvider: Recovery flow in listener, skipping password change requirement');
@@ -179,16 +231,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, [isActiveRecovery, queryClient]);
 
   const login = async (email: string, password: string): Promise<void> => {
-    const { error } = await supabase.auth.signInWithPassword({
+    const { data, error } = await supabase.auth.signInWithPassword({
       email,
       password,
     });
-    
+
     if (error) {
       console.error('Login error:', error);
       throw error;
     }
-    
+
+    // ADM-02: conta suspensa não entra
+    if (data?.user && await isAccountSuspended(data.user.id)) {
+      await supabase.auth.signOut();
+      setAccountSuspended(true);
+      throw new Error(ACCOUNT_SUSPENDED_MESSAGE);
+    }
+    setAccountSuspended(false);
+
     console.log('Login successful');
   };
 
@@ -243,6 +303,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     isAuthenticated: !!user && !!session,
     loading,
     mustChangePassword,
+    accountSuspended,
     login,
     register,
     logout

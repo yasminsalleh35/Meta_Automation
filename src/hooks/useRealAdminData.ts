@@ -23,12 +23,13 @@ export const useRealAdminData = () => {
       setState(prev => ({ ...prev, loading: true }));
       
       // Fetch all data with improved error handling
-      const [profiles, userPlans, campaignCounts, integrationsData, notificationsData] = await Promise.allSettled([
+      const [profiles, userPlans, campaignCounts, integrationsData, notificationsData, dashboardStats] = await Promise.allSettled([
         AdminDataService.fetchProfiles(),
         AdminDataService.fetchSubscribers(),
         AdminDataService.fetchCampaignCounts(),
         AdminDataService.fetchIntegrations(),
-        AdminDataService.fetchNotifications()
+        AdminDataService.fetchNotifications(),
+        AdminDataService.fetchDashboardStats() // ADM-01
       ]);
 
       // Handle results with detailed logging
@@ -80,7 +81,19 @@ export const useRealAdminData = () => {
 
       // Transform data even if some parts failed
       const transformedUsers = AdminDataService.transformUsers(profilesResult, userPlansResult, campaignCountsResult);
-      const realStats = AdminDataService.calculateStats(transformedUsers);
+      // ADM-01: números reais do servidor; o fallback local não inventa receita/assinaturas
+      let realStats;
+      if (dashboardStats.status === 'fulfilled') {
+        realStats = dashboardStats.value;
+      } else {
+        console.error('❌ Dashboard stats fetch failed:', dashboardStats.reason);
+        realStats = AdminDataService.calculateStats(transformedUsers);
+        toast({
+          title: "Estatísticas indisponíveis",
+          description: dashboardStats.reason?.message || "Não foi possível carregar as métricas de assinaturas.",
+          variant: "destructive"
+        });
+      }
       const transformedNotifications = AdminDataService.transformNotifications(notificationsResult);
       const recentActivities = AdminDataService.generateActivities(transformedUsers, integrationsResult);
 

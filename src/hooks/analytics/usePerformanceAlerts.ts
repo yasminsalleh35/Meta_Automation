@@ -8,7 +8,7 @@ interface Alert {
   title: string;
   description: string;
   campaignName: string;
-  timeAgo: string;
+  timeAgo?: string;
   value?: number;
   threshold?: number;
 }
@@ -18,7 +18,7 @@ interface Recommendation {
   type: 'budget' | 'targeting' | 'creative' | 'bidding';
   title: string;
   description: string;
-  impact: string;
+  impact?: string;
   campaignName: string;
 }
 
@@ -45,33 +45,22 @@ export const usePerformanceAlerts = (data: any) => {
       description: 'Alertar quando CPC for maior que R$ 5.00',
       threshold: 5.0
     },
-    lowConversions: {
-      enabled: true,
-      label: 'Poucas Conversões',
-      description: 'Alertar quando campanha não gerar conversões em 7 dias',
-      threshold: 7
-    },
-    budgetDepletion: {
-      enabled: true,
-      label: 'Orçamento Esgotando',
-      description: 'Alertar quando orçamento estiver 80% consumido',
-      threshold: 80
-    },
-    audienceOverlap: {
-      enabled: false,
-      label: 'Sobreposição de Audiência',
-      description: 'Alertar sobre competição entre campanhas',
-      threshold: 25
-    }
+    // audit DATA-01: lowConversions / budgetDepletion / audienceOverlap were
+    // removed — no real conversion, budget-consumption or overlap data reaches
+    // this hook, so those alerts could only ever be fabricated.
   });
 
   // Gerar alertas baseado nos dados e configurações
+  // audit DATA-01: only campaigns with real delivery (impressions > 0) are
+  // evaluated, and no invented "detected X hours ago" timestamps are shown.
   const alerts: Alert[] = useMemo(() => {
     if (!data?.campaigns) return [];
 
     const generatedAlerts: Alert[] = [];
 
     data.campaigns.forEach((campaign: any) => {
+      if (!(Number(campaign.impressions) > 0)) return;
+
       // Alerta de CTR baixo
       if (alertSettings.lowCTR.enabled && campaign.ctr < (alertSettings.lowCTR.threshold || 1.5)) {
         generatedAlerts.push({
@@ -81,7 +70,6 @@ export const usePerformanceAlerts = (data: any) => {
           title: 'CTR abaixo do esperado',
           description: `CTR de ${campaign.ctr.toFixed(2)}% está abaixo do limite de ${alertSettings.lowCTR.threshold}%`,
           campaignName: campaign.name,
-          timeAgo: '2 horas',
           value: campaign.ctr,
           threshold: alertSettings.lowCTR.threshold
         });
@@ -96,23 +84,8 @@ export const usePerformanceAlerts = (data: any) => {
           title: 'CPC muito alto',
           description: `CPC de R$ ${campaign.cpc.toFixed(2)} está acima do limite de R$ ${alertSettings.highCPC.threshold?.toFixed(2)}`,
           campaignName: campaign.name,
-          timeAgo: '1 hora',
           value: campaign.cpc,
           threshold: alertSettings.highCPC.threshold
-        });
-      }
-
-      // Alerta de poucas conversões
-      if (alertSettings.lowConversions.enabled && (campaign.conversions || 0) === 0) {
-        generatedAlerts.push({
-          id: `conv-${campaign.id}`,
-          type: 'performance',
-          severity: 'warning',
-          title: 'Sem conversões',
-          description: 'Campanha não gerou conversões nos últimos 7 dias',
-          campaignName: campaign.name,
-          timeAgo: '6 horas',
-          value: campaign.conversions || 0
         });
       }
     });
@@ -126,19 +99,10 @@ export const usePerformanceAlerts = (data: any) => {
 
     const generatedRecommendations: Recommendation[] = [];
 
+    // audit DATA-01: recommendations no longer promise invented impact numbers
+    // ("+25% em conversões") and the conversion-based rule was dropped (no real
+    // conversion data reaches this hook).
     data.campaigns.forEach((campaign: any) => {
-      // Recomendação de ajuste de orçamento
-      if (campaign.ctr > 3.0 && campaign.conversions > 5) {
-        generatedRecommendations.push({
-          id: `budget-${campaign.id}`,
-          type: 'budget',
-          title: 'Aumentar orçamento',
-          description: 'Esta campanha está performando bem. Considere aumentar o orçamento para amplificar os resultados.',
-          impact: '+25% em conversões estimadas',
-          campaignName: campaign.name
-        });
-      }
-
       // Recomendação de segmentação
       if (campaign.ctr < 2.0 && campaign.impressions > 10000) {
         generatedRecommendations.push({
@@ -146,7 +110,6 @@ export const usePerformanceAlerts = (data: any) => {
           type: 'targeting',
           title: 'Refinar segmentação',
           description: 'Muitas impressões com baixo CTR indicam segmentação muito ampla. Tente ser mais específico.',
-          impact: '+40% no CTR estimado',
           campaignName: campaign.name
         });
       }
@@ -158,7 +121,6 @@ export const usePerformanceAlerts = (data: any) => {
           type: 'creative',
           title: 'Renovar criativos',
           description: 'Alta frequência pode causar fadiga do anúncio. Teste novos criativos para manter o engajamento.',
-          impact: '+20% no CTR estimado',
           campaignName: campaign.name
         });
       }

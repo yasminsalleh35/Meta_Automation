@@ -1270,6 +1270,19 @@ export async function handleRequest(req: Request): Promise<Response> {
   }
 
   try {
+    // audit ADM-02: conta suspensa pelo admin não cria campanhas (403, nada é enviado à Meta).
+    const { data: profileRow, error: profileError } = await supabaseClient
+      .from('profiles')
+      .select('status')
+      .eq('id', user.id)
+      .maybeSingle();
+    if (profileError) {
+      logger('warn', 'profile-status', 'Não foi possível ler o status da conta', { error: profileError.message });
+    }
+    if (profileRow?.status === 'suspended') {
+      throw new CampaignError('ACCOUNT_SUSPENDED', 'Sua conta está suspensa. Entre em contato com o suporte.');
+    }
+
     // Get request body
     payload = await req.json().catch(() => null);
     // Narrow once: every happy-path access below assumes a non-null payload. This guard both

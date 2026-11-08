@@ -34,7 +34,7 @@ export function ConfigMenuSection({ isCollapsed = false }: ConfigMenuSectionProp
   // Admin-only configuration items
   const adminConfigItems = [
     {
-      title: 'Configurações Gerais',
+      title: 'Configurações Gerais (em breve)', // ADM-05
       url: '/admin/settings',
       icon: Settings,
     },

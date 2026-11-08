@@ -12,6 +12,7 @@
 
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 import { trackApiCall } from '../_shared/trackApiCall.ts';
+import { countConversations } from '../_shared/metrics.ts';
 
 const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
 const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -93,21 +94,9 @@ async function fetchAccountInsights(params: {
     url = next;
   }
 
-  // CPA: derive conversas iniciadas
-  const CONVERSATION_TYPES = new Set<string>([
-    'onsite_conversion.messaging_conversation_started_7d',
-    'onsite_conversion.messaging_conversation_started_1d',
-    'onsite_conversion.messaging_first_reply',
-    'start_messaging'
-  ]);
-
-  let conversations = 0;
-  for (const a of allActions) {
-    const t = String(a.action_type || '');
-    if (CONVERSATION_TYPES.has(t)) {
-      conversations += Number(a.value ?? 0);
-    }
-  }
+  // audit DATA-02: conversas = messaging_conversation_started_7d apenas (shared
+  // definition). Somar _1d / first_reply / start_messaging contava a mesma conversa várias vezes.
+  const conversations = countConversations(allActions);
 
   return {
     impressions: totalImpressions,
@@ -206,7 +195,7 @@ Deno.serve(async (req) => {
           actions: data.actions,
           updated_at: new Date().toISOString(),
         }, {
-          onConflict: ['user_id', 'ad_account_id', 'date_preset'],
+          onConflict: 'user_id,ad_account_id,date_preset',
           ignoreDuplicates: false
         });
 

@@ -174,8 +174,14 @@ export const useLeads = () => {
       return false;
     }
 
-    if (filters.specialty && !lead.specialties?.includes(filters.specialty)) {
-      return false;
+    // ADM-05: leads antigos só têm `specialty` (texto); os novos, `specialties` (array)
+    if (filters.specialty && filters.specialty !== 'all') {
+      const wanted = filters.specialty.toLowerCase();
+      const leadSpecialties = [
+        ...(Array.isArray(lead.specialties) ? lead.specialties : []),
+        ...(lead.specialty ? [lead.specialty] : []),
+      ].map(s => String(s).toLowerCase());
+      if (!leadSpecialties.includes(wanted)) return false;
     }
 
     if (filters.utmSource && lead.utm_source !== filters.utmSource) {
@@ -214,6 +220,8 @@ export const useLeads = () => {
 
   return {
     leads: filteredLeads,
+    // ADM-05: lista completa (sem filtros) — fonte das opções dos filtros
+    allLeads: leads,
     loading,
     filters,
     setFilters,

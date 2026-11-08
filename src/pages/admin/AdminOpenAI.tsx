@@ -189,13 +189,6 @@ Quando responder, considere sempre o contexto específico da plataforma (Meta ou
 
       // Também salvar na tabela ai_configurations para compatibilidade
       if (config.enabled) {
-        // Primeiro desativar todas as outras configurações
-        await supabase
-          .from('ai_configurations')
-          .update({ is_active: false, is_default: false })
-          .neq('provider', config.provider)
-          .neq('model_name', config.model);
-
         // Upsert da configuração atual
         const { error: configError } = await supabase
           .from('ai_configurations')
@@ -220,6 +213,16 @@ Quando responder, considere sempre o contexto específico da plataforma (Meta ou
           console.warn('Falha ao salvar na tabela ai_configurations, mas configuração global foi salva');
         } else {
           console.log('✅ Configuração salva na tabela ai_configurations');
+          // ADM-05: desativa TODAS as outras num único UPDATE (antes: .neq(provider) AND .neq(model),
+          // que deixava ativa outra config do mesmo provedor ou do mesmo modelo)
+          const { error: activateError } = await supabase.rpc('admin_set_active_ai_configuration' as any, {
+            p_provider: config.provider,
+            p_model_name: config.model,
+          });
+          if (activateError) {
+            console.error('❌ Erro ao desativar as outras configurações de IA:', activateError);
+            throw new Error(`Configuração salva, mas não foi possível desativar as demais: ${activateError.message}`);
+          }
         }
       }
 

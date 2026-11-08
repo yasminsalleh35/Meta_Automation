@@ -12,6 +12,7 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.49.8';
 import { isCron, requireUser, isAdminUser, HttpError } from '../_shared/auth.ts';
+import { normalizeInsight } from '../_shared/metrics.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -205,6 +206,7 @@ async function refreshUserMetrics(supabase: any, userId: string, datePreset: str
     const { data: cached } = await supabase
       .from('campaign_metrics_cache')
       .select('expires_at')
+      .eq('user_id', userId) // audit DATA-05: cache key is (user_id, campaign_id, date_preset)
       .eq('campaign_id', c.meta_campaign_id)
       .eq('date_preset', datePreset)
       .maybeSingle();
@@ -249,36 +251,22 @@ async function refreshUserMetrics(supabase: any, userId: string, datePreset: str
       const data = await response.json();
       const insights = data.data?.[0] || {};
 
-      // Extract conversations from actions
-      const conversationTypes = [
-        'onsite_conversion.messaging_conversation_started_7d',
-        'onsite_conversion.messaging_first_reply',
-        'start_messaging',
-      ];
-
-      let conversations = 0;
-      if (insights.actions) {
-        for (const action of insights.actions) {
-          if (conversationTypes.includes(action.action_type)) {
-            conversations += parseInt(action.value || '0', 10);
-          }
-        }
-      }
-
-      const spend = parseFloat(insights.spend || '0');
-      const cpa = conversations > 0 ? spend / conversations : 0;
+      // audit DATA-02: one conversation definition (messaging_conversation_started_7d
+      // only — the old list summed overlapping action types and double-counted).
+      const n = normalizeInsight(insights);
 
       const metrics = {
-        impressions: parseInt(insights.impressions || '0', 10),
-        reach: parseInt(insights.reach || '0', 10),
-        clicks: parseInt(insights.clicks || '0', 10),
-        spend,
+        impressions: n.impressions,
+        reach: n.reach,
+        clicks: n.clicks,
+        spend: n.spend,
         ctr: parseFloat(insights.ctr || '0'),
-        cpc: parseFloat(insights.cpc || '0'),
+        cpc: n.cpc ?? 0,
         cpm: parseFloat(insights.cpm || '0'),
         frequency: parseFloat(insights.frequency || '0'),
-        conversations,
-        cpa,
+        conversations: n.conversations,
+        // cost per conversation (spend / conversations); null when there are none
+        cpa: n.costPerConversation,
         actions: insights.actions || [],
         cost_per_action_type: insights.cost_per_action_type || [],
       };
@@ -298,7 +286,7 @@ async function refreshUserMetrics(supabase: any, userId: string, datePreset: str
           fetched_at: now.toISOString(),
           expires_at: expiresAt,
         }, {
-          onConflict: 'campaign_id,date_preset',
+          onConflict: 'user_id,campaign_id,date_preset', // audit DATA-05 (migration 20261108000012)
         });
 
       refreshed++;

@@ -1,5 +1,5 @@
 
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useMetaCampaignInsights } from '@/hooks/useMetaCampaignInsights';
 import { useRealCampaigns } from '@/hooks/useRealCampaigns';
 
@@ -150,40 +150,33 @@ export const useAdvancedAnalytics = () => {
       }));
   }, [filteredCampaigns]);
 
-  // Função para gerar dados estáticos (evitar randomização que causa re-renders)
-  const generateStaticData = useCallback(() => {
-    const staticTimeSeriesData = [
-      { date: '1 Jun', spend: 245, impressions: 3200, clicks: 89, conversions: 12 },
-      { date: '5 Jun', spend: 312, impressions: 4100, clicks: 124, conversions: 18 },
-      { date: '10 Jun', spend: 287, impressions: 3800, clicks: 105, conversions: 15 },
-      { date: '15 Jun', spend: 398, impressions: 5200, clicks: 156, conversions: 24 },
-      { date: '20 Jun', spend: 445, impressions: 5800, clicks: 178, conversions: 28 },
-      { date: '25 Jun', spend: 523, impressions: 6800, clicks: 203, conversions: 35 },
-      { date: '28 Jun', spend: 467, impressions: 6100, clicks: 189, conversions: 31 }
-    ];
+  // audit DATA-01: the static June series, platform split and demographics were
+  // fabricated. They are no longer produced; the page stays hidden behind
+  // FEATURE_ADVANCED_ANALYTICS until it is rebuilt on real Meta breakdowns.
 
-    const staticPlatformDistribution = [
-      { name: 'Facebook', value: 1850, color: '#1877F2' },
-      { name: 'Instagram', value: 1250, color: '#E4405F' },
-      { name: 'Audience Network', value: 680, color: '#42B883' },
-      { name: 'Messenger', value: 320, color: '#00BFA5' }
-    ];
-
-    return { staticTimeSeriesData, staticPlatformDistribution };
-  }, []);
+  // audit DATA-01: the old dependency array only tracked `campaignsWithMeta.length`,
+  // so changing the campaign filter to a same-sized set never refetched. Key the
+  // effect on the actual ids + date window, and read the (non-memoised)
+  // fetchInsights through a ref so it doesn't retrigger the effect every render.
+  const fetchInsightsRef = useRef(fetchInsights);
+  fetchInsightsRef.current = fetchInsights;
+  const campaignsKey = campaignsWithMeta.map(c => `${c.id}:${c.meta_campaign_id}`).join(',');
+  const sinceKey = filters.dateRange.from.toISOString().split('T')[0];
+  const untilKey = filters.dateRange.to.toISOString().split('T')[0];
 
   // Effect separado para buscar insights
   useEffect(() => {
     if (campaignsWithMeta.length > 0) {
       console.log('🔄 Fetching insights for campaigns:', campaignsWithMeta.length);
-      fetchInsights(campaignsWithMeta, {
+      fetchInsightsRef.current(campaignsWithMeta, {
         dateRange: {
-          since: filters.dateRange.from.toISOString().split('T')[0],
-          until: filters.dateRange.to.toISOString().split('T')[0]
+          since: sinceKey,
+          until: untilKey
         }
       });
     }
-  }, [campaignsWithMeta.length, filters.dateRange.from.toISOString().split('T')[0], filters.dateRange.to.toISOString().split('T')[0]]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- campaignsKey captures campaignsWithMeta
+  }, [campaignsKey, sinceKey, untilKey]);
 
   // Effect separado para processar dados
   useEffect(() => {
@@ -198,16 +191,17 @@ export const useAdvancedAnalytics = () => {
 
     console.log('📊 Processing analytics data for', filteredCampaigns.length, 'campaigns');
 
-    const { staticTimeSeriesData, staticPlatformDistribution } = generateStaticData();
-
     // Processar dados das campanhas
     const campaignsData = filteredCampaigns.map(campaign => {
       const insight = insights.find(i => i.campaignId === campaign.id);
       const spend = insight?.insights.spend || 0;
       const impressions = insight?.insights.impressions || 0;
       const clicks = insight?.insights.clicks || 0;
-      const conversions = Math.floor(clicks * 0.15); // 15% conversion rate simulada
-      
+      // audit DATA-01: conversions used to be simulated as a fixed share of clicks
+      // and ROAS from an invented ticket. This source has no conversion data, so
+      // both are reported as 0 instead of made-up values.
+      const conversions = 0;
+
       return {
         id: campaign.id,
         name: campaign.name || 'Campanha sem nome',
@@ -219,7 +213,7 @@ export const useAdvancedAnalytics = () => {
         conversions,
         ctr: impressions > 0 ? (clicks / impressions) * 100 : 0,
         cpc: clicks > 0 ? spend / clicks : 0,
-        roas: spend > 0 ? (conversions * 50) / spend : 0,
+        roas: 0,
         createdAt: campaign.created_at || new Date().toISOString()
       };
     });
@@ -239,49 +233,29 @@ export const useAdvancedAnalytics = () => {
       totalConversions: totals.conversions,
       averageCTR: totals.impressions > 0 ? (totals.clicks / totals.impressions) * 100 : 0,
       averageCPC: totals.clicks > 0 ? totals.spend / totals.clicks : 0,
+      // audit DATA-01: no period-over-period window is fetched yet, so no trend is shown.
       trends: {
-        spend: 12.5,
-        impressions: 18.2,
-        clicks: 15.8,
-        conversions: 22.1,
-        ctr: -2.3,
-        cpc: -8.7
+        spend: 0,
+        impressions: 0,
+        clicks: 0,
+        conversions: 0,
+        ctr: 0,
+        cpc: 0
       },
-      timeSeriesData: staticTimeSeriesData,
+      timeSeriesData: [],
       campaignComparison: campaignsData.slice(0, 8).map(campaign => ({
         name: campaign.name.substring(0, 15) + (campaign.name.length > 15 ? '...' : ''),
         spend: campaign.spend,
         ctr: campaign.ctr,
         cpc: campaign.cpc
       })),
-      platformDistribution: staticPlatformDistribution,
+      platformDistribution: [],
       campaigns: campaignsData,
-      demographics: {
-        ageGroups: [
-          { age: '18-24', spend: 1200, impressions: 15000, clicks: 320, ctr: 2.13 },
-          { age: '25-34', spend: 2800, impressions: 35000, clicks: 890, ctr: 2.54 },
-          { age: '35-44', spend: 2100, impressions: 28000, clicks: 670, ctr: 2.39 },
-          { age: '45-54', spend: 1600, impressions: 22000, clicks: 450, ctr: 2.05 },
-          { age: '55-64', spend: 800, impressions: 12000, clicks: 210, ctr: 1.75 },
-          { age: '65+', spend: 400, impressions: 8000, clicks: 120, ctr: 1.50 }
-        ],
-        genderDistribution: [
-          { gender: 'Feminino', spend: 4500, percentage: 52.3, color: '#F97316' },
-          { gender: 'Masculino', spend: 3800, percentage: 44.2, color: '#3B82F6' },
-          { gender: 'Não informado', spend: 300, percentage: 3.5, color: '#6B7280' }
-        ],
-        topLocations: [
-          { location: 'São Paulo, SP', spend: 2800, clicks: 650, impressions: 28000 },
-          { location: 'Rio de Janeiro, RJ', spend: 1900, clicks: 420, impressions: 19000 },
-          { location: 'Belo Horizonte, MG', spend: 1200, clicks: 290, impressions: 12500 },
-          { location: 'Brasília, DF', spend: 980, clicks: 230, impressions: 9800 },
-          { location: 'Salvador, BA', spend: 850, clicks: 195, impressions: 8200 }
-        ]
-      }
+      demographics: undefined
     };
 
     setData(processedData);
-  }, [filteredCampaigns, insights, campaignsLoading, insightsLoading, generateStaticData]);
+  }, [filteredCampaigns, insights, campaignsLoading, insightsLoading]);
 
   const isLoading = campaignsLoading || insightsLoading;
 

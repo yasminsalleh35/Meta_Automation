@@ -63,7 +63,7 @@ export const useVideoProgress = (contentId?: string) => {
           progress_percentage: progressPercentage,
           completed: progressPercentage >= 90,
           completed_at: progressPercentage >= 90 ? new Date().toISOString() : null
-        })
+        }, { onConflict: 'user_id,content_id' }) // audit DATA-05
         .select()
         .single();
 
@@ -88,7 +88,7 @@ export const useVideoProgress = (contentId?: string) => {
           progress_percentage: 100,
           completed: true,
           completed_at: new Date().toISOString()
-        })
+        }, { onConflict: 'user_id,content_id' }) // audit DATA-05
         .select()
         .single();
 
@@ -125,7 +125,7 @@ export const useVideoProgress = (contentId?: string) => {
           is_favorited: !currentFavorited,
           progress_percentage: progress?.progress_percentage || 0,
           completed: progress?.completed || false
-        })
+        }, { onConflict: 'user_id,content_id' }) // audit DATA-05
         .select()
         .single();
 

@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
 import { mapMetaEffectiveStatus } from "../_shared/status.ts";
+import { normalizeInsight } from "../_shared/metrics.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -117,9 +118,19 @@ serve(async (req) => {
       }
 
       const batchResults = await batchRes.json();
+      if (!Array.isArray(batchResults)) {
+        console.error("Unexpected batch response:", JSON.stringify(batchResults).substring(0, 300));
+        continue;
+      }
 
       for (let i = 0; i < batchResults.length; i++) {
         const result = batchResults[i];
+        // audit DATA-04: Meta returns `null` for batch items that timed out; skip
+        // them (the campaign keeps its previous metrics) instead of throwing.
+        if (!result) {
+          console.warn(`⚠️ Batch item ${i} (${chunk[i]}) returned null; skipping`);
+          continue;
+        }
         if (result.code === 200) {
           try {
             const data = JSON.parse(result.body);
@@ -128,31 +139,21 @@ serve(async (req) => {
             // Store effective_status
             statusMap[campaignId] = data.effective_status;
 
-            // Extract insights
+            // Extract insights — audit DATA-02: shared metric definition
             const insight = data.insights?.data?.[0] || {};
-            const actions = insight.actions || [];
-            const conversationsAction = actions.find(
-              (a: any) => a.action_type === 'onsite_conversion.messaging_conversation_started_7d'
-            );
-            const conversations = conversationsAction ? Number(conversationsAction.value) : 0;
-
-            const costPerActionType = insight.cost_per_action_type || [];
-            const costPerConversationAction = costPerActionType.find(
-              (c: any) => c.action_type === 'onsite_conversion.messaging_conversation_started_7d'
-            );
-            const costPerConversation = costPerConversationAction ? Number(costPerConversationAction.value) : 0;
+            const n = normalizeInsight(insight);
 
             insightsMap[campaignId] = {
-              impressions: Number(insight.impressions) || 0,
-              reach: Number(insight.reach) || 0,
-              clicks: Number(insight.clicks) || 0,
-              spend: Number(insight.spend) || 0,
+              impressions: n.impressions,
+              reach: n.reach,
+              clicks: n.clicks,
+              spend: n.spend,
               cpm: Number(insight.cpm) || 0,
-              cpc: Number(insight.cpc) || 0,
+              cpc: n.cpc ?? 0,
               ctr: Number(insight.ctr) || 0,
               actions: insight.actions || [],
-              conversations: conversations,
-              cost_per_messaging_conversation_started_7d: costPerConversation
+              conversations: n.conversations,
+              cost_per_messaging_conversation_started_7d: n.costPerConversation ?? 0
             };
           } catch (e) {
             console.error("Error parsing batch result:", e);
@@ -170,12 +171,14 @@ serve(async (req) => {
 
       if (metrics || effectiveStatus) {
         const updateData: any = {
-          last_metrics_sync_at: new Date().toISOString(),
-          needs_immediate_sync: false
+          last_status_sync_at: new Date().toISOString()
         };
 
+        // audit DATA-04: only mark metrics as synced when they were actually fetched
         if (metrics) {
           updateData.metrics = metrics;
+          updateData.last_metrics_sync_at = new Date().toISOString();
+          updateData.needs_immediate_sync = false;
         }
 
         // Atualiza o status sempre que o canônico mudar (inclui pending_review → active)

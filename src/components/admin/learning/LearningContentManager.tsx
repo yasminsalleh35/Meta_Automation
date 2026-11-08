@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Plus, Edit, Trash2, Eye, EyeOff, BookOpen, Video, HelpCircle, TrendingUp } from 'lucide-react';
+import { ConfirmActionButton } from '@/components/admin/ConfirmActionButton';
 import { useSupabaseLearningContent } from '@/hooks/useSupabaseLearningContent';
 
 // Importar o tipo para evitar erros
@@ -477,13 +478,18 @@ export const LearningContentManager: React.FC = () => {
                       >
                         <Edit className="w-4 h-4" />
                       </Button>
-                      <Button
+                      {/* ADM-05: confirmação + erro tratado (o hook já mostra o toast e relança) */}
+                      <ConfirmActionButton
                         size="sm"
                         variant="outline"
-                        onClick={() => deleteContent(content.id)}
+                        aria-label="Excluir conteúdo"
+                        title="Excluir conteúdo?"
+                        description={`"${content.title || 'Conteúdo'}" será excluído permanentemente. Esta ação não pode ser desfeita.`}
+                        confirmLabel="Excluir"
+                        onConfirm={() => deleteContent(content.id).catch(() => undefined)}
                       >
                         <Trash2 className="w-4 h-4" />
-                      </Button>
+                      </ConfirmActionButton>
                     </div>
                   </TableCell>
                 </TableRow>

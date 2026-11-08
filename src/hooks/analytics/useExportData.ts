@@ -24,21 +24,15 @@ export const useExportData = () => {
       // Preparar dados baseado nas métricas selecionadas
       const exportData = prepareExportData(options);
       
-      switch (options.format) {
-        case 'csv':
-          await exportToCSV(exportData, options);
-          break;
-        case 'pdf':
-          await exportToPDF(exportData, options);
-          break;
-        case 'excel':
-          await exportToExcel(exportData, options);
-          break;
-      }
+      // audit DATA-01: the "PDF" and "XLSX" downloads were plain text with a fake
+      // extension. Until real writers exist, every format is exported as CSV.
+      await exportToCSV(exportData, options);
 
       toast({
         title: "Exportação concluída",
-        description: `Relatório em ${options.format.toUpperCase()} foi baixado com sucesso.`,
+        description: options.format === 'csv'
+          ? "Relatório em CSV foi baixado com sucesso."
+          : "PDF/Excel ainda não disponíveis — o relatório foi baixado em CSV.",
       });
 
     } catch (error) {
@@ -107,52 +101,6 @@ export const useExportData = () => {
     
     link.setAttribute('href', url);
     link.setAttribute('download', `relatorio-campanhas-${new Date().toISOString().split('T')[0]}.csv`);
-    link.style.visibility = 'hidden';
-    
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
-
-  const exportToPDF = async (data: any[], options: ExportOptions) => {
-    // Simular geração de PDF
-    console.log('Gerando PDF com:', data.length, 'campanhas');
-    
-    // Em uma implementação real, usaria bibliotecas como jsPDF ou PDFKit
-    const mockPdfContent = `Relatório de Campanhas Meta Ads
-Data: ${new Date().toLocaleDateString('pt-BR')}
-Campanhas: ${data.length}
-Métricas incluídas: ${options.metrics.join(', ')}`;
-
-    const blob = new Blob([mockPdfContent], { type: 'application/pdf' });
-    const link = document.createElement('a');
-    const url = URL.createObjectURL(blob);
-    
-    link.setAttribute('href', url);
-    link.setAttribute('download', `relatorio-campanhas-${new Date().toISOString().split('T')[0]}.pdf`);
-    link.style.visibility = 'hidden';
-    
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
-
-  const exportToExcel = async (data: any[], options: ExportOptions) => {
-    // Simular geração de Excel
-    console.log('Gerando Excel com:', data.length, 'campanhas');
-    
-    // Em uma implementação real, usaria bibliotecas como xlsx ou exceljs
-    const csvContent = [
-      Object.keys(data[0] || {}).join('\t'),
-      ...data.map(row => Object.values(row).join('\t'))
-    ].join('\n');
-
-    const blob = new Blob([csvContent], { type: 'application/vnd.ms-excel' });
-    const link = document.createElement('a');
-    const url = URL.createObjectURL(blob);
-    
-    link.setAttribute('href', url);
-    link.setAttribute('download', `relatorio-campanhas-${new Date().toISOString().split('T')[0]}.xlsx`);
     link.style.visibility = 'hidden';
     
     document.body.appendChild(link);

@@ -12,9 +12,11 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Bell, Send, Users, Eye, EyeOff, Trash2, Plus } from 'lucide-react';
 import { useRealNotifications } from '@/hooks/useRealNotifications';
 import { Checkbox } from '@/components/ui/checkbox';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
+import { AdminPagination } from '@/components/admin/AdminPagination';
 
 const AdminNotifications: React.FC = () => {
-  const { notifications, isLoading, createNotification, markAsRead, deleteNotification, sendBulkNotification } = useRealNotifications();
+  const { notifications, isLoading, error, stats, totalCount, page, pageSize, goToPage, markAsRead, deleteNotification, sendBulkNotification } = useRealNotifications();
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [selectedUsers, setSelectedUsers] = useState<string[]>([]);
   const [bulkNotificationData, setBulkNotificationData] = useState({
@@ -25,12 +27,14 @@ const AdminNotifications: React.FC = () => {
 
   const handleCreateNotification = async () => {
     if (selectedUsers.length > 0 && bulkNotificationData.title && bulkNotificationData.message) {
-      await sendBulkNotification(
+      const ok = await sendBulkNotification(
         selectedUsers,
         bulkNotificationData.title,
         bulkNotificationData.message,
         bulkNotificationData.type
       );
+      // ADM-03: mantém o diálogo aberto quando o envio falha
+      if (!ok) return;
       setShowCreateDialog(false);
       setBulkNotificationData({ title: '', message: '', type: 'info' });
       setSelectedUsers([]);
@@ -47,19 +51,7 @@ const AdminNotifications: React.FC = () => {
     }
   };
 
-  const stats = {
-    total: notifications.length,
-    read: notifications.filter(n => n.read).length,
-    unread: notifications.filter(n => !n.read).length,
-    recent: notifications.filter(n => {
-      const notifDate = new Date(n.created_at);
-      const dayAgo = new Date();
-      dayAgo.setDate(dayAgo.getDate() - 1);
-      return notifDate > dayAgo;
-    }).length
-  };
-
-  if (isLoading) {
+  if (isLoading && notifications.length === 0 && !error) {
     return <div className="p-6">Carregando notificações...</div>;
   }
 
@@ -140,10 +132,13 @@ const AdminNotifications: React.FC = () => {
         <CardHeader>
           <CardTitle>Todas as Notificações</CardTitle>
           <CardDescription>
-            {notifications.length} notificação(s) no sistema
+            {totalCount} notificação(s) no sistema
           </CardDescription>
         </CardHeader>
         <CardContent>
+          {error && (
+            <p className="text-sm text-destructive mb-4">Erro ao carregar notificações: {error}</p>
+          )}
           <Table>
             <TableHeader>
               <TableRow>
@@ -184,19 +179,42 @@ const AdminNotifications: React.FC = () => {
                           <Eye className="w-4 h-4" />
                         </Button>
                       )}
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => deleteNotification(notification.id)}
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </Button>
+                      {/* ADM-05: exclusão com confirmação */}
+                      <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                          <Button size="sm" variant="outline" aria-label="Excluir notificação">
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>Excluir notificação?</AlertDialogTitle>
+                            <AlertDialogDescription>
+                              A notificação "{notification.title}" será removida para o usuário. Esta ação não pode ser desfeita.
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                            <AlertDialogAction onClick={() => deleteNotification(notification.id)}>
+                              Excluir
+                            </AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
                     </div>
                   </TableCell>
                 </TableRow>
               ))}
             </TableBody>
           </Table>
+
+          <AdminPagination
+            page={page}
+            pageSize={pageSize}
+            totalCount={totalCount}
+            onPageChange={goToPage}
+            disabled={isLoading}
+          />
         </CardContent>
       </Card>
 

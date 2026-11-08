@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -8,32 +8,25 @@ import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Building2, Search, Filter, TrendingUp, Users, MapPin, Calendar } from 'lucide-react';
 import { useRealBusinessSettings } from '@/hooks/useRealBusinessSettings';
+import { AdminPagination } from '@/components/admin/AdminPagination';
 
 const AdminClientBusinesses: React.FC = () => {
-  const { businesses, isLoading, loadBusinesses, getBusinessStats } = useRealBusinessSettings();
+  // ADM-03: todos os negócios (não só os do admin), paginados no servidor
+  const { businesses, isLoading, error, loadBusinesses, stats, getCategoryName, totalCount, page, pageSize, goToPage } = useRealBusinessSettings();
   const [searchTerm, setSearchTerm] = useState('');
-  const [categoryFilter, setCategoryFilter] = useState('');
-  const [stats, setStats] = useState({
-    totalBusinesses: 0,
-    totalCategories: 0,
-    recentBusinesses: 0,
-    categoryCounts: {} as Record<string, number>
-  });
-
-  useEffect(() => {
-    setStats(getBusinessStats());
-  }, [businesses]);
+  const [categoryFilter, setCategoryFilter] = useState('all');
 
   const handleFilter = () => {
     loadBusinesses({
-      category: categoryFilter || undefined,
+      // ADM-03: "all" = sem filtro (antes filtrava category = 'all' e não retornava nada)
+      category: categoryFilter && categoryFilter !== 'all' ? categoryFilter : undefined,
       search: searchTerm || undefined
-    });
+    }, 0);
   };
 
-  const categories = Object.keys(stats.categoryCounts);
+  const categories = stats.categories;
 
-  if (isLoading) {
+  if (isLoading && businesses.length === 0) {
     return <div className="p-6">Carregando negócios...</div>;
   }
 
@@ -118,9 +111,9 @@ const AdminClientBusinesses: React.FC = () => {
           <CardContent>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               {categories.map((category) => (
-                <div key={category} className="p-4 border rounded-lg">
-                  <h4 className="font-medium text-sm">{category}</h4>
-                  <p className="text-2xl font-bold text-blue-600">{stats.categoryCounts[category]}</p>
+                <div key={category.id} className="p-4 border rounded-lg">
+                  <h4 className="font-medium text-sm">{category.name}</h4>
+                  <p className="text-2xl font-bold text-blue-600">{category.count}</p>
                 </div>
               ))}
             </div>
@@ -140,6 +133,7 @@ const AdminClientBusinesses: React.FC = () => {
                 placeholder="Buscar por nome ou descrição..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') handleFilter(); }}
                 className="w-full"
               />
             </div>
@@ -150,8 +144,8 @@ const AdminClientBusinesses: React.FC = () => {
               <SelectContent>
                 <SelectItem value="all">Todas as categorias</SelectItem>
                 {categories.map((category) => (
-                  <SelectItem key={category} value={category}>
-                    {category}
+                  <SelectItem key={category.id} value={category.id}>
+                    {category.name}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -169,10 +163,13 @@ const AdminClientBusinesses: React.FC = () => {
         <CardHeader>
           <CardTitle>Lista de Negócios</CardTitle>
           <CardDescription>
-            {businesses.length} negócio(s) encontrado(s)
+            {totalCount} negócio(s) encontrado(s)
           </CardDescription>
         </CardHeader>
         <CardContent>
+          {error && (
+            <p className="text-sm text-destructive mb-4">Erro ao carregar negócios: {error}</p>
+          )}
           <Table>
             <TableHeader>
               <TableRow>
@@ -199,7 +196,7 @@ const AdminClientBusinesses: React.FC = () => {
                   </TableCell>
                   <TableCell>
                     {business.category ? (
-                      <Badge variant="outline">{business.category}</Badge>
+                      <Badge variant="outline">{getCategoryName(business.category)}</Badge>
                     ) : (
                       <span className="text-gray-400">Não informado</span>
                     )}
@@ -231,6 +228,14 @@ const AdminClientBusinesses: React.FC = () => {
               <p className="text-gray-500">Nenhum negócio encontrado</p>
             </div>
           )}
+
+          <AdminPagination
+            page={page}
+            pageSize={pageSize}
+            totalCount={totalCount}
+            onPageChange={goToPage}
+            disabled={isLoading}
+          />
         </CardContent>
       </Card>
     </div>

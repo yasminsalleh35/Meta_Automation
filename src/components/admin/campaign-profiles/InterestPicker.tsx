@@ -43,9 +43,16 @@ export function InterestPicker({ value, onChange }: InterestPickerProps) {
               placeholder="Ex: Dentistry, Dental Care, Orthodontics"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && query && search(query)}
+              onKeyDown={(e) => {
+                // ADM-05: Enter busca, sem submeter o formulário do perfil
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  if (query) search(query);
+                }
+              }}
             />
             <Button 
+              type="button"
               onClick={() => search(query)} 
               disabled={!query || loading}
               size="sm"
@@ -67,6 +74,7 @@ export function InterestPicker({ value, onChange }: InterestPickerProps) {
               <div className="flex flex-wrap gap-2">
                 {results.map(result => (
                   <Button
+                    type="button"
                     key={result.id}
                     variant="outline"
                     size="sm"
@@ -134,6 +142,7 @@ export function InterestPicker({ value, onChange }: InterestPickerProps) {
                 <Badge key={interest.id} variant="secondary" className="text-xs">
                   {interest.name}
                   <Button
+                    type="button"
                     variant="ghost"
                     size="sm"
                     className="h-auto p-0 ml-1 hover:bg-transparent"

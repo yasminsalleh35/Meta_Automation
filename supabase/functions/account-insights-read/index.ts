@@ -6,6 +6,7 @@
  */
 
 import { createClient } from 'jsr:@supabase/supabase-js@2';
+import { countConversations, costPerConversation } from '../_shared/metrics.ts';
 
 const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
 const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY')!;
@@ -82,8 +83,6 @@ Deno.serve(async (req) => {
       hasAdAccount: !!integration?.ad_account_id,
       hasToken: !!integration?.access_token,
       integrationData: integration ? {
-        id: integration.id,
-        provider: integration.provider,
         ad_account_id: integration.ad_account_id
       } : null
     });
@@ -157,16 +156,13 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Extract conversions from actions
-    const actions = cachedData.actions || [];
-    const conversationAction = actions.find(
-      (a: any) => a.action_type === 'onsite_conversion.messaging_first_reply'
-    );
-    const conversations = Number(conversationAction?.value || 0);
+    // audit DATA-02: shared definition (messaging_conversation_started_7d), the same
+    // one used by the campaign caches — this used to read messaging_first_reply.
+    const conversations = countConversations(cachedData.actions || []);
 
-    // Calculate CPA
+    // Cost per conversation (0 kept in the payload for compatibility when there are none)
     const spend = Number(cachedData.spend || 0);
-    const cpa = conversations > 0 ? spend / conversations : 0;
+    const cpa = costPerConversation(spend, conversations) ?? 0;
 
     // Get active campaigns count (case-insensitive: 'active', 'ACTIVE', 'Active')
     // Use admin client to bypass RLS (same pattern as integration/cache queries above)

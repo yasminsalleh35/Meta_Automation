@@ -3,6 +3,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { corsHeadersFor, handlePreflight } from '../_shared/cors.ts';
 import { authErrorResponse } from '../_shared/auth.ts';
 import { consumeAiQuota } from '../_shared/aiQuota.ts';
+import { normalizeInsight } from '../_shared/metrics.ts';
 
 // Version: 1.0.0 - AI metric evaluation with bounded optimization suggestions
 
@@ -19,8 +20,6 @@ interface CampaignMetrics {
   messaging_conversations: number;
 }
 
-const MESSAGING_RESULT_ACTION = 'onsite_conversion.messaging_conversation_started_7d';
-const OTHER_RESULT_ACTIONS = ['lead', 'purchase', 'contact_total'];
 const LLM_TIMEOUT_MS = 30_000;
 
 serve(async (req) => {
@@ -134,26 +133,23 @@ serve(async (req) => {
     const insightsData = await insightsRes.json();
     const raw = insightsData.data?.[0] || {};
 
-    // Resultados = conversas iniciadas no WhatsApp (CTWA) + leads + compras + contatos (audit CMP-14).
-    // Antes só contava tipos inexistentes e campanhas CTWA apareciam com "0 conversões".
-    const actionCount = (type: string) => (raw.actions || [])
-      .filter((a: any) => a.action_type === type)
-      .reduce((sum: number, a: any) => sum + (parseInt(a.value || '0', 10) || 0), 0);
-    const messagingConversations = actionCount(MESSAGING_RESULT_ACTION);
-    const conversions = messagingConversations +
-      OTHER_RESULT_ACTIONS.reduce((sum, type) => sum + actionCount(type), 0);
+    // audit DATA-02: resultados = conversas iniciadas no WhatsApp (CTWA), pela definição
+    // compartilhada (_shared/metrics.ts). Somar lead/purchase/contact_total contava a
+    // mesma conversa mais de uma vez (contact_total inclui a conversa iniciada).
+    const n = normalizeInsight(raw);
+    const conversions = n.conversations;
 
     const metrics: CampaignMetrics = {
-      impressions: parseInt(raw.impressions || '0', 10),
-      clicks: parseInt(raw.clicks || '0', 10),
-      spend: parseFloat(raw.spend || '0'),
+      impressions: n.impressions,
+      clicks: n.clicks,
+      spend: n.spend,
       cpm: parseFloat(raw.cpm || '0'),
-      cpc: parseFloat(raw.cpc || '0'),
+      cpc: n.cpc ?? 0,
       ctr: parseFloat(raw.ctr || '0'),
-      reach: parseInt(raw.reach || '0', 10),
+      reach: n.reach,
       conversions,
-      cpa: conversions > 0 ? parseFloat(raw.spend || '0') / conversions : 0,
-      messaging_conversations: messagingConversations,
+      cpa: n.costPerConversation ?? 0,
+      messaging_conversations: conversions,
     };
 
     console.log('📊 [AI-EVAL] Metrics:', metrics);
@@ -219,9 +215,8 @@ MÉTRICAS (últimos 7 dias):
 - CPC: R$ ${metrics.cpc.toFixed(2)}
 - CPM: R$ ${metrics.cpm.toFixed(2)}
 - Gasto total: R$ ${metrics.spend.toFixed(2)}
-- Resultados (conversas no WhatsApp + leads + compras + contatos): ${metrics.conversions}
-- Conversas iniciadas no WhatsApp: ${metrics.messaging_conversations}
-- Custo por resultado: R$ ${metrics.cpa.toFixed(2)}
+- Resultados (conversas iniciadas no WhatsApp): ${metrics.conversions}
+- Custo por conversa: ${metrics.conversions > 0 ? `R$ ${metrics.cpa.toFixed(2)}` : 'sem conversas no período'}
 
 Meta Campaign ID: ${campaign.meta_campaign_id}
 Meta AdSet ID: ${campaign.meta_adset_id || 'N/A'}

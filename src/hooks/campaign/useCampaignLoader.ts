@@ -33,8 +33,12 @@ export const useCampaignLoader = () => {
       // Parse selected locations from database using correct field name
       let selectedLocations = [];
       try {
-        if (campaign.location_selected_locations) {
-          selectedLocations = JSON.parse(campaign.location_selected_locations as string);
+        // audit DATA-05: jsonb já chega desserializado; só faz parse de string legada
+        const raw = campaign.location_selected_locations as unknown;
+        if (Array.isArray(raw)) {
+          selectedLocations = raw;
+        } else if (typeof raw === 'string' && raw) {
+          selectedLocations = JSON.parse(raw);
         }
       } catch (e) {
         console.warn('Error parsing location_selected_locations:', e);

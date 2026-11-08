@@ -171,12 +171,12 @@ export function AdminSidebar() {
       icon: Brain,
     },
     {
-      title: 'IA para Mídia',
+      title: 'IA para Mídia (em breve)', // ADM-05: página ainda sem dados reais
       url: '/admin/ai-media',
       icon: Image,
     },
     {
-      title: 'Monitoramento IA',
+      title: 'Monitoramento IA (em breve)', // ADM-05
       url: '/admin/ai-monitoring',
       icon: Activity,
     },
@@ -189,7 +189,7 @@ export function AdminSidebar() {
       icon: ScrollText,
     },
     {
-      title: 'Configurações Gerais',
+      title: 'Configurações Gerais (em breve)', // ADM-05
       url: '/admin/settings',
       icon: Settings,
     },

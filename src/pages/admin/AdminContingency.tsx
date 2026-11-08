@@ -45,6 +45,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { format } from 'date-fns';
 import { safeUrl } from '@/lib/safeUrl';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 
 interface ContingencyCampaign {
   id: string;
@@ -74,6 +75,9 @@ interface ContingencyCampaign {
 
 const REFRESH_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes in milliseconds
 
+// ADM-05: o wizard grava public_url; registros antigos/outros fluxos usam publicUrl
+const mediaUrl = (meta: any): string => (meta?.public_url || meta?.publicUrl || '') as string;
+
 const AdminContingency: React.FC = () => {
   const { toast } = useToast();
   const { syncManually, isLoading: isSyncing } = useContingencyManualSync();
@@ -102,7 +106,9 @@ const AdminContingency: React.FC = () => {
   });
 
   // Auto-refresh states
-  const [previousPendingCount, setPreviousPendingCount] = useState<number | null>(null);
+  // ADM-05: ref (não state) — como dependência do useCallback recriava o callback a cada carga,
+  // o useEffect abaixo re-executava (nova carga + novos intervals) sempre que a contagem mudava.
+  const previousPendingCountRef = useRef<number | null>(null);
   const [nextRefreshIn, setNextRefreshIn] = useState(REFRESH_INTERVAL_MS / 1000);
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [lastRefreshTime, setLastRefreshTime] = useState<Date>(new Date());
@@ -171,7 +177,7 @@ const AdminContingency: React.FC = () => {
 
       if (error) throw error;
 
-      const enrichedData = data.map(item => ({
+      const enrichedData = (data || []).map(item => ({
         ...item,
         user_email: item.profiles?.email,
         user_name: item.profiles?.name
@@ -185,6 +191,7 @@ const AdminContingency: React.FC = () => {
       ).length;
 
       // Check for new pending campaigns (only after initial load)
+      const previousPendingCount = previousPendingCountRef.current;
       if (!isInitialLoad && previousPendingCount !== null && currentPendingCount > previousPendingCount) {
         const newCount = currentPendingCount - previousPendingCount;
         playAlertSound();
@@ -196,7 +203,7 @@ const AdminContingency: React.FC = () => {
         });
       }
 
-      setPreviousPendingCount(currentPendingCount);
+      previousPendingCountRef.current = currentPendingCount;
       setLastRefreshTime(new Date());
       setNextRefreshIn(REFRESH_INTERVAL_MS / 1000);
     } catch (error) {
@@ -209,7 +216,7 @@ const AdminContingency: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [previousPendingCount, playAlertSound, toast]);
+  }, [playAlertSound, toast]);
 
   // Initial load and auto-refresh setup
   useEffect(() => {
@@ -615,7 +622,7 @@ const AdminContingency: React.FC = () => {
                   <div className="flex-1">
                   <div className="flex items-center gap-2 mb-2">
                       <CardTitle className="text-lg">
-                        {campaign.campaign_data.campaignName || 'Campanha sem nome'}
+                        {campaign.campaign_data?.campaignName || 'Campanha sem nome'}
                       </CardTitle>
                       {getStatusBadge(campaign.status)}
                       <Badge variant="outline">
@@ -646,15 +653,33 @@ const AdminContingency: React.FC = () => {
                   </div>
                   <div className="flex gap-2">
                     {campaign.status !== 'completed' && (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="border-green-500 text-green-600 hover:bg-green-50 dark:hover:bg-green-950"
-                        onClick={() => archiveCampaign(campaign.id)}
-                      >
-                        <Archive className="w-4 h-4 mr-1" />
-                        Arquivar
-                      </Button>
+                      // ADM-05: arquivar pede confirmação
+                      <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="border-green-500 text-green-600 hover:bg-green-50 dark:hover:bg-green-950"
+                          >
+                            <Archive className="w-4 h-4 mr-1" />
+                            Arquivar
+                          </Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>Arquivar campanha?</AlertDialogTitle>
+                            <AlertDialogDescription>
+                              A contingência "{campaign.campaign_data?.campaignName || 'Campanha sem nome'}" será marcada como concluída e sairá da fila de pendentes.
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                            <AlertDialogAction onClick={() => archiveCampaign(campaign.id)}>
+                              Arquivar
+                            </AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
                     )}
                     <Button
                       size="sm"
@@ -704,7 +729,7 @@ const AdminContingency: React.FC = () => {
                   <div>
                     <p className="text-muted-foreground">Orçamento Diário</p>
                     <p className="font-medium">
-                      R$ {campaign.campaign_data.dailyBudget}
+                      {campaign.campaign_data?.dailyBudget != null ? `R$ ${campaign.campaign_data.dailyBudget}` : '—'}
                     </p>
                   </div>
                   <div>
@@ -738,7 +763,8 @@ const AdminContingency: React.FC = () => {
                       size="sm"
                       variant="default"
                       className="bg-green-600 hover:bg-green-700"
-                      onClick={() => updateStatus(campaign.id, 'completed', adminNotes)}
+                      // ADM-05: notas do próprio card (antes usava as notas do último card aberto)
+                      onClick={() => updateStatus(campaign.id, 'completed', campaign.admin_notes || undefined)}
                     >
                       <CheckCircle className="w-4 h-4 mr-1" />
                       Marcar como Concluída
@@ -747,9 +773,12 @@ const AdminContingency: React.FC = () => {
                   <Button
                     size="sm"
                     variant="outline"
+                    disabled={!campaign.ad_account_id}
                     onClick={() => {
-                      const url = `https://business.facebook.com/adsmanager/manage/campaigns?act=${campaign.ad_account_id.replace('act_', '')}`;
-                      window.open(url, '_blank');
+                      // ADM-05: guarda contra ad_account_id nulo
+                      if (!campaign.ad_account_id) return;
+                      const url = `https://business.facebook.com/adsmanager/manage/campaigns?act=${encodeURIComponent(String(campaign.ad_account_id).replace('act_', ''))}`;
+                      window.open(url, '_blank', 'noopener,noreferrer');
                     }}
                   >
                     <ExternalLink className="w-4 h-4 mr-1" />
@@ -796,9 +825,9 @@ const AdminContingency: React.FC = () => {
                   <div className="flex gap-4">
                     {/* Preview */}
                     <div className="flex-shrink-0">
-                      {selectedCampaign.campaign_data.selectedMediaMeta.file_type?.startsWith('image/') ? (
+                      {String(selectedCampaign.campaign_data.selectedMediaMeta.file_type || '').startsWith('image') ? (
                         <img
-                          src={selectedCampaign.campaign_data.selectedMediaMeta.public_url}
+                          src={mediaUrl(selectedCampaign.campaign_data.selectedMediaMeta)}
                           alt="Preview"
                           className="w-32 h-32 object-cover rounded-md border"
                         />
@@ -824,7 +853,7 @@ const AdminContingency: React.FC = () => {
                           size="sm"
                           variant="outline"
                           onClick={() => copyToClipboard(
-                            selectedCampaign.campaign_data.selectedMediaMeta.public_url,
+                            mediaUrl(selectedCampaign.campaign_data.selectedMediaMeta),
                             'URL da mídia'
                           )}
                         >
@@ -834,7 +863,7 @@ const AdminContingency: React.FC = () => {
                         <Button
                           size="sm"
                           variant="outline"
-                          onClick={() => window.open(safeUrl(selectedCampaign.campaign_data.selectedMediaMeta.public_url), '_blank', 'noopener,noreferrer')}
+                          onClick={() => window.open(safeUrl(mediaUrl(selectedCampaign.campaign_data.selectedMediaMeta)), '_blank', 'noopener,noreferrer')}
                         >
                           <ExternalLink className="w-4 h-4 mr-1" />
                           Abrir
@@ -844,8 +873,8 @@ const AdminContingency: React.FC = () => {
                           variant="outline"
                           onClick={() => {
                             const link = document.createElement('a');
-                            link.href = safeUrl(selectedCampaign.campaign_data.selectedMediaMeta.public_url);
-                            link.download = selectedCampaign.campaign_data.selectedMediaMeta.filename;
+                            link.href = safeUrl(mediaUrl(selectedCampaign.campaign_data.selectedMediaMeta));
+                            link.download = selectedCampaign.campaign_data.selectedMediaMeta.filename || 'midia';
                             link.click();
                           }}
                         >
@@ -1112,7 +1141,7 @@ const AdminContingency: React.FC = () => {
             <div className="space-y-4">
               <div className="p-4 bg-muted rounded-md">
                 <p className="text-sm font-medium mb-1">Campanha:</p>
-                <p className="text-sm">{selectedCampaign.campaign_data.campaignName}</p>
+                <p className="text-sm">{selectedCampaign.campaign_data?.campaignName || 'Campanha sem nome'}</p>
                 <p className="text-xs text-muted-foreground mt-2">
                   Cliente: {selectedCampaign.user_name} ({selectedCampaign.user_email})
                 </p>

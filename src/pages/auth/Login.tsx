@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent } from '@/components/ui/card';
-import { useAuth } from '@/contexts/AuthContext';
+import { useAuth, ACCOUNT_SUSPENDED_MESSAGE } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
 import { Eye, EyeOff, ArrowRight, Users, Target, TrendingUp, Zap } from 'lucide-react';
 
@@ -51,7 +51,10 @@ const Login: React.FC = () => {
       let errorMessage = "Erro ao fazer login. Verifique suas credenciais.";
       
       if (error?.message) {
-        if (error.message.includes('Invalid login credentials')) {
+        if (error.message === ACCOUNT_SUSPENDED_MESSAGE) {
+          // ADM-02
+          errorMessage = ACCOUNT_SUSPENDED_MESSAGE;
+        } else if (error.message.includes('Invalid login credentials')) {
           errorMessage = "Email ou senha incorretos.";
         } else if (error.message.includes('Email not confirmed')) {
           errorMessage = "Por favor, confirme seu email antes de fazer login.";

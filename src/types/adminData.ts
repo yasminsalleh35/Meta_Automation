@@ -7,6 +7,7 @@ export interface RealUser {
   status: 'active' | 'suspended' | 'inactive';
   lastLogin: string;
   campaigns: number;
+  // ADM-01: no longer estimated (was campaigns × 50). Not tracked per user yet → always 0.
   spending: number;
   role?: string;
   plan: 'basic' | 'premium' | 'enterprise';
@@ -29,6 +30,15 @@ export interface RealStats {
   avgRevenuePerUser: number;
   topPlan: string;
   conversionRate: number;
+  // ADM-01: extra figures returned by admin_dashboard_stats()
+  activeByProvider?: Record<string, number>;
+  mrrByProvider?: Record<string, number>;
+  canceledLast30Days?: number;
+  suspendedUsers?: number;
+  campaignsTotal?: number;
+  campaignsByStatus?: Record<string, number>;
+  // false when the RPC failed and the numbers are a partial fallback
+  fromServer?: boolean;
 }
 
 export interface RealNotification {

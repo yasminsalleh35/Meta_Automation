@@ -50,7 +50,7 @@ const AdminSubscriptions: React.FC = () => {
               <div>
                 <p className="text-sm text-gray-600">Receita Mensal</p>
                 <p className="text-lg font-semibold">
-                  R$ {stats?.monthlyRevenue?.toLocaleString('pt-BR') || '0'}
+                  R$ {(stats?.monthlyRevenue || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </p>
               </div>
             </div>
@@ -117,8 +117,9 @@ const AdminSubscriptions: React.FC = () => {
                     }>
                       {user.plan}
                     </Badge>
+                    {/* ADM-01: o "gasto" era estimado (campanhas × 50); mostramos o dado real */}
                     <p className="text-sm text-gray-600 mt-1">
-                      R$ {user.spending.toLocaleString('pt-BR')} gasto
+                      {user.campaigns} campanha(s)
                     </p>
                   </div>
                   <Badge className="bg-green-100 text-green-800">

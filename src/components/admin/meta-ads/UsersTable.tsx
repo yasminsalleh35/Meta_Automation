@@ -4,6 +4,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { CheckCircle, XCircle, Eye, Settings, Loader2 } from 'lucide-react';
+import { ConfirmActionButton } from '@/components/admin/ConfirmActionButton';
 
 interface User {
   id: string;
@@ -121,14 +122,17 @@ export const UsersTable: React.FC<UsersTableProps> = ({
                         <Eye className="w-4 h-4 mr-1" />
                         Ver
                       </Button>
-                      <Button
+                      <ConfirmActionButton
                         variant="outline"
                         size="sm"
-                        onClick={() => onDisconnect(user)}
+                        title="Desconectar Meta Ads?"
+                        description={`A integração Meta Ads de ${user.email} será removida. O cliente precisará conectar a conta novamente.`}
+                        confirmLabel="Desconectar"
+                        onConfirm={() => onDisconnect(user)}
                       >
                         <XCircle className="w-4 h-4 mr-1" />
                         Desconectar
-                      </Button>
+                      </ConfirmActionButton>
                     </>
                   ) : (
                     <Button

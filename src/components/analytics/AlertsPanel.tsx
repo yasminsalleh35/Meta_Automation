@@ -112,8 +112,12 @@ export const AlertsPanel: React.FC<AlertsPanelProps> = ({ data }) => {
                         <p className="text-sm text-gray-600">{alert.description}</p>
                         <div className="flex items-center gap-2 text-xs text-gray-500">
                           <span>Campanha: {alert.campaignName}</span>
-                          <span>•</span>
-                          <span>Detectado há {alert.timeAgo}</span>
+                          {alert.timeAgo && (
+                            <>
+                              <span>•</span>
+                              <span>Detectado há {alert.timeAgo}</span>
+                            </>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -175,7 +179,7 @@ export const AlertsPanel: React.FC<AlertsPanelProps> = ({ data }) => {
                           <p className="text-sm text-gray-600">{rec.description}</p>
                           <div className="flex items-center justify-between">
                             <div className="text-xs text-blue-600 font-medium">
-                              Impacto estimado: {rec.impact}
+                              {rec.impact ? `Impacto estimado: ${rec.impact}` : null}
                             </div>
                             <Button size="sm" variant="outline">
                               Aplicar sugestão

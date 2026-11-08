@@ -117,16 +117,17 @@ serve(async (req) => {
       : (campaignData.budget?.daily || 50) * 20;
 
     // ✅ CORRIGIDO: Preparar selected_locations corretamente
-    const selectedLocationsJson = JSON.stringify(selectedLocationsData.map((loc: any) => ({
+    // audit DATA-05: colunas jsonb recebem o valor, não uma string JSON (senão viram jsonb 'string')
+    const selectedLocationsJson = selectedLocationsData.map((loc: any) => ({
       key: loc.key,
       name: loc.name,
       type: loc.type,
       country_code: loc.country_code || undefined,
       radius: loc.radius || undefined,
       distance_unit: loc.distance_unit || undefined
-    })));
+    }));
 
-    console.log('Prepared selected_locations JSON:', selectedLocationsJson);
+    console.log('Prepared selected_locations JSON:', JSON.stringify(selectedLocationsJson));
 
     // Get active Meta Ads integration to associate campaign with ad_account_id
     const { data: integration } = await supabaseClient
@@ -160,11 +161,11 @@ serve(async (req) => {
       gender: campaignData.gender || 'all',
       age_min: campaignData.ageRange?.min || 18,
       age_max: campaignData.ageRange?.max || 65,
-      interests: JSON.stringify(campaignData.interests || []),
-      
+      interests: campaignData.interests || [],
+
       // Campaign settings
-      placements: JSON.stringify(campaignData.placements || ['feed']),
-      devices: JSON.stringify(campaignData.devices || ['mobile', 'desktop']),
+      placements: campaignData.placements || ['feed'],
+      devices: campaignData.devices || ['mobile', 'desktop'],
       
       // Budget
       budget_daily: campaignData.budget?.daily || 50,

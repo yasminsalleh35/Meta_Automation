@@ -27,6 +27,8 @@ interface MockConfig {
   campaignInserts?: Array<Record<string, unknown>>;
   // campaign_create_requests (idempotência), chave → linha
   requests?: Map<string, { status: string; response: unknown; updated_at: string }>;
+  // profiles row of the caller (audit ADM-02: status 'suspended' blocks creation)
+  profile?: Record<string, unknown> | null;
 }
 
 function makeSupabase(cfg: MockConfig) {
@@ -58,6 +60,7 @@ function makeSupabase(cfg: MockConfig) {
         cfg.contingencyInserts.push(state.payload);
         return { data: { id: 'cont_1' }, error: null };
       }
+      if (table === 'profiles') return { data: cfg.profile === undefined ? { status: 'active' } : cfg.profile, error: null };
       if (table === 'integrations') return { data: cfg.integration, error: null };
       if (table === 'business_settings') return { data: null, error: null };
       return { data: null, error: null };
@@ -530,4 +533,21 @@ Deno.test({ ...testOpts, name: 'S15 dayparting Mon–Fri → lifetime budget for
   const sched = JSON.parse(adset.adset_schedule);
   assertEquals(sched[0].timezone_type, 'ADVERTISER');
   assertEquals(sched[0].end_minute, 1440);
+});
+
+// audit ADM-02 — conta suspensa pelo admin
+Deno.test({ ...testOpts, name: 'S16 suspended account → 403 ACCOUNT_SUSPENDED, no Meta calls, no contingency' }, async () => {
+  const cfg = baseConfig({ profile: { status: 'suspended' } });
+  __setSupabaseFactoryForTests(() => makeSupabase(cfg));
+  const calls = installFetch({});
+  const res = await handleRequest(makeRequest({ idempotencyKey: 'key-suspended-01' }));
+  const body = await res.json();
+  assertEquals(res.status, 403);
+  assertEquals(body.success, false);
+  assertEquals(body.code, 'ACCOUNT_SUSPENDED');
+  assertEquals(body.userMessage, 'Sua conta está suspensa. Entre em contato com o suporte.');
+  assertEquals(calls.length, 0);
+  assertEquals(cfg.contingencyInserts.length, 0);
+  assertEquals(cfg.campaignInserts!.length, 0);
+  assertEquals(cfg.requests!.size, 0); // nem reivindica a chave de idempotência
 });

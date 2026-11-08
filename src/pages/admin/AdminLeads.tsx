@@ -6,7 +6,7 @@ import { LeadDrawer } from '@/components/admin/leads/LeadDrawer';
 import { useLeads, type Lead } from '@/hooks/admin/useLeads';
 
 const AdminLeads: React.FC = () => {
-  const { leads, loading, filters, setFilters, updateLead, addComment, refreshLeads, metrics } = useLeads();
+  const { leads, allLeads, loading, filters, setFilters, updateLead, addComment, refreshLeads, metrics } = useLeads();
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
 
@@ -46,7 +46,9 @@ const AdminLeads: React.FC = () => {
       <LeadsFilters 
         filters={filters}
         onFiltersChange={setFilters}
-        leads={leads}
+        // ADM-05: opções vêm de todos os leads, não só dos já filtrados
+        leads={allLeads}
+        resultCount={leads.length}
       />
 
       <LeadsTable

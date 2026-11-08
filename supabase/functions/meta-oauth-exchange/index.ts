@@ -10,6 +10,7 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { fetchAllGraphPages } from "../_shared/metaPaging.ts";
+import { mapMetaEffectiveStatus } from "../_shared/status.ts";
 
 type OAuthExchangeBody = {
   code: string;
@@ -467,7 +468,8 @@ serve(async (req) => {
               ad_account_id: selectedAdAccountId, // ✅ CRÍTICO: incluir ad_account_id
               meta_campaign_id: campaign.id,
               name: campaign.name,
-              status: campaign.effective_status?.toLowerCase() || 'paused',
+              // audit DATA-05: vocabulário canônico (CHECK campaigns_status_check), não effective_status cru
+              status: mapMetaEffectiveStatus(campaign.effective_status) ?? 'paused',
               objective: campaign.objective || 'OUTCOME_TRAFFIC',
               meta_data: {
                 id: campaign.id,

@@ -43,7 +43,7 @@ export const SimpleCampaignInsightsStats: React.FC<SimpleCampaignInsightsStatsPr
       icon: Eye,
       color: 'text-blue-600',
       bgColor: 'bg-blue-50',
-      tooltip: 'Número total de vezes que seu anúncio foi exibido'
+      tooltip: 'Número total de vezes que seu anúncio foi exibido (últimos 30 dias)'
     },
     {
       title: 'Alcance',
@@ -51,7 +51,7 @@ export const SimpleCampaignInsightsStats: React.FC<SimpleCampaignInsightsStatsPr
       icon: Users,
       color: 'text-orange-600',
       bgColor: 'bg-orange-50',
-      tooltip: 'Número de pessoas únicas que viram seu anúncio'
+      tooltip: 'Número de pessoas únicas que viram seu anúncio (últimos 30 dias)'
     },
     {
       title: 'Cliques',
@@ -59,7 +59,7 @@ export const SimpleCampaignInsightsStats: React.FC<SimpleCampaignInsightsStatsPr
       icon: MousePointer,
       color: 'text-green-600',
       bgColor: 'bg-green-50',
-      tooltip: 'Número total de cliques no seu anúncio'
+      tooltip: 'Número total de cliques no seu anúncio (últimos 30 dias)'
     },
     {
       title: 'CTR',
@@ -67,7 +67,7 @@ export const SimpleCampaignInsightsStats: React.FC<SimpleCampaignInsightsStatsPr
       icon: TrendingUp,
       color: 'text-purple-600',
       bgColor: 'bg-purple-50',
-      tooltip: 'Taxa de cliques (Cliques ÷ Impressões × 100)'
+      tooltip: 'Taxa de cliques (Cliques ÷ Impressões × 100, últimos 30 dias)'
     },
     {
       title: 'Conversas',
@@ -75,15 +75,20 @@ export const SimpleCampaignInsightsStats: React.FC<SimpleCampaignInsightsStatsPr
       icon: MessageCircle,
       color: 'text-indigo-600',
       bgColor: 'bg-indigo-50',
-      tooltip: 'Conversas iniciadas via WhatsApp nos últimos 7 dias'
+      // audit DATA-02: the cards show the last_30d window (the "7d" in Meta's action
+      // name is the attribution window, not the period).
+      tooltip: 'Conversas iniciadas via WhatsApp nos últimos 30 dias'
     },
     {
       title: 'Custo/Conversa',
-      value: insights ? formatCurrency(insights.costPerConversation) : '-',
+      // audit DATA-02: "—" instead of "R$ 0,00" when there are no conversations yet
+      value: insights && insights.conversations > 0 && insights.costPerConversation > 0
+        ? formatCurrency(insights.costPerConversation)
+        : '—',
       icon: CreditCard,
       color: 'text-cyan-600',
       bgColor: 'bg-cyan-50',
-      tooltip: 'Custo médio para iniciar cada conversa no WhatsApp'
+      tooltip: 'Gasto ÷ conversas iniciadas no WhatsApp (últimos 30 dias)'
     },
     {
       title: 'Gasto Total',

@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { normalizeInsight } from "../_shared/metrics.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -23,30 +24,24 @@ interface CampaignInsights {
   clicks?: number;
   spend?: number;
   ctr?: number;
+  cpc?: number;
+  conversations?: number;
+  // Cost per conversation (spend / conversations). Undefined when there are no conversations.
   cpa?: number;
   source?: 'api' | 'fallback';
 }
 
-// Helper function to calculate CPA
-function calculateCpa(costPerActionType: any[], spend: number, clicks: number): { cpa?: number; source: 'api' | 'fallback' } {
-  // Try to get CPA from cost_per_action_type array
-  if (costPerActionType && Array.isArray(costPerActionType)) {
-    const leadAction = costPerActionType.find(action => 
-      action.action_type === 'lead' || 
-      action.action_type === 'offsite_conversion.lead_grouped'
-    );
-    
-    if (leadAction && leadAction.value) {
-      return { cpa: parseFloat(leadAction.value), source: 'api' };
-    }
-  }
-  
-  // Fallback: use spend/clicks as rough CPA estimate
-  if (spend && clicks && clicks > 0) {
-    return { cpa: spend / clicks, source: 'fallback' };
-  }
-  
-  return { source: 'fallback' };
+// audit DATA-02: CPA used to fall back to spend/clicks (i.e. CPC labelled as CPA)
+// and looked for `lead` actions that CTWA campaigns never produce. Now CPC and
+// cost per conversation come from the shared definition and are reported separately.
+function derivedMetrics(raw: any): Pick<CampaignInsights, 'cpc' | 'conversations' | 'cpa' | 'source'> {
+  const n = normalizeInsight(raw);
+  return {
+    cpc: n.cpc ?? undefined,
+    conversations: n.conversations,
+    cpa: n.costPerConversation ?? undefined,
+    source: 'api',
+  };
 }
 
 serve(async (req) => {
@@ -114,7 +109,7 @@ serve(async (req) => {
       }
 
       const apiVersion = Deno.env.get('META_API_VERSION') ?? 'v23.0';
-      const apiUrl = `https://graph.facebook.com/${apiVersion}/${adId}/insights?fields=impressions,reach,clicks,spend,cost_per_action_type,ctr&date_preset=last_30d&access_token=${singleIntegration.access_token}`;
+      const apiUrl = `https://graph.facebook.com/${apiVersion}/${adId}/insights?fields=impressions,reach,clicks,spend,actions,cost_per_action_type,ctr&date_preset=last_30d&access_token=${singleIntegration.access_token}`;
 
       const response = await fetch(apiUrl);
       const result = await response.json();
@@ -124,7 +119,6 @@ serve(async (req) => {
       }
 
       const insights = result.data?.[0] || {};
-      const { cpa, source } = calculateCpa(insights.cost_per_action_type, insights.spend, insights.clicks);
 
       const campaignInsights: CampaignInsights = {
         campaignId: adId,
@@ -133,8 +127,7 @@ serve(async (req) => {
         clicks: insights.clicks ? parseInt(insights.clicks) : 0,
         spend: insights.spend ? parseFloat(insights.spend) : 0,
         ctr: insights.ctr ? parseFloat(insights.ctr) : 0,
-        cpa,
-        source
+        ...derivedMetrics(insights),
       };
 
       return new Response(JSON.stringify(campaignInsights), {
@@ -199,7 +192,7 @@ serve(async (req) => {
         const apiVersion = Deno.env.get('META_API_VERSION') ?? 'v23.0';
         
         const apiUrl = `https://graph.facebook.com/${apiVersion}/${metaCampaignId}/insights` +
-          `?fields=impressions,reach,clicks,spend,cost_per_action_type,ctr` +
+          `?fields=impressions,reach,clicks,spend,actions,cost_per_action_type,ctr` +
           `&date_preset=${dateRange}` +
           `&access_token=${accessToken}`;
 
@@ -208,8 +201,7 @@ serve(async (req) => {
 
         if (response.ok && result.data && result.data.length > 0) {
           const campaignData = result.data[0];
-          const { cpa, source } = calculateCpa(campaignData.cost_per_action_type, campaignData.spend, campaignData.clicks);
-          
+
           insights.push({
             campaignId: metaCampaignId,
             impressions: campaignData.impressions ? parseInt(campaignData.impressions) : 0,
@@ -217,8 +209,7 @@ serve(async (req) => {
             clicks: campaignData.clicks ? parseInt(campaignData.clicks) : 0,
             spend: campaignData.spend ? parseFloat(campaignData.spend) : 0,
             ctr: campaignData.ctr ? parseFloat(campaignData.ctr) : 0,
-            cpa,
-            source
+            ...derivedMetrics(campaignData),
           });
         } else {
           console.warn(`No insights data for campaign ${metaCampaignId}:`, result);

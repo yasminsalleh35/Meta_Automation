@@ -38,7 +38,9 @@ const CampaignTestPanel: React.FC<CampaignTestPanelProps> = ({
     whatsappLink: 'https://wa.me/5511999999999',
     adTitle: 'Fale conosco agora',
     adText: 'Tire suas dúvidas pelo WhatsApp',
-    dailyBudget: 1000, // 10 BRL em centavos
+    // ADM-05: em reais — test-wa-link-campaign-create converte para centavos (× 100).
+    // Antes: 1000 (= R$ 1.000/dia na Meta).
+    dailyBudget: 10,
   });
 
   const currentTestMode = CAMPAIGN_TEST_MODES[config.testMode];
@@ -104,19 +106,25 @@ const CampaignTestPanel: React.FC<CampaignTestPanelProps> = ({
           return;
         }
 
+        // ADM-05: a função responde em snake_case (campaign_id, adset_id, creative_id, ad_id)
+        const campaignId = data.campaign_id ?? data.campaignId;
+        const adSetId = data.adset_id ?? data.adSetId;
+        const creativeId = data.creative_id ?? data.creativeId;
+        const adId = data.ad_id ?? data.adId;
+
         addLog('success', `✅ Campanha criada com sucesso!`);
-        addLog('success', `🆔 Campaign ID: ${data.campaignId}`);
-        addLog('success', `📦 Ad Set ID: ${data.adSetId}`);
-        addLog('success', `🎨 Creative ID: ${data.creativeId}`);
-        addLog('success', `📢 Ad ID: ${data.adId}`);
+        addLog('success', `🆔 Campaign ID: ${campaignId}`);
+        addLog('success', `📦 Ad Set ID: ${adSetId}`);
+        addLog('success', `🎨 Creative ID: ${creativeId}`);
+        addLog('success', `📢 Ad ID: ${adId}`);
         addLog('info', `📄 Logs: ${data.logs?.join('\n')}`);
 
-        setCreatedId(data.campaignId);
-        onCampaignCreated(data.campaignId, currentTestMode.campaign.objective);
+        setCreatedId(campaignId);
+        onCampaignCreated(campaignId, currentTestMode.campaign.objective);
 
         toast({
           title: '✅ Campanha Completa Criada!',
-          description: `Campaign: ${data.campaignId}\nAd Set: ${data.adSetId}\nAd: ${data.adId}`,
+          description: `Campaign: ${campaignId}\nAd Set: ${adSetId}\nAd: ${adId}`,
         });
       } else {
         // Chamada original (apenas campanha CTWA)
@@ -276,8 +284,9 @@ const CampaignTestPanel: React.FC<CampaignTestPanelProps> = ({
                   <Input
                     id="daily-budget"
                     type="number"
-                    value={config.dailyBudget / 100}
-                    onChange={(e) => setConfig({ ...config, dailyBudget: parseFloat(e.target.value) * 100 })}
+                    min={1}
+                    value={config.dailyBudget}
+                    onChange={(e) => setConfig({ ...config, dailyBudget: parseFloat(e.target.value) || 0 })}
                     placeholder="10.00"
                     step="0.01"
                   />
@@ -316,7 +325,7 @@ const CampaignTestPanel: React.FC<CampaignTestPanelProps> = ({
               </AlertDescription>
             </Alert>
 
-            <Button onClick={handleCreate} disabled={isCreating || !config.name} className="w-full">
+            <Button onClick={handleCreate} disabled={isCreating || !config.name || (currentTestMode.needsWhatsAppLink && !(config.dailyBudget > 0))} className="w-full">
               {isCreating ? (
                 <>
                   <Loader2 className="w-4 h-4 mr-2 animate-spin" />
@@ -385,7 +394,7 @@ const CampaignTestPanel: React.FC<CampaignTestPanelProps> = ({
             adset: {
               optimization_goal: currentTestMode.adSet.optimization_goal,
               billing_event: currentTestMode.adSet.billing_event,
-              daily_budget: config.dailyBudget,
+              daily_budget: Math.round(config.dailyBudget * 100), // centavos, como enviado à Meta
             },
             creative: {
               link: config.whatsappLink,

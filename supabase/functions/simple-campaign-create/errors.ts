@@ -4,6 +4,7 @@
 
 export type CampaignErrorCode =
   | 'UNAUTHENTICATED'
+  | 'ACCOUNT_SUSPENDED'
   | 'INVALID_PAYLOAD'
   | 'NO_INTEGRATION'
   | 'PAGE_NOT_ALLOWED'
@@ -32,6 +33,7 @@ export class CampaignError extends Error {
 
   get httpStatus(): number {
     if (this.code === 'UNAUTHENTICATED') return 401;
+    if (this.code === 'ACCOUNT_SUSPENDED') return 403; // audit ADM-02
     return this.transient ? 202 : 422;
   }
 }

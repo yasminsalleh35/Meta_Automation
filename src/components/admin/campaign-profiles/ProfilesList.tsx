@@ -46,10 +46,11 @@ export function ProfilesList({ onEdit }: ProfilesListProps) {
     }
   };
 
+  // ADM-05: a cópia não tem id → o formulário cria um novo perfil, com slug editável
   const duplicateProfile = (profile: CampaignProfile) => {
     const duplicated = {
       ...profile,
-      slug: `${profile.slug}-copy`,
+      slug: `${profile.slug}-copia`,
       label: `${profile.label} (Cópia)`,
       id: undefined,
       created_at: undefined,
@@ -176,8 +177,10 @@ export function ProfilesList({ onEdit }: ProfilesListProps) {
                           <Edit className="w-4 h-4" />
                         </Button>
                         <Button
+                          type="button"
                           variant="ghost"
                           size="sm"
+                          title="Duplicar"
                           onClick={() => duplicateProfile(profile)}
                         >
                           <Copy className="w-4 h-4" />

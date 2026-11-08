@@ -81,19 +81,26 @@ export class AdminDataService {
   static async fetchCampaignCounts() {
     console.log('🔄 Fetching campaign counts...');
     try {
-      const { data: campaigns, error: campaignError } = await supabase
-        .from('campaigns')
-        .select('user_id');
-
-      if (campaignError) {
-        console.error('Campaign error:', campaignError);
-        throw campaignError;
-      }
-
+      // ADM-03: PostgREST caps each response at 1,000 rows — page through all of them.
+      const PAGE = 1000;
       const counts: Record<string, number> = {};
-      campaigns?.forEach(campaign => {
-        counts[campaign.user_id] = (counts[campaign.user_id] || 0) + 1;
-      });
+      for (let from = 0; ; from += PAGE) {
+        const { data: campaigns, error: campaignError } = await supabase
+          .from('campaigns')
+          .select('user_id')
+          .order('id')
+          .range(from, from + PAGE - 1);
+
+        if (campaignError) {
+          console.error('Campaign error:', campaignError);
+          throw campaignError;
+        }
+
+        campaigns?.forEach(campaign => {
+          counts[campaign.user_id] = (counts[campaign.user_id] || 0) + 1;
+        });
+        if (!campaigns || campaigns.length < PAGE) break;
+      }
 
       console.log('✅ Campaign counts calculated:', Object.keys(counts).length, 'users');
       return counts;
@@ -177,38 +184,68 @@ export class AdminDataService {
         status: (profile.status as 'active' | 'suspended' | 'inactive') || 'active',
         lastLogin: profile.last_login_at || new Date().toISOString(),
         campaigns: campaignCount,
-        spending: campaignCount * 50, // Estimate based on campaigns
+        // ADM-01: was `campaignCount * 50` (fabricated). Spend per user is not tracked here.
+        spending: 0,
         role: userRole,
         plan: plan
       };
     });
   }
 
+  // ADM-01: real numbers from the admin-only RPC (subscriptions per provider, MRR, 30-day churn, campaigns).
+  static async fetchDashboardStats(): Promise<RealStats> {
+    const { data, error } = await supabase.rpc('admin_dashboard_stats' as any);
+    if (error) {
+      console.error('Dashboard stats error:', error);
+      throw error;
+    }
+    const s = (data || {}) as Record<string, any>;
+    const num = (v: unknown) => {
+      const n = Number(v);
+      return Number.isFinite(n) ? n : 0;
+    };
+    return {
+      totalUsers: num(s.total_users),
+      activeSubscriptions: num(s.active_subscriptions),
+      monthlyRevenue: num(s.mrr),
+      churnRate: num(s.churn_rate_30d),
+      newUsersThisMonth: num(s.new_users_this_month),
+      avgRevenuePerUser: num(s.arpu),
+      topPlan: s.top_plan || '—',
+      conversionRate: num(s.conversion_rate),
+      activeByProvider: s.active_by_provider || {},
+      mrrByProvider: s.mrr_by_provider || {},
+      canceledLast30Days: num(s.canceled_last_30_days),
+      suspendedUsers: num(s.suspended_users),
+      campaignsTotal: num(s.campaigns_total),
+      campaignsByStatus: s.campaigns_by_status || {},
+      fromServer: true,
+    };
+  }
+
+  // ADM-01: fallback when the RPC is unavailable — only figures we can actually count from the
+  // loaded rows; revenue/churn/subscriptions are reported as 0 instead of being invented.
   static calculateStats(users: RealUser[]): RealStats {
-    console.log('🔄 Calculating stats for', users.length, 'users');
-    
     const totalUsers = users.length;
-    const activeUsers = users.filter(u => u.status === 'active').length;
-    const totalSpending = users.reduce((sum, u) => sum + u.spending, 0);
+    const now = new Date();
     const newUsersThisMonth = users.filter(u => {
       const createdAt = new Date(u.created_at);
-      const now = new Date();
       return createdAt.getMonth() === now.getMonth() && createdAt.getFullYear() === now.getFullYear();
     }).length;
 
-    const stats = {
+    return {
       totalUsers,
-      activeSubscriptions: activeUsers,
-      monthlyRevenue: totalSpending,
-      churnRate: totalUsers > 0 ? ((totalUsers - activeUsers) / totalUsers) * 100 : 0,
+      activeSubscriptions: 0,
+      monthlyRevenue: 0,
+      churnRate: 0,
       newUsersThisMonth,
-      avgRevenuePerUser: activeUsers > 0 ? totalSpending / activeUsers : 0,
-      topPlan: 'basic',
-      conversionRate: totalUsers > 0 ? (activeUsers / totalUsers) * 100 : 0
+      avgRevenuePerUser: 0,
+      topPlan: '—',
+      conversionRate: 0,
+      suspendedUsers: users.filter(u => u.status === 'suspended').length,
+      campaignsTotal: users.reduce((sum, u) => sum + u.campaigns, 0),
+      fromServer: false,
     };
-
-    console.log('✅ Stats calculated:', stats);
-    return stats;
   }
 
   static transformNotifications(notificationsData: any[]): RealNotification[] {

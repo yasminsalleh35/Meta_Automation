@@ -2,35 +2,36 @@
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 
+// ADM-02: status changes go through the admin-only RPC. A direct profiles update hit 0 rows
+// (no admin UPDATE policy) while the UI reported success.
+const setUserStatus = async (userId: string, status: 'active' | 'suspended') => {
+  const { error } = await supabase.rpc('admin_set_user_status' as any, { uid: userId, new_status: status });
+  if (error) throw error;
+};
+
+const errorMessage = (error: unknown, fallback: string) => {
+  const msg = (error as { message?: string })?.message;
+  if (!msg) return fallback;
+  if (msg === 'forbidden') return 'Você não tem permissão para esta ação.';
+  return msg;
+};
+
 export const useAdminActions = () => {
   const { toast } = useToast();
 
   const suspendUser = async (userId: string) => {
     try {
-      console.log('🚫 Suspending user:', userId);
-      
-      const { error } = await supabase
-        .from('profiles')
-        .update({ status: 'suspended' })
-        .eq('id', userId);
-
-      if (error) {
-        console.error('❌ Suspend user error:', error);
-        throw error;
-      }
-      
+      await setUserStatus(userId, 'suspended');
       toast({
         title: "Usuário suspenso",
         description: "Usuário foi suspenso com sucesso.",
       });
-      
-      console.log('✅ User suspended successfully');
       return true;
     } catch (error) {
       console.error('❌ Error suspending user:', error);
       toast({
-        title: "Erro",
-        description: "Não foi possível suspender o usuário.",
+        title: "Erro ao suspender usuário",
+        description: errorMessage(error, "Não foi possível suspender o usuário."),
         variant: "destructive"
       });
       return false;
@@ -39,30 +40,17 @@ export const useAdminActions = () => {
 
   const activateUser = async (userId: string) => {
     try {
-      console.log('✅ Activating user:', userId);
-      
-      const { error } = await supabase
-        .from('profiles')
-        .update({ status: 'active' })
-        .eq('id', userId);
-
-      if (error) {
-        console.error('❌ Activate user error:', error);
-        throw error;
-      }
-      
+      await setUserStatus(userId, 'active');
       toast({
         title: "Usuário ativado",
         description: "Usuário foi ativado com sucesso.",
       });
-      
-      console.log('✅ User activated successfully');
       return true;
     } catch (error) {
       console.error('❌ Error activating user:', error);
       toast({
-        title: "Erro",
-        description: "Não foi possível ativar o usuário.",
+        title: "Erro ao ativar usuário",
+        description: errorMessage(error, "Não foi possível ativar o usuário."),
         variant: "destructive"
       });
       return false;
@@ -71,8 +59,6 @@ export const useAdminActions = () => {
 
   const markNotificationAsRead = async (notificationId: string) => {
     try {
-      console.log('👁️ Marking notification as read:', notificationId);
-      
       const { error } = await supabase
         .from('notifications')
         .update({ read: true })
@@ -82,8 +68,6 @@ export const useAdminActions = () => {
         console.error('❌ Mark notification error:', error);
         throw error;
       }
-      
-      console.log('✅ Notification marked as read successfully');
       return true;
     } catch (error) {
       console.error('❌ Error marking notification as read:', error);

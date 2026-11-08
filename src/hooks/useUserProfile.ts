@@ -54,14 +54,39 @@ export const useUserProfile = () => {
     try {
       setUpdating(true);
       
+      // audit DATA-07: profiles.email não é editável pelo usuário (trigger
+      // profiles_guard_protected_columns). A troca de e-mail passa pelo Auth, que
+      // exige confirmação; profiles.email é sincronizado a partir de auth.users.
+      const newEmail = formData.email?.trim();
+      const emailChanged = !!newEmail && newEmail.toLowerCase() !== (profile?.email || user.email || '').toLowerCase();
+
       const { error } = await supabase
         .from('profiles')
         .update({
           name: formData.name,
-          email: formData.email,
           updated_at: new Date().toISOString()
         })
         .eq('id', user.id);
+
+      if (!error && emailChanged) {
+        const { error: emailError } = await supabase.auth.updateUser({ email: newEmail });
+        if (emailError) {
+          console.error('Error requesting email change:', emailError);
+          toast({
+            title: 'Erro',
+            description: 'Nome salvo, mas não foi possível solicitar a troca de e-mail.',
+            variant: 'destructive'
+          });
+          await loadProfile();
+          return false;
+        }
+        toast({
+          title: 'Confirme o novo e-mail',
+          description: 'Enviamos um link de confirmação. O e-mail será atualizado após a confirmação.',
+        });
+        await loadProfile();
+        return true;
+      }
 
       if (error) {
         console.error('Error updating profile:', error);

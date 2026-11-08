@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Download, Users, UserCheck, Target, TrendingUp } from 'lucide-react';
 import { Lead } from '@/hooks/admin/useLeads';
+import { toCsv } from '@/lib/csv';
 
 interface LeadsHeaderProps {
   metrics: {
@@ -48,11 +49,10 @@ export const LeadsHeader: React.FC<LeadsHeaderProps> = ({ metrics, leads }) => {
       new Date(lead.created_at).toLocaleDateString('pt-BR')
     ]);
 
-    const csvContent = [headers, ...csvData]
-      .map(row => row.map(field => `"${field}"`).join(','))
-      .join('\n');
+    // ADM-05: escapa aspas e neutraliza fórmulas (= + - @); BOM para o Excel ler UTF-8
+    const csvContent = toCsv([headers, ...csvData]);
 
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const blob = new Blob(['﻿' + csvContent],{ type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
     const url = URL.createObjectURL(blob);
     link.setAttribute('href', url);

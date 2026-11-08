@@ -73,6 +73,24 @@ serve(async (req) => {
     const now = new Date().toISOString();
     const today = now.split('T')[0];
 
+    // audit DATA-05: a data de término não pode cair antes do novo início.
+    // Mantém a duração original (end - start) a partir de hoje; sem início
+    // original, só mantém o término se ainda estiver no futuro.
+    const DAY_MS = 24 * 60 * 60 * 1000;
+    let endDate: string | null = null;
+    const origEnd = original.end_date ? String(original.end_date).split('T')[0] : null;
+    const origStart = original.start_date ? String(original.start_date).split('T')[0] : null;
+    if (origEnd) {
+      const endMs = Date.parse(`${origEnd}T00:00:00Z`);
+      const startMs = origStart ? Date.parse(`${origStart}T00:00:00Z`) : NaN;
+      const todayMs = Date.parse(`${today}T00:00:00Z`);
+      if (!isNaN(endMs) && !isNaN(startMs) && endMs >= startMs) {
+        endDate = new Date(todayMs + (endMs - startMs)).toISOString().split('T')[0];
+      } else if (!isNaN(endMs) && endMs >= todayMs) {
+        endDate = origEnd;
+      }
+    }
+
     const newCampaign: Record<string, any> = {
       user_id: user.id,
       name: newName,
@@ -106,7 +124,7 @@ serve(async (req) => {
       devices: original.devices,
       // Scheduling — reset start_date to today
       start_date: today,
-      end_date: original.end_date,
+      end_date: endDate,
       // Phase 4.4: Copy dayparting schedule
       schedule_start_time: original.schedule_start_time,
       schedule_end_time: original.schedule_end_time,

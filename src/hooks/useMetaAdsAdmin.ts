@@ -169,10 +169,10 @@ export const useMetaAdsAdmin = () => {
     if (!user.integration) return;
 
     try {
-      const { error } = await supabase
-        .from('integrations')
-        .delete()
-        .eq('id', user.integration.id);
+      // ADM-05: RLS só deixa o dono apagar — o delete direto removia 0 linhas e mostrava sucesso
+      const { error } = await supabase.rpc('admin_disconnect_integration' as any, {
+        p_integration_id: user.integration.id,
+      });
 
       if (error) throw error;
 
@@ -186,7 +186,9 @@ export const useMetaAdsAdmin = () => {
       console.error('Error disconnecting:', error);
       toast({
         title: "Erro ao desconectar",
-        description: "Não foi possível remover a integração.",
+        description: (error as { message?: string })?.message === 'forbidden'
+          ? "Você não tem permissão para esta ação."
+          : (error as { message?: string })?.message || "Não foi possível remover a integração.",
         variant: "destructive"
       });
     }

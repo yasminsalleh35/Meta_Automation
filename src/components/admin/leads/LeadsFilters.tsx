@@ -9,13 +9,17 @@ interface LeadsFiltersProps {
   filters: ILeadsFilters;
   onFiltersChange: (filters: ILeadsFilters) => void;
   leads: Lead[];
+  // ADM-05: quantidade após os filtros (as opções usam todos os leads)
+  resultCount?: number;
 }
 
 export const LeadsFilters: React.FC<LeadsFiltersProps> = ({
   filters,
   onFiltersChange,
-  leads
+  leads,
+  resultCount
 }) => {
+  const count = resultCount ?? leads.length;
   const statusOptions = [
     { value: 'novo', label: 'Novo' },
     { value: 'contatado', label: 'Contatado' },
@@ -26,7 +30,11 @@ export const LeadsFilters: React.FC<LeadsFiltersProps> = ({
 
   const uniqueSpecialties = Array.from(
     new Set(
-      leads.flatMap(lead => lead.specialties || (lead.specialty ? [lead.specialty] : []))
+      // ADM-05: une specialties (novo) e specialty (legado); ignora vazios (Radix não aceita value '')
+      leads.flatMap(lead => [
+        ...(Array.isArray(lead.specialties) ? lead.specialties : []),
+        ...(lead.specialty ? [lead.specialty] : []),
+      ]).filter((s): s is string => typeof s === 'string' && s.trim() !== '')
     )
   ).sort();
 
@@ -124,7 +132,7 @@ export const LeadsFilters: React.FC<LeadsFiltersProps> = ({
         </Select>
 
         <div className="flex items-center text-sm text-muted-foreground">
-          {leads.length} lead{leads.length !== 1 ? 's' : ''} encontrado{leads.length !== 1 ? 's' : ''}
+          {count} lead{count !== 1 ? 's' : ''} encontrado{count !== 1 ? 's' : ''}
         </div>
       </div>
     </div>

@@ -82,8 +82,20 @@ const AdminQuizLeadDetail: React.FC = () => {
     return <div className="p-6">Lead não encontrado</div>;
   }
 
-  const responses = lead.responses as Record<string, any>;
-  const aiInsights = lead.ai_insights as any;
+  // ADM-05: valida o formato antes de renderizar (.map em string/objeto derrubava a página)
+  const responses: Record<string, any> =
+    lead.responses && typeof lead.responses === 'object' && !Array.isArray(lead.responses)
+      ? (lead.responses as Record<string, any>)
+      : {};
+  const rawInsights = lead.ai_insights as any;
+  const aiInsights = rawInsights && typeof rawInsights === 'object' && !Array.isArray(rawInsights) ? rawInsights : null;
+  const toTextList = (v: unknown): string[] =>
+    Array.isArray(v)
+      ? v.map(item => (typeof item === 'string' ? item : item == null ? '' : JSON.stringify(item))).filter(Boolean)
+      : typeof v === 'string' && v.trim() ? [v] : [];
+  const insightText = (v: unknown): string => (typeof v === 'string' ? v : v == null ? '' : JSON.stringify(v));
+  const opportunities = toTextList(aiInsights?.opportunities);
+  const risks = toTextList(aiInsights?.risks);
 
   return (
     <div className="p-6 space-y-6 max-w-6xl">
@@ -146,7 +158,7 @@ const AdminQuizLeadDetail: React.FC = () => {
                 <div key={key} className="border-b pb-3">
                   <span className="text-sm text-muted-foreground block mb-1">{key}</span>
                   <p className="font-medium">
-                    {Array.isArray(value) ? value.join(', ') : String(value)}
+                    {Array.isArray(value) ? value.join(', ') : value && typeof value === 'object' ? JSON.stringify(value) : String(value ?? '')}
                   </p>
                 </div>
               ))}
@@ -158,39 +170,39 @@ const AdminQuizLeadDetail: React.FC = () => {
             <Card className="p-6">
               <h2 className="text-xl font-semibold mb-4">Insights da IA</h2>
               
-              {aiInsights.summary && (
+              {insightText(aiInsights.summary) && (
                 <div className="mb-4">
                   <h3 className="text-sm font-medium text-muted-foreground mb-2">Resumo</h3>
-                  <p className="text-foreground">{aiInsights.summary}</p>
+                  <p className="text-foreground">{insightText(aiInsights.summary)}</p>
                 </div>
               )}
 
-              {aiInsights.opportunities && aiInsights.opportunities.length > 0 && (
+              {opportunities.length > 0 && (
                 <div className="mb-4">
                   <h3 className="text-sm font-medium text-muted-foreground mb-2">Oportunidades</h3>
                   <ul className="list-disc list-inside space-y-1">
-                    {aiInsights.opportunities.map((opp: string, idx: number) => (
+                    {opportunities.map((opp, idx) => (
                       <li key={idx} className="text-green-700 dark:text-green-400">{opp}</li>
                     ))}
                   </ul>
                 </div>
               )}
 
-              {aiInsights.risks && aiInsights.risks.length > 0 && (
+              {risks.length > 0 && (
                 <div className="mb-4">
                   <h3 className="text-sm font-medium text-muted-foreground mb-2">Riscos</h3>
                   <ul className="list-disc list-inside space-y-1">
-                    {aiInsights.risks.map((risk: string, idx: number) => (
+                    {risks.map((risk, idx) => (
                       <li key={idx} className="text-yellow-700 dark:text-yellow-400">{risk}</li>
                     ))}
                   </ul>
                 </div>
               )}
 
-              {aiInsights.recommendation && (
+              {insightText(aiInsights.recommendation) && (
                 <div>
                   <h3 className="text-sm font-medium text-muted-foreground mb-2">Recomendação</h3>
-                  <p className="text-foreground font-medium">{aiInsights.recommendation}</p>
+                  <p className="text-foreground font-medium">{insightText(aiInsights.recommendation)}</p>
                 </div>
               )}
             </Card>

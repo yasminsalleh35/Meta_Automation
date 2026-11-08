@@ -27,7 +27,8 @@ export default function AdminCampaignProfiles() {
 
   const handleSubmit = async (data: any) => {
     try {
-      if (editingProfile) {
+      // ADM-05: "Duplicar" abre uma cópia sem id → cria um novo perfil (antes tentava update com id undefined)
+      if (editingProfile?.id) {
         await updateProfile.mutateAsync({ id: editingProfile.id, ...data });
       } else {
         await createProfile.mutateAsync(data);

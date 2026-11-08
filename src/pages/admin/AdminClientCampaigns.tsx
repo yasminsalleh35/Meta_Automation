@@ -8,21 +8,27 @@ import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Target, TrendingUp, Users, Calendar, DollarSign, Eye, Edit, Trash2 } from 'lucide-react';
-import { useRealCampaigns } from '@/hooks/useRealCampaigns';
+import { useAdminClientCampaigns } from '@/hooks/useAdminClientCampaigns';
+import { AdminPagination } from '@/components/admin/AdminPagination';
 
 const AdminClientCampaigns: React.FC = () => {
-  const { campaigns, isLoading, error } = useRealCampaigns();
+  // ADM-03: todas as campanhas dos clientes, paginadas no servidor (antes: só as do próprio admin)
+  const { campaigns, isLoading, error, stats: serverStats, totalCount, page, pageSize, goToPage, loadCampaigns } = useAdminClientCampaigns();
   const [filterStatus, setFilterStatus] = useState('all');
   const [searchTerm, setSearchTerm] = useState('');
 
-  const filteredCampaigns = campaigns.filter(campaign => {
-    const matchesStatus = filterStatus === 'all' || campaign.status === filterStatus;
-    const matchesSearch = campaign.name.toLowerCase().includes(searchTerm.toLowerCase());
-    return matchesStatus && matchesSearch;
-  });
+  // filtros aplicados no servidor (busca com debounce)
+  useEffect(() => {
+    const t = setTimeout(() => {
+      loadCampaigns({ status: filterStatus === 'all' ? undefined : filterStatus, search: searchTerm || undefined }, 0);
+    }, 300);
+    return () => clearTimeout(t);
+  }, [filterStatus, searchTerm, loadCampaigns]);
+
+  const filteredCampaigns = campaigns;
 
   const getStatusColor = (status: string) => {
-    switch (status) {
+    switch ((status || '').toLowerCase()) {
       case 'active': return 'bg-green-100 text-green-800';
       case 'paused': return 'bg-yellow-100 text-yellow-800';
       case 'draft': return 'bg-gray-100 text-gray-800';
@@ -32,21 +38,19 @@ const AdminClientCampaigns: React.FC = () => {
   };
 
   const stats = {
-    total: campaigns.length,
-    active: campaigns.filter(c => c.status === 'active').length,
-    paused: campaigns.filter(c => c.status === 'paused').length,
-    draft: campaigns.filter(c => c.status === 'draft').length,
-    finished: campaigns.filter(c => c.status === 'finished').length,
-    totalBudget: campaigns.reduce((sum, c) => sum + (c.budget_total || 0), 0),
-    avgBudget: campaigns.length > 0 ? campaigns.reduce((sum, c) => sum + (c.budget_total || 0), 0) / campaigns.length : 0
+    total: serverStats.total,
+    active: serverStats.byStatus.active || 0,
+    paused: serverStats.byStatus.paused || 0,
+    draft: serverStats.byStatus.draft || 0,
+    finished: serverStats.byStatus.finished || 0,
+    totalBudget: serverStats.totalBudget,
+    avgBudget: serverStats.avgBudget
   };
+  // ADM-03: sem NaN% quando não há campanhas
+  const activePct = stats.total > 0 ? (stats.active / stats.total) * 100 : 0;
 
-  if (isLoading) {
+  if (isLoading && campaigns.length === 0 && !error) {
     return <div className="p-6">Carregando campanhas...</div>;
-  }
-
-  if (error) {
-    return <div className="p-6 text-red-600">Erro ao carregar campanhas: {error}</div>;
   }
 
   return (
@@ -107,7 +111,7 @@ const AdminClientCampaigns: React.FC = () => {
           <CardContent>
             <div className="text-2xl font-bold text-green-600">{stats.active}</div>
             <p className="text-xs text-muted-foreground">
-              {((stats.active / stats.total) * 100).toFixed(1)}% do total
+              {activePct.toFixed(1)}% do total
             </p>
           </CardContent>
         </Card>
@@ -158,10 +162,13 @@ const AdminClientCampaigns: React.FC = () => {
         <CardHeader>
           <CardTitle>Lista de Campanhas</CardTitle>
           <CardDescription>
-            {filteredCampaigns.length} campanha(s) encontrada(s)
+            {totalCount} campanha(s) encontrada(s)
           </CardDescription>
         </CardHeader>
         <CardContent>
+          {error && (
+            <p className="text-sm text-destructive mb-4">Erro ao carregar campanhas: {error}</p>
+          )}
           <Table>
             <TableHeader>
               <TableRow>
@@ -251,6 +258,14 @@ const AdminClientCampaigns: React.FC = () => {
               <p className="text-gray-500">Nenhuma campanha encontrada</p>
             </div>
           )}
+
+          <AdminPagination
+            page={page}
+            pageSize={pageSize}
+            totalCount={totalCount}
+            onPageChange={goToPage}
+            disabled={isLoading}
+          />
         </CardContent>
       </Card>
     </div>

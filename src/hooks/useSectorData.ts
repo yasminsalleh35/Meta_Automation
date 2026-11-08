@@ -1,12 +1,23 @@
 
 import { useState, useEffect } from 'react';
-import { SectorData, SectorCategory, SectorSpecialization, CampaignTemplate } from '@/types/sectors';
+import { SectorData, SectorCategory, SectorSpecialization, CampaignTemplate, SectorProfile } from '@/types/sectors';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { useSectorProfiles } from './useSectorProfiles';
 
-export const useSectorData = () => {
-  const { profiles } = useSectorProfiles();
+interface UseSectorDataOptions {
+  // ADM-04: the admin page also lists inactive templates so they can be re-enabled.
+  includeInactiveTemplates?: boolean;
+}
+
+export const useSectorData = (options: UseSectorDataOptions = {}) => {
+  const { includeInactiveTemplates = false } = options;
+  const {
+    profiles,
+    createProfile: createSectorProfile,
+    updateProfile: updateSectorProfile,
+    deleteProfile: deleteSectorProfile,
+  } = useSectorProfiles();
   const { toast } = useToast();
   const [sectorData, setSectorData] = useState<SectorData>({
     categories: [],
@@ -52,11 +63,13 @@ export const useSectorData = () => {
       })) || [];
 
       // Fetch campaign templates
-      const { data: templatesData, error: templatesError } = await supabase
+      let templatesQuery = supabase
         .from('campaign_templates')
-        .select('*')
-        .eq('is_active', true)
-        .order('title');
+        .select('*');
+      if (!includeInactiveTemplates) {
+        templatesQuery = templatesQuery.eq('is_active', true);
+      }
+      const { data: templatesData, error: templatesError } = await templatesQuery.order('title');
 
       if (templatesError) throw templatesError;
 
@@ -443,6 +456,49 @@ export const useSectorData = () => {
           description: "Não foi possível excluir o template de campanha.",
           variant: "destructive"
         });
+      }
+    },
+
+    // ADM-04: sector profile CRUD with user feedback (errors are re-thrown so the dialog stays open).
+    createProfile: async (profileData: Omit<SectorProfile, 'id' | 'createdAt' | 'updatedAt'>) => {
+      try {
+        await createSectorProfile(profileData);
+        toast({ title: "Perfil criado", description: "O perfil do setor foi criado com sucesso." });
+      } catch (error) {
+        toast({
+          title: "Erro ao criar perfil",
+          description: "Não foi possível criar o perfil do setor.",
+          variant: "destructive"
+        });
+        throw error;
+      }
+    },
+
+    updateProfile: async (id: string, profileData: Partial<SectorProfile>) => {
+      try {
+        await updateSectorProfile(id, profileData);
+        toast({ title: "Perfil atualizado", description: "O perfil do setor foi atualizado com sucesso." });
+      } catch (error) {
+        toast({
+          title: "Erro ao atualizar perfil",
+          description: "Não foi possível atualizar o perfil do setor.",
+          variant: "destructive"
+        });
+        throw error;
+      }
+    },
+
+    deleteProfile: async (id: string) => {
+      try {
+        await deleteSectorProfile(id);
+        toast({ title: "Perfil excluído", description: "O perfil do setor foi excluído com sucesso." });
+      } catch (error) {
+        toast({
+          title: "Erro ao excluir perfil",
+          description: "Não foi possível excluir o perfil do setor.",
+          variant: "destructive"
+        });
+        throw error;
       }
     },
 

@@ -58,6 +58,12 @@ const AdminDashboard: React.FC = () => {
             <p className="text-xs text-muted-foreground">
               Taxa de conversão: {stats?.conversionRate || 0}%
             </p>
+            {/* ADM-01: por provedor */}
+            {stats?.activeByProvider && Object.keys(stats.activeByProvider).length > 0 && (
+              <p className="text-xs text-muted-foreground">
+                {Object.entries(stats.activeByProvider).map(([provider, n]) => `${provider}: ${n}`).join(' · ')}
+              </p>
+            )}
           </CardContent>
         </Card>
 
@@ -68,10 +74,10 @@ const AdminDashboard: React.FC = () => {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              R$ {stats?.monthlyRevenue?.toLocaleString('pt-BR') || '0'}
+              R$ {(stats?.monthlyRevenue || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </div>
             <p className="text-xs text-muted-foreground">
-              ARPU: R$ {stats?.avgRevenuePerUser || 0}
+              MRR (planos anuais ÷ 12) · ARPU: R$ {(stats?.avgRevenuePerUser || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </p>
           </CardContent>
         </Card>
@@ -84,7 +90,7 @@ const AdminDashboard: React.FC = () => {
           <CardContent>
             <div className="text-2xl font-bold">{stats?.churnRate || 0}%</div>
             <p className="text-xs text-muted-foreground">
-              Último mês
+              Últimos 30 dias · {stats?.canceledLast30Days || 0} cancelamento(s)
             </p>
           </CardContent>
         </Card>
@@ -189,19 +195,19 @@ const AdminDashboard: React.FC = () => {
             </div>
             <div className="text-center p-4 bg-gray-50 rounded-lg">
               <p className="text-2xl font-bold text-red-600">
-                {users.filter(u => u.status === 'suspended').length}
+                {stats?.suspendedUsers ?? users.filter(u => u.status === 'suspended').length}
               </p>
               <p className="text-sm text-gray-600">Usuários Suspensos</p>
             </div>
             <div className="text-center p-4 bg-gray-50 rounded-lg">
               <p className="text-2xl font-bold text-blue-600">
-                {stats?.topPlan || 'Basic'}
+                {stats?.topPlan || '—'}
               </p>
               <p className="text-sm text-gray-600">Plano Mais Popular</p>
             </div>
             <div className="text-center p-4 bg-gray-50 rounded-lg">
               <p className="text-2xl font-bold text-purple-600">
-                {users.reduce((sum, u) => sum + u.campaigns, 0)}
+                {stats?.campaignsTotal ?? users.reduce((sum, u) => sum + u.campaigns, 0)}
               </p>
               <p className="text-sm text-gray-600">Total Campanhas</p>
             </div>

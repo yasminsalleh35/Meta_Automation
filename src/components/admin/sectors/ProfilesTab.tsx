@@ -13,7 +13,8 @@ interface ProfilesTabProps {
   categories: SectorCategory[];
   profiles: SectorProfile[];
   onCreateProfile: (profileData: Omit<SectorProfile, 'id' | 'createdAt' | 'updatedAt'>) => Promise<void>;
-  onUpdateProfile: (profileData: Omit<SectorProfile, 'id' | 'createdAt' | 'updatedAt'>) => Promise<void>;
+  // ADM-04: the id is needed to update the right row.
+  onUpdateProfile: (profileId: string, profileData: Omit<SectorProfile, 'id' | 'createdAt' | 'updatedAt'>) => Promise<void>;
   onDeleteProfile: (profileId: string) => Promise<void>;
 }
 
@@ -51,7 +52,7 @@ export const ProfilesTab: React.FC<ProfilesTabProps> = ({
   const handleUpdateProfile = async (profileData: Omit<SectorProfile, 'id' | 'createdAt' | 'updatedAt'>) => {
     if (editingProfile) {
       try {
-        await onUpdateProfile(profileData);
+        await onUpdateProfile(editingProfile.id, profileData);
         setShowProfileForm(false);
         setEditingProfile(null);
         setSelectedSectorId('');

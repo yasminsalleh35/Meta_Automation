@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import type { CampaignProfile } from '@/types/campaignProfiles';
+import { buildIlikeOrFilter } from '@/lib/postgrestSearch';
 
 const KEY = ['campaign_profiles'];
 
@@ -14,8 +15,10 @@ export function useProfilesList(params?: { search?: string; onlyActive?: boolean
       
       if (params?.onlyActive) q = q.eq('is_active', true);
       
-      if (params?.search) {
-        q = q.or(`slug.ilike.%${params.search}%,label.ilike.%${params.search}%`);
+      // ADM-03: termo saneado — sem injeção de filtros no .or()
+      const searchFilter = buildIlikeOrFilter(['slug', 'label'], params?.search);
+      if (searchFilter) {
+        q = q.or(searchFilter);
       }
       
       const { data, error } = await q;

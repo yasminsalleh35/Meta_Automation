@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useSupabase } from '@/hooks/useSupabase';
 import { useToast } from '@/hooks/use-toast';
-import { useNotifications } from '@/hooks/useNotifications';
 
 interface SupportTicket {
   id: string;
@@ -28,7 +27,6 @@ interface TicketResponse {
 export const useSupportTickets = () => {
   const { toast } = useToast();
   const supabase = useSupabase();
-  const { createNotification } = useNotifications();
   
   const [tickets, setTickets] = useState<SupportTicket[]>([]);
   const [responses, setResponses] = useState<{ [ticketId: string]: TicketResponse[] }>({});
@@ -145,12 +143,14 @@ export const useSupportTickets = () => {
 
       if (error) throw error;
 
-      // Criar notificação para admins
-      await createNotification(
-        'Novo Ticket de Suporte',
-        `Novo ticket criado: ${subject}`,
-        'info'
-      );
+      // ADM-05: uma notificação por admin (antes ia para o próprio usuário). Falha aqui não
+      // invalida o ticket já criado.
+      const { error: notifyError } = await supabase.rpc('notify_admins_new_support_ticket' as any, {
+        p_ticket_id: (data as SupportTicket).id,
+      });
+      if (notifyError) {
+        console.error('Error notifying admins about support ticket:', notifyError);
+      }
 
       toast({
         title: "Sucesso",
