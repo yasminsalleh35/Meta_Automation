@@ -27,6 +27,7 @@ See `docs/deployment-guide.md`.
 | Phase 4 | 2026-11-08 | `92a867f`, `4072657` | CMP-01…16 | not recorded |
 | Phase 5 | 2026-11-08/09 | `b3e6e71`, `9734b75`, `650cc27` (part) | DATA-01…07, ADM-01…05, SEC-12 completion | `prod_2026-11-08_pre-phase5.dump` |
 | Phase 6 | 2026-11-09 | `650cc27` (part), `b85678a` | LGL-01…06 (client sign-off pending) | `prod_2026-11-09_pre-phase6.dump` |
+| Phases 7–8 | 2026-11-09 | `717a72e`, `89b08c7` (Node 20 pin — the first push did not build on Netlify's default Node) | PLT-01…08, QA-01…06, probe findings (migration `20261109000020`) | `prod_2026-11-09_pre-phase6.dump` (schema unchanged except grants/policies) |
 
 Phase 3 (PAY-01…16) has **not** shipped: it is blocked on client decisions (Appendix C #1–4).
 
@@ -150,6 +151,17 @@ Commits: `650cc27` (Phase 6 part), `b85678a` purge Storage files of deleted acco
 - `b85678a`: `purge-deleted-accounts` (new, `verify_jwt = false`, guarded by `x-cron-secret`).
 
 **Frontend:** shipped with the push of these commits to `main`.
+
+---
+
+## Phases 7–8 — platform hygiene, tests and QA (2026-11-09)
+
+- **Migrations applied:** `20261109000020_probe_findings_grants` (anon EXECUTE revoked on 13 RPCs; learning tables readable only when logged in).
+- **Functions deployed:** 42 (Graph API v23.0 via `_shared/meta.ts`, shared logger/response, 401 instead of 500 on missing auth, `advantage-campaign-create` rewritten without the Node Facebook SDK — it failed at boot before).
+- **Functions deleted:** `send-confirmation-email`.
+- **Frontend:** 344 dead files removed; vite 6 / vitest 4 / zod 4 / jspdf 4; lazy routes (initial JS 187 KB gz); Node 20 pinned in `netlify.toml`.
+- **Verification on prod after deploy:** security probe 383 checks, 0 FAIL (6 WARN, all payment functions returning 500 on malformed bodies); Playwright smoke + 87-route crawler pass as anon; all cron jobs 200.
+- **Tags:** `audit-phase1-2` (`d3051ce`), `audit-phase4` (`4072657`), `audit-phase5` (`9734b75`), `audit-phase6` (`b85678a`), `audit-phase7-8` (this release).
 
 ---
 
