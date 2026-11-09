@@ -73,7 +73,7 @@ export const useMetaAdsAdmin = () => {
     try {
       const [from, to] = pageRange(nextPage, ADMIN_PAGE_SIZE);
       let usersQuery = supabase
-        .rpc('get_profiles_admin_with_email', undefined, { count: 'exact' })
+        .rpc('get_profiles_admin_with_email', {} as never, { count: 'exact' }) // função sem argumentos (Args: never)
         .order('created_at', { ascending: false });
       const searchFilter = buildIlikeOrFilter(['name', 'email'], usersSearchRef.current);
       if (searchFilter) usersQuery = usersQuery.or(searchFilter);
@@ -117,7 +117,7 @@ export const useMetaAdsAdmin = () => {
 
   const fetchMetaAdsConfig = async () => {
     try {
-      const { data, error } = await supabase.rpc('admin_get_meta_ads_config' as any);
+      const { data, error } = await supabase.rpc('admin_get_meta_ads_config');
 
       if (error) {
         console.error('Error fetching Meta Ads config:', error.message);
@@ -150,10 +150,10 @@ export const useMetaAdsAdmin = () => {
     }
 
     try {
-      const { error } = await supabase.rpc('admin_upsert_meta_ads_config' as any, {
+      const { error } = await supabase.rpc('admin_upsert_meta_ads_config', {
         p_app_id: globalConfig.appId,
-        p_app_secret: globalConfig.appSecret || null, // null = manter o atual
-        p_business_manager_id: globalConfig.businessManagerId || null
+        p_app_secret: globalConfig.appSecret || undefined, // omitido (default null) = manter o atual
+        p_business_manager_id: globalConfig.businessManagerId || undefined
       });
 
       if (error) {
@@ -192,7 +192,7 @@ export const useMetaAdsAdmin = () => {
 
     try {
       // ADM-05: RLS só deixa o dono apagar — o delete direto removia 0 linhas e mostrava sucesso
-      const { error } = await supabase.rpc('admin_disconnect_integration' as any, {
+      const { error } = await supabase.rpc('admin_disconnect_integration', {
         p_integration_id: user.integration.id,
       });
 

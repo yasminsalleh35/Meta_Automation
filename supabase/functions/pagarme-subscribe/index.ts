@@ -392,7 +392,8 @@ serve(async (req: Request): Promise<Response> => {
     logStep('→ fetching config', { requesting_environment: 'live' });
     const { data: config, error: configError } = await supabase
       .rpc('get_pagarme_config_for_functions', { p_environment: 'live' })
-      .single();
+      // audit PLT-05: tipa a linha (sem o generic o client não tipado infere {})
+      .single<Record<string, any>>();
 
     if (configError || !config) {
       logStep('❌ config not found');

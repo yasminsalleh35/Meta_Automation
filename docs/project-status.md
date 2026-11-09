@@ -1,8 +1,13 @@
 # Camply — Project Status & Implementation Analysis
 
-> Last updated: 2026-03-17
+> Last updated: 2026-11-09 (sections 3, 5, 6, 7, 10 and 11 corrected after the 2026-10-30 audit)
 > Project: Camply — Meta Ads Automation SaaS
-> Production URL: https://iacamply.com
+> Production URL: https://iacamply.com (on 2026-11-03 the domain did not resolve; production runs on https://camplyia.netlify.app)
+>
+> **Status note.** An earlier version of this file rated RLS, webhooks, idempotency and auth as "Strong".
+> The 2026-10-30 audit disproved that (anon-readable secrets, cross-tenant writes, account takeover,
+> unhandled payment events). Remediation is tracked in `docs/audit-fix-plan.md` (Appendix D) and
+> shipped releases are listed in `docs/security/releases.md`.
 
 ---
 
@@ -58,13 +63,13 @@ Camply is a production SaaS platform for creating and managing Meta (Facebook/In
 
 | Metric | Count |
 |--------|-------|
-| Total Source Files | 755+ |
+| Total Source Files | 755+ (March 2026; ~270 unimported files being removed in PLT-01) |
 | Components | 411 |
 | Custom Hooks | 154 |
 | Pages | 104 |
 | Services | 48 |
-| Edge Functions | 92 |
-| SQL Migrations | 112 |
+| Edge Functions | 73 (2026-11-09; 25 dead functions deleted in Nov 2026) |
+| SQL Migrations | 152 files in `supabase/migrations/` (+ `rollback/`), 2026-11-09 |
 | Type Files | 21 |
 | Utility Files | 21 |
 | Contexts | 7 |
@@ -107,7 +112,7 @@ User → React Frontend → Supabase Edge Function → Meta Marketing API
 - **Hooks** (154): Data fetching & state logic (`useMetaAds*`, `useCampaign*`, `useSubscription*`, `useAI*`)
 - **Services** (48): Business logic, especially `metaAds/` with 36 files
 - **Contexts** (7): `AuthContext`, `I18nContext`, `MetaAssetsContext`, `ThemeContext`, `DemoModeContext`, `MapboxContext`, `PagarmeCheckoutContext`
-- **Edge Functions** (92): Server-side logic on Supabase Deno runtime
+- **Edge Functions** (73): Server-side logic on Supabase Deno runtime
 
 ### Key Design Principles
 
@@ -153,9 +158,9 @@ User → React Frontend → Supabase Edge Function → Meta Marketing API
 
 ### Payment Processing ✅
 - 3 payment gateways: Stripe, Pagar.me V5, Asaas
-- HMAC-SHA256 webhook signature verification on all 3 gateways
+- Webhook signature verification on all 3 gateways (the audit found gaps in event handling: PAY-03, PAY-09, PAY-10, not yet fixed)
 - Idempotency via event log tables (`stripe_event_log`, `pagarme_events`, `asaas_webhook_events`)
-- Guest checkout with automatic user creation
+- Guest checkout (`guest-checkout`, `setup-password`) was **removed** in Nov 2026 (account-takeover finding, SEC-01/SEC-10)
 - Subscription management (active/canceled states)
 - Subscription reactivation (Pagar.me)
 
@@ -177,41 +182,14 @@ User → React Frontend → Supabase Edge Function → Meta Marketing API
 
 ## 6. Feature Status — What's Missing
 
-### Security Gaps 🔴
-- **Token encryption**: Meta access tokens stored in plaintext in `integrations` table. Client-side encryption is disabled (returns plaintext with deprecation warning). No `TOKEN_ENCRYPTION_KEY` usage found.
-- **CORS inconsistency**: `simple-campaign-create` and `meta-campaign-management` use `Access-Control-Allow-Origin: *` instead of shared CORS module
+The March 2026 list that was here is obsolete. Open work as of 2026-11-09 (see `docs/audit-fix-plan.md`):
 
-### Subscription Lifecycle ⚠️
-- `past_due`, `trialing`, `paused` states not handled in webhooks
-- No grace period logic for failed payments
-- No dunning management (retry for failed payments)
-- No payment provider fallback between Stripe/Pagar.me/Asaas
-- No periodic subscription sync (relies entirely on webhooks)
-
-### Monitoring & Caching ⚠️
-- No database-level `campaign_metrics_cache` table
-- No background refresh job for campaign metrics
-- No per-user per-hour Meta API call tracking
-- No user-facing monitoring dashboard (`/dashboard/monitoring`)
-- No anomaly alerts (CTR drops, budget depletion)
-- No code splitting / `React.lazy()` for performance
-
-### Infrastructure ⚠️
-- No staging/production environment separation
-- No structured error logging (`edge_function_logs` table missing)
-- No Sentry or error tracking integration
-- No standardized error response format across edge functions
-
-### Documentation ⚠️
-- No API documentation (`docs/api.md`)
-- No user guide (`docs/user-guide.md`)
-- No admin guide (`docs/admin-guide.md`)
-- No deployment guide (`docs/deployment.md`)
-
-### Testing ❌
-- No unit tests
-- No integration tests
-- No end-to-end tests
+- **Revenue funnel (PAY-01…16):** not started; waiting for client decisions on prices, plans, trial and grandfathering. No server-side paywall yet.
+- **Platform hygiene (PLT-01…08):** dead-code removal, dependency clean-up, bundle splitting, Graph API version unification, docs. In progress.
+- **Tests (QA-01…06):** CI workflow being added; unit tests that import real code, Deno negative tests, security probe and staging E2E still to do.
+- **Infrastructure:** no staging project; no error tracking (Sentry or similar).
+- **Admin:** ADM-06 deferred.
+- **Legal:** dev work done; client sign-off on `docs/legal/*` pending.
 
 ---
 
@@ -219,21 +197,12 @@ User → React Frontend → Supabase Edge Function → Meta Marketing API
 
 ### By Category
 
-| Category | Count | Key Functions |
-|----------|-------|--------------|
-| Campaign Creation & Management | 8 | `simple-campaign-create` (1936 lines), `advantage-campaign-create`, `duplicate-campaign` |
-| Meta OAuth & Integration | 13 | `meta-oauth-exchange` (479 lines), `meta-validation`, `meta-unified-assets` |
-| Meta Campaign Operations | 16 | `meta-campaign-management`, `meta-campaigns-insights`, `meta-campaign-bulk-operations` |
-| Campaign Insights & Analytics | 4 | `account-insights-read`, `simple-campaign-insights` |
-| AI/ML | 4 | `ai-suggestions`, `ai-evaluate-metrics`, `apply-optimization`, `strategy-report` |
-| Stripe | 4 | `stripe-webhook` (308 lines), `create-checkout`, `customer-portal` |
-| Pagar.me | 12 | `pagarme-webhook`, `pagarme-subscribe`, `pagarme-create-plans` |
-| Asaas | 4 | `asaas-webhook`, `asaas-public-checkout` |
-| Subscription Management | 4 | `check-subscription`, `check-pagarme-subscription` |
-| User & Auth | 6 | `create-guest-user`, `send-account-creation`, `setup-password` |
-| Lead Capture | 4 | `lead-quiz-submit`, `quiz-lead-scoring` |
-| Security | 3 | `security-audit`, `security-monitor` |
-| Contingency & Sync | 2 | `contingency-manual-sync`, `contingency-auto-retry-walink` |
+The category table from March 2026 listed functions that no longer exist (`setup-password`,
+`create-checkout`, `customer-portal`, `meta-campaign-management`, `meta-unified-assets`,
+`simple-campaign-insights`, `security-audit`, `security-monitor`, `contingency-auto-retry-walink`, …).
+They were deleted in the audit remediation (SEC-10, CMP-02). For the current list run
+`ls supabase/functions` (73 functions plus `_shared/` and `_tests/` on 2026-11-09). The deleted set
+is recorded in `docs/security/remediation-deploy-checklist.md` and `docs/security/releases.md`.
 
 ### Shared Utilities (`_shared/`)
 
@@ -266,7 +235,7 @@ User → React Frontend → Supabase Edge Function → Meta Marketing API
 | `pagarme_events` | Pagar.me webhook idempotency tracking |
 | `asaas_webhook_events` | Asaas webhook idempotency tracking |
 
-### Total Migrations: 112
+### Total Migrations: 152 (2026-11-09)
 
 ---
 
@@ -291,28 +260,34 @@ User → React Frontend → Supabase Edge Function → Meta Marketing API
 
 ## 10. Security Posture
 
+Re-assessed after the 2026-10-30 audit and the remediation shipped up to 2026-11-09. "Remediated"
+means the audit task shipped to production. It does not mean "proven secure": the security probe
+(QA-03) and staging E2E (QA-04) are not done yet.
+
 | Area | Status | Details |
 |------|--------|---------|
-| Auth | ✅ Strong | Supabase JWT + OAuth, session management, recovery flow |
-| Webhook Verification | ✅ Strong | HMAC-SHA256 on all 3 payment gateways |
-| Idempotency | ✅ Strong | Event deduplication via log tables |
-| RLS | ✅ Strong | Row-level security on all user-scoped tables |
-| CSP | ✅ Good | Comprehensive Content-Security-Policy in index.html |
-| Rate Limiting | ⚠️ Partial | In-memory per-runtime, not persistent per-user |
-| Token Storage | 🔴 Weak | Meta access tokens stored in plaintext |
-| CORS | ⚠️ Partial | Shared module good but 2 legacy functions use `origin: *` |
+| Secrets exposure | ✅ Remediated (SEC-01…06, SEC-12) | Secret-returning `SECURITY DEFINER` RPCs restricted to the service role; Pagar.me keys removed from migrations; the browser can no longer read the `integrations` token columns (migration `20261108000027`). Rotating the previously exposed secrets is an operational step; confirm it was completed |
+| Auth / account takeover | ✅ Remediated (SEC-01, SEC-10) | `setup-password` and other unauthenticated paths deleted; functions require a valid JWT plus ownership, or `x-cron-secret` |
+| RLS | 🟡 Improved, not "strong" | Open policies dropped (SEC-02), remaining hits fixed (DATA-07, migration `…017`), `user_roles` self-promotion closed (`…029`). Needs the QA-03 probe to confirm |
+| Webhooks | 🟡 Partial | Signatures verified, but payment event handling is incomplete (Asaas one-off/annual, refunds, chargebacks): PAY-03/09/10 not started |
+| OAuth | ✅ Remediated | CSRF state table (`oauth_states`) |
+| Storage | 🟡 Improved | `user-media` reads scoped to the owner; private-bucket decision pending (Appendix C #5) |
+| CSP | 🟡 Report-Only | Netlify header in Report-Only mode without `unsafe-eval`; switch to enforcing after a clean observation window (SEC-17) |
+| CORS | 🟡 Partial | Many functions still send `Access-Control-Allow-Origin: *` (low risk with Bearer auth) |
+| Rate limiting / abuse | 🟡 Partial | Per-user AI quota (`consume_ai_quota`); no captcha on public forms yet (needs a Turnstile key from the client) |
+| Token storage | 🟡 Partial | Meta tokens are server-only now, but still stored unencrypted at rest |
 
 ---
 
 ## 11. Known Issues & Risks
 
-| Issue | Severity | Impact |
-|-------|----------|--------|
-| Meta tokens in plaintext | 🔴 Critical | OAuth token compromise risk |
-| CORS `*` on campaign create | 🔴 High | Cross-origin request vulnerability |
-| No subscription sync | 🟡 Medium | Status drift if webhooks missed |
-| No metrics cache DB table | 🟡 Medium | Meta API rate limit risk at scale |
-| Meta API version mismatch | 🟡 Medium | Some services use v19.0, others v23.0 |
-| No test suite | 🟡 Medium | Regression risk on changes |
-| `dist/` in git repo | 🟢 Low | Bloated repo size |
-| 755+ source files | 🟢 Low | Maintenance complexity |
+| Issue | Severity | Tracked as |
+|-------|----------|------------|
+| Revenue funnel: no paywall, Asaas annual buyers get no account, Pagar.me cancel/portal | 🔴 High | PAY-01…16 (blocked on client decisions) |
+| Payment webhooks ignore refunds/chargebacks and some Asaas events | 🟠 High | PAY-03, PAY-09, PAY-10 |
+| No staging environment; changes are verified on production | 🟠 Medium | PRE-*, QA-04 |
+| Meta Graph API versions mixed (v19/v21/v22/v23) in some code | 🟡 Medium | PLT-03 |
+| ~40k lines of dead frontend code | 🟡 Medium | PLT-01 (in progress) |
+| Initial JS bundle ~1.4 MB gzipped | 🟡 Medium | PLT-04 (in progress) |
+| Meta tokens unencrypted at rest | 🟡 Medium | (none yet) |
+| Legacy cron job `meta-campaign-auto-sync-job` (id 1) cannot be removed without Supabase support; harmless 401 every 10 min | 🟢 Low | (none) |

@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react';
 import { SectorData, SectorCategory, SectorSpecialization, CampaignTemplate, SectorProfile } from '@/types/sectors';
 import { supabase } from '@/integrations/supabase/client';
+import type { TablesUpdate } from '@/integrations/supabase/types';
 import { useToast } from '@/hooks/use-toast';
 import { useSectorProfiles } from './useSectorProfiles';
 
@@ -54,7 +55,7 @@ export const useSectorData = (options: UseSectorDataOptions = {}) => {
         id: cat.id,
         name: cat.name,
         description: cat.description || '',
-        specializations: cat.sector_specializations?.map((spec: any) => ({
+        specializations: cat.sector_specializations?.map((spec) => ({
           id: spec.id,
           categoryId: spec.category_id,
           name: spec.name,
@@ -78,7 +79,7 @@ export const useSectorData = (options: UseSectorDataOptions = {}) => {
         sectorId: template.sector_id,
         title: template.title,
         description: template.description,
-        objective: template.objective as any,
+        objective: template.objective as CampaignTemplate['objective'],
         targetAudience: template.target_audience,
         suggestedBudget: {
           min: Number(template.suggested_budget_min),
@@ -352,7 +353,7 @@ export const useSectorData = (options: UseSectorDataOptions = {}) => {
           sectorId: data.sector_id,
           title: data.title,
           description: data.description,
-          objective: data.objective,
+          objective: data.objective as CampaignTemplate['objective'],
           targetAudience: data.target_audience,
           suggestedBudget: {
             min: Number(data.suggested_budget_min),
@@ -388,7 +389,7 @@ export const useSectorData = (options: UseSectorDataOptions = {}) => {
 
     updateCampaignTemplate: async (id: string, updates: Partial<CampaignTemplate>) => {
       try {
-        const updateData: any = {};
+        const updateData: TablesUpdate<'campaign_templates'> = {};
         if (updates.title !== undefined) updateData.title = updates.title;
         if (updates.description !== undefined) updateData.description = updates.description;
         if (updates.objective !== undefined) updateData.objective = updates.objective;

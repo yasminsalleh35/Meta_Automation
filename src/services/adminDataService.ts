@@ -1,5 +1,11 @@
 import { supabase } from '@/integrations/supabase/client';
+import type { Database } from '@/integrations/supabase/types';
 import { RealUser, RealIntegration, RealStats, RealNotification, RealActivity } from '@/types/adminData';
+
+type AdminProfileRow = Database['public']['Functions']['get_profiles_admin_safe']['Returns'][number] & {
+  email?: string;
+  user_roles?: Array<{ role?: string }>;
+};
 
 export class AdminDataService {
   static async fetchProfiles() {
@@ -20,7 +26,8 @@ export class AdminDataService {
       }
 
       // Se profiles funcionou, agora tentamos buscar user_roles separadamente
-      let profilesWithRoles = profiles || [];
+      // get_profiles_admin_safe não devolve e-mail; user_roles é anexado abaixo
+      let profilesWithRoles: AdminProfileRow[] = profiles || [];
       
       try {
         const { data: userRoles, error: rolesError } = await supabase
@@ -152,7 +159,7 @@ export class AdminDataService {
     }
   }
 
-  static transformUsers(profiles: any[], userPlans: Record<string, string>, campaignCounts: Record<string, number>): RealUser[] {
+  static transformUsers(profiles: Awaited<ReturnType<typeof AdminDataService.fetchProfiles>>, userPlans: Record<string, string>, campaignCounts: Record<string, number>): RealUser[] {
     console.log('🔄 Transforming users...', {
       profilesCount: profiles.length,
       userPlansCount: Object.keys(userPlans).length,
@@ -163,7 +170,7 @@ export class AdminDataService {
       // Handle user_roles array - it might be empty or undefined
       let userRole = 'user';
       if (Array.isArray(profile.user_roles) && profile.user_roles.length > 0) {
-        userRole = profile.user_roles[0].role;
+        userRole = profile.user_roles[0].role || 'user';
       } else {
         console.log('⚠️ No role found for user:', profile.id, 'defaulting to "user"');
       }
@@ -178,8 +185,8 @@ export class AdminDataService {
       
       return {
         id: profile.id,
-        email: profile.email,
-        name: profile.name || profile.email,
+        email: profile.email ?? '',
+        name: profile.name || profile.email || '',
         created_at: profile.created_at || new Date().toISOString(),
         status: (profile.status as 'active' | 'suspended' | 'inactive') || 'active',
         lastLogin: profile.last_login_at || new Date().toISOString(),
@@ -194,12 +201,12 @@ export class AdminDataService {
 
   // ADM-01: real numbers from the admin-only RPC (subscriptions per provider, MRR, 30-day churn, campaigns).
   static async fetchDashboardStats(): Promise<RealStats> {
-    const { data, error } = await supabase.rpc('admin_dashboard_stats' as any);
+    const { data, error } = await supabase.rpc('admin_dashboard_stats');
     if (error) {
       console.error('Dashboard stats error:', error);
       throw error;
     }
-    const s = (data || {}) as Record<string, any>;
+    const s = (data || {}) as Record<string, unknown>;
     const num = (v: unknown) => {
       const n = Number(v);
       return Number.isFinite(n) ? n : 0;
@@ -211,14 +218,14 @@ export class AdminDataService {
       churnRate: num(s.churn_rate_30d),
       newUsersThisMonth: num(s.new_users_this_month),
       avgRevenuePerUser: num(s.arpu),
-      topPlan: s.top_plan || '—',
+      topPlan: (s.top_plan as string) || '—',
       conversionRate: num(s.conversion_rate),
-      activeByProvider: s.active_by_provider || {},
-      mrrByProvider: s.mrr_by_provider || {},
+      activeByProvider: (s.active_by_provider as Record<string, number>) || {},
+      mrrByProvider: (s.mrr_by_provider as Record<string, number>) || {},
       canceledLast30Days: num(s.canceled_last_30_days),
       suspendedUsers: num(s.suspended_users),
       campaignsTotal: num(s.campaigns_total),
-      campaignsByStatus: s.campaigns_by_status || {},
+      campaignsByStatus: (s.campaigns_by_status as Record<string, number>) || {},
       fromServer: true,
     };
   }
@@ -248,7 +255,7 @@ export class AdminDataService {
     };
   }
 
-  static transformNotifications(notificationsData: any[]): RealNotification[] {
+  static transformNotifications(notificationsData: Awaited<ReturnType<typeof AdminDataService.fetchNotifications>>): RealNotification[] {
     return notificationsData.map(notification => ({
       id: notification.id,
       title: notification.title,

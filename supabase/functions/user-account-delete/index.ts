@@ -11,15 +11,20 @@ import { requireUser, authErrorResponse } from '../_shared/auth.ts';
 import { corsHeadersFor, handlePreflight } from '../_shared/cors.ts';
 import { pauseCascade } from '../_shared/metaCascade.ts';
 import { isDeleteConfirmation, adminDeletionNotice } from '../_shared/dataSubject.ts';
+import { GRAPH_BASE } from '../_shared/meta.ts'; // audit PLT-03
+import { json as jsonResponse } from '../_shared/response.ts';
+import { createLogger } from '../_shared/logger.ts';
+import { toMessage } from '../_shared/errors.ts';
 
-const GRAPH_BASE = 'https://graph.facebook.com/v23.0';
+// audit PLT-06: logs estruturados + respostas via _shared/response.ts (corpo/status inalterados)
+const log = createLogger('user-account-delete');
+
 const GRACE_DAYS = 30;
 
 serve(async (req) => {
   const origin = req.headers.get('Origin');
   const cors = corsHeadersFor(origin);
-  const json = (body: unknown, status = 200) =>
-    new Response(JSON.stringify(body), { status, headers: { ...cors, 'Content-Type': 'application/json' } });
+  const json = (body: unknown, status = 200) => jsonResponse(origin, body, status);
 
   if (req.method === 'OPTIONS') {
     return handlePreflight(req);
@@ -83,7 +88,7 @@ serve(async (req) => {
             .eq('user_id', user.id);
           report.campaigns_pause_attempted++;
         } catch (e) {
-          console.warn('[user-account-delete] pause failed', c.id, (e as Error)?.message);
+          log.warn('meta', 'pause failed', { campaign_id: c.id, error: toMessage(e) });
         }
       }
 
@@ -91,9 +96,9 @@ serve(async (req) => {
         try {
           const res = await fetch(`${GRAPH_BASE}/me/permissions?access_token=${encodeURIComponent(token)}`, { method: 'DELETE' });
           if (res.ok) report.meta_tokens_revoked++;
-          else console.warn('[user-account-delete] Meta revoke returned', res.status);
+          else log.warn('meta', 'Meta revoke returned', { status: res.status });
         } catch (e) {
-          console.warn('[user-account-delete] Meta revoke failed', (e as Error)?.message);
+          log.warn('meta', 'Meta revoke failed', { error: toMessage(e) });
         }
       }
     }
@@ -104,7 +109,7 @@ serve(async (req) => {
         .update({ access_token: null, refresh_token: null, app_secret: null, status: 'revoked', updated_at: new Date().toISOString() })
         .eq('user_id', user.id)
         .select('id');
-      if (intErr) console.error('[user-account-delete] integrations update failed', intErr.message);
+      if (intErr) log.error('integrations', 'integrations update failed', { error: intErr.message });
       report.integrations_revoked = revoked?.length ?? 0;
     }
 
@@ -121,11 +126,11 @@ serve(async (req) => {
         const { error: nErr } = await db.from('notifications').insert(
           adminIds.map((id) => ({ user_id: id, title: notice.title, message: notice.message, type: 'warning', read: false })),
         );
-        if (nErr) console.error('[user-account-delete] admin notification failed', nErr.message);
+        if (nErr) log.error('notify', 'admin notification failed', { error: nErr.message });
         else report.admins_notified = adminIds.length;
       }
     } catch (e) {
-      console.error('[user-account-delete] admin notification failed', (e as Error)?.message);
+      log.error('notify', 'admin notification failed', { error: toMessage(e) });
     }
 
     // --- encerra as sessões em todos os dispositivos (o cliente também faz signOut) ---
@@ -133,15 +138,15 @@ serve(async (req) => {
       const jwt = (req.headers.get('Authorization') ?? '').replace(/^Bearer\s+/i, '').trim();
       await db.auth.admin.signOut(jwt, 'global');
     } catch (e) {
-      console.warn('[user-account-delete] global sign-out failed', (e as Error)?.message);
+      log.warn('signout', 'global sign-out failed', { error: toMessage(e) });
     }
 
-    console.log('[user-account-delete] deletion requested', { user_id: user.id, ...report });
+    log.info('handler', 'deletion requested', { user_id: user.id, ...report });
     return json({ success: true, deletion_requested_at: requestedAt.toISOString(), grace_days: GRACE_DAYS, ...report });
   } catch (e) {
     const authResp = authErrorResponse(e, cors);
     if (authResp) return authResp;
-    console.error('[user-account-delete] error', (e as Error)?.message);
+    log.error('handler', 'error', { error: toMessage(e) });
     return json({ success: false, error: 'Não foi possível solicitar a exclusão da conta. Tente novamente ou fale com o suporte.' }, 500);
   }
 });

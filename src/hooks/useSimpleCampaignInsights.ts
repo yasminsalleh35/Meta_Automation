@@ -79,9 +79,9 @@ export const useSimpleCampaignInsights = (campaignId: string) => {
         name: campaignData.name || 'Campanha sem nome',
         status: mapStatus(campaignData.status),
         createdAt: campaignData.created_at,
-        metaCampaignId: campaignData.meta_campaign_id,
-        metaAdId: campaignData.meta_ad_id,
-        lastMetricsSyncAt: campaignData.last_metrics_sync_at,
+        metaCampaignId: campaignData.meta_campaign_id ?? undefined,
+        metaAdId: campaignData.meta_ad_id ?? undefined,
+        lastMetricsSyncAt: campaignData.last_metrics_sync_at ?? undefined,
       };
 
       setCampaign(mappedCampaign);
@@ -151,7 +151,7 @@ export const useSimpleCampaignInsights = (campaignId: string) => {
         await fetchDailyInsights(campaignData.meta_campaign_id, campaignData.id);
       } else if (campaignData.daily_insights && Array.isArray(campaignData.daily_insights)) {
         // Use cached daily insights from DB
-        setDailyInsights(campaignData.daily_insights);
+        setDailyInsights(campaignData.daily_insights as unknown as DailyInsight[]); // jsonb
       }
 
     } catch (err) {
@@ -163,8 +163,8 @@ export const useSimpleCampaignInsights = (campaignId: string) => {
     }
   }, [campaignId, session?.user?.id, session?.access_token, supabase]);
 
-  const loadCachedMetrics = (campaignData: any) => {
-    const m = campaignData.metrics;
+  const loadCachedMetrics = (campaignData: { metrics?: unknown }) => {
+    const m = campaignData.metrics as Record<string, unknown> | null | undefined;
     if (m) {
       setInsights({
         impressions: Number(m.impressions) || 0,

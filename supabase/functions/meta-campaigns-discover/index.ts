@@ -1,12 +1,13 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
+import { META_GRAPH_VERSION } from '../_shared/meta.ts'; // audit PLT-03
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
-const API_VERSION = "v23.0";
+const API_VERSION = META_GRAPH_VERSION;
 
 interface MetaCampaign {
   id: string;
@@ -102,7 +103,7 @@ serve(async (req) => {
       `https://graph.facebook.com/${API_VERSION}/${accountPath}/campaigns?fields=id,name,status,effective_status,objective,created_time,updated_time&limit=100&access_token=${accessToken}`;
 
     while (nextUrl) {
-      const response = await fetch(nextUrl);
+      const response: Response = await fetch(nextUrl); // audit PLT-05
 
       if (!response.ok) {
         const errorBody = await response.json().catch(() => ({}));
@@ -123,7 +124,7 @@ serve(async (req) => {
         throw new Error(errorBody?.error?.message || `Meta API error: ${response.status}`);
       }
 
-      const data = await response.json();
+      const data: any = await response.json();
       if (data.data) {
         allMetaCampaigns.push(...data.data);
       }

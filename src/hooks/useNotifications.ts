@@ -1,6 +1,7 @@
 
 import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/contexts/AuthContext';
 
 interface Notification {
   id: string;
@@ -18,6 +19,8 @@ export const useNotifications = () => {
   const [unreadCount, setUnreadCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const { user: authUser } = useAuth();
+  const authUserId = authUser?.id ?? null;
 
   const fetchNotifications = async () => {
     try {
@@ -151,22 +154,31 @@ export const useNotifications = () => {
   useEffect(() => {
     fetchNotifications();
 
-    // Set up real-time subscription with error handling
-    let channel: any = null;
-    
+    if (!authUserId) return;
+
+    // audit PLT-08: um canal por usuário/instância (o hook é usado por vários componentes ao
+    // mesmo tempo) e filtro por user_id — sem o filtro, mudanças de outros usuários disparavam
+    // refetch para todos os assinantes.
+    let channel: ReturnType<typeof supabase.channel> | null = null;
+    let pollInterval: ReturnType<typeof setInterval> | null = null;
+    const instanceId =
+      typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+        ? crypto.randomUUID()
+        : Math.random().toString(36).slice(2);
+
     try {
       if (supabase && typeof supabase.channel === 'function') {
         channel = supabase
-          .channel('notifications_realtime')
+          .channel(`notifications:${authUserId}:${instanceId}`)
           .on(
             'postgres_changes',
             {
               event: '*',
               schema: 'public',
-              table: 'notifications'
+              table: 'notifications',
+              filter: `user_id=eq.${authUserId}`,
             },
-            (payload) => {
-              console.log('Notification change:', payload);
+            () => {
               fetchNotifications();
             }
           )
@@ -174,17 +186,16 @@ export const useNotifications = () => {
       } else {
         console.warn('Realtime não disponível, usando polling como fallback');
         // Fallback: polling a cada 30 segundos
-        const pollInterval = setInterval(fetchNotifications, 30000);
-        return () => clearInterval(pollInterval);
+        pollInterval = setInterval(fetchNotifications, 30000);
       }
     } catch (error) {
       console.error('Error setting up realtime subscription:', error);
       // Fallback: polling a cada 30 segundos
-      const pollInterval = setInterval(fetchNotifications, 30000);
-      return () => clearInterval(pollInterval);
+      pollInterval = setInterval(fetchNotifications, 30000);
     }
 
     return () => {
+      if (pollInterval) clearInterval(pollInterval);
       if (channel && supabase && typeof supabase.removeChannel === 'function') {
         try {
           supabase.removeChannel(channel);
@@ -193,7 +204,8 @@ export const useNotifications = () => {
         }
       }
     };
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authUserId]);
 
   return {
     notifications,

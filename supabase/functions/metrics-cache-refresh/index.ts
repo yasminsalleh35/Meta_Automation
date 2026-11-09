@@ -13,6 +13,7 @@ import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.49.8';
 import { isCron, requireUser, isAdminUser, HttpError } from '../_shared/auth.ts';
 import { normalizeInsight } from '../_shared/metrics.ts';
+import { META_GRAPH_VERSION } from '../_shared/meta.ts'; // audit PLT-03
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -23,7 +24,7 @@ const log = (step: string, details?: any) => {
   console.log(`[metrics-cache-refresh] ${step}`, details ? JSON.stringify(details) : '');
 };
 
-const META_API_VERSION = 'v23.0';
+const META_API_VERSION = META_GRAPH_VERSION;
 const CACHE_TTL_ACTIVE_MIN = 15;   // 15 min for active campaigns
 const CACHE_TTL_PAUSED_MIN = 60;   // 1 hour for paused campaigns
 const MAX_CAMPAIGNS_PER_RUN = 20;  // Rate limit safety

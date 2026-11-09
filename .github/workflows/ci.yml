@@ -1,0 +1,90 @@
+# audit QA-06 — quality gate. Make these jobs "required" in the branch protection of `main`
+# (Settings → Branches) so a failing run blocks the merge.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  web:
+    name: Typecheck, lint, unit tests, build, bundle budget, audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Typecheck
+        run: npx tsc --noEmit -p tsconfig.app.json
+
+      - name: ESLint (changed files only)
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+          BEFORE: ${{ github.event.before }}
+        run: |
+          if [ "$EVENT" = "pull_request" ]; then
+            BASE="origin/$BASE_REF"
+            RANGE="$BASE...HEAD"
+          elif [ -n "$BEFORE" ] && [ "$BEFORE" != "0000000000000000000000000000000000000000" ] && git cat-file -e "$BEFORE" 2>/dev/null; then
+            RANGE="$BEFORE...HEAD"
+          else
+            RANGE="HEAD~1...HEAD"
+          fi
+          echo "diff range: $RANGE"
+          FILES=$(git diff --name-only --diff-filter=ACMR "$RANGE" -- '*.ts' '*.tsx' | grep -v '^supabase/functions/' || true)
+          if [ -z "$FILES" ]; then
+            echo "No changed TS/TSX files — skipping ESLint."
+            exit 0
+          fi
+          echo "$FILES"
+          echo "$FILES" | xargs npx eslint
+
+      - name: Unit tests (vitest)
+        run: npx vitest run
+
+      - name: Build
+        run: npx vite build
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+
+      - name: Bundle budget (initial JS, gzip)
+        run: node scripts/check-bundle-size.mjs dist
+        env:
+          BUNDLE_BUDGET_KB: 600
+
+      - name: npm audit (production deps)
+        run: npm audit --omit=dev --audit-level=high
+
+  edge:
+    name: Edge function tests (Deno)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: deno test
+        run: deno test --allow-all supabase/functions/_tests/

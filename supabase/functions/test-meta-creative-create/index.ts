@@ -3,6 +3,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { requireAdmin, authErrorResponse } from '../_shared/auth.ts';
 import { requireMetaAccessToken } from '../_shared/metaIntegration.ts';
+import { GRAPH_BASE } from '../_shared/meta.ts'; // audit PLT-03
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -80,7 +81,7 @@ serve(async (req) => {
       
       // FASE 1: Validar se o post existe e é acessível
       console.log('[TEST-META-CREATIVE-CREATE] Validating Instagram media...');
-      const mediaCheckUrl = `https://graph.facebook.com/v23.0/${instagramMediaId}?fields=id,caption,media_type,permalink,owner&access_token=${accessToken}`;
+      const mediaCheckUrl = `${GRAPH_BASE}/${instagramMediaId}?fields=id,caption,media_type,permalink,owner&access_token=${accessToken}`;
       const mediaCheckResponse = await fetch(mediaCheckUrl);
       const mediaCheckResult = await mediaCheckResponse.json();
 
@@ -168,7 +169,7 @@ serve(async (req) => {
       const uploadFormData = new FormData();
       uploadFormData.append('bytes', base64Image);
       
-      const uploadUrl = `https://graph.facebook.com/v23.0/${actId}/adimages?access_token=${accessToken}`;
+      const uploadUrl = `${GRAPH_BASE}/${actId}/adimages?access_token=${accessToken}`;
       const uploadResponse = await fetch(uploadUrl, {
         method: 'POST',
         body: uploadFormData,
@@ -237,7 +238,7 @@ serve(async (req) => {
     if (creativeType === 'post') {
       // ✅ CORREÇÃO v23: IMAGE usa image_url (dark post), VIDEO usa source_instagram_media_id
       const mediaInfo = await (async () => {
-        const mediaCheckUrl = `https://graph.facebook.com/v23.0/${instagramMediaId}?fields=media_type,media_url,thumbnail_url&access_token=${accessToken}`;
+        const mediaCheckUrl = `${GRAPH_BASE}/${instagramMediaId}?fields=media_type,media_url,thumbnail_url&access_token=${accessToken}`;
         const response = await fetch(mediaCheckUrl);
         const result = await response.json();
         return {
@@ -313,7 +314,7 @@ serve(async (req) => {
       };
     }
 
-    const creativeUrl = `https://graph.facebook.com/v23.0/${actId}/adcreatives?access_token=${accessToken}`;
+    const creativeUrl = `${GRAPH_BASE}/${actId}/adcreatives?access_token=${accessToken}`;
     
     console.log('[TEST-META-CREATIVE-CREATE] Creating creative with config:', {
       url: creativeUrl.replace(accessToken, 'TOKEN_MASKED'),

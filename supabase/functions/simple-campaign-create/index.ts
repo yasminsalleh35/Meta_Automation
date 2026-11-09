@@ -5,6 +5,8 @@ import { corsHeadersFor, handlePreflight } from '../_shared/cors.ts';
 import { normalizeBrPhone, waLinkFromPhone } from '../_shared/phone.ts';
 import { CampaignError, classifyMetaError, toCampaignError } from './errors.ts';
 import { buildGeoLocations, countScheduledDays, normalizeAdSchedule, normalizeAgeRange } from './targeting.ts';
+import { GRAPH_BASE, META_GRAPH_VERSION } from '../_shared/meta.ts'; // audit PLT-03
+import { createLogger } from '../_shared/logger.ts';
 
 // Build a Bearer auth header for Meta Graph GET/POST calls so the access token never
 // appears in a URL query string (which can leak into request logs).
@@ -135,22 +137,14 @@ export function extractInvalidInterestIds(msg?: string): string[] {
   return Array.from(new Set(ids));
 }
 
-// 🔧 Logger Function
+// 🔧 Logger Function — audit PLT-06: delega ao logger estruturado compartilhado
+// (mesma assinatura; respostas da function não mudam)
+const sharedLog = createLogger('simple-campaign-create');
 function logger(level: 'info' | 'error' | 'warn', stage: string, message: string, data?: any) {
-  const timestamp = new Date().toISOString();
-  const logPrefix = `[${timestamp}][simple-campaign-create][${stage.toUpperCase()}]`;
-  
-  switch (level) {
-    case 'info':
-      console.log(`${logPrefix} ${message}`, data || '');
-      break;
-    case 'error':
-      console.error(`${logPrefix} ❌ ${message}`, data || '');
-      break;
-    case 'warn':
-      console.warn(`${logPrefix} ⚠️ ${message}`, data || '');
-      break;
-  }
+  const payload: Record<string, unknown> | undefined = data === undefined || data === null || data === ''
+    ? undefined
+    : typeof data === 'object' && !Array.isArray(data) ? data : { value: data };
+  sharedLog[level](stage, message, payload);
 }
 
 // 🧹 ROLLBACK: best-effort deletion of a partially-created Meta campaign.
@@ -166,7 +160,7 @@ async function rollbackMetaObjects(params: {
 
   try {
     logger('warn', 'ROLLBACK-START', '🧹 Removendo campanha Meta parcial para evitar órfãos', { campaignId });
-    const res = await fetch(`https://graph.facebook.com/v23.0/${campaignId}`, {
+    const res = await fetch(`${GRAPH_BASE}/${campaignId}`, {
       method: 'DELETE',
       headers: metaAuthHeaders(accessToken, { 'Content-Type': 'application/json' })
     });
@@ -259,7 +253,7 @@ async function saveToContingency(
         // Metadados adicionais
         timestamp: new Date().toISOString(),
         user_agent: 'simple-campaign-create-v23.0',
-        api_version: 'v23.0',
+        api_version: META_GRAPH_VERSION,
         // Recovery state (D1/D2) — read by contingency-auto-retry / reconciliation
         rolled_back: extra.rolledBack === true,
         needs_db_reconcile: extra.needsDbReconcile === true
@@ -326,7 +320,7 @@ async function resolveAllowedPage(requested: string | null | undefined, integrat
   }
   if (stored.has(pageId)) return pageId;
 
-  let url: string | null = 'https://graph.facebook.com/v23.0/me/accounts?fields=id&limit=100';
+  let url: string | null = `${GRAPH_BASE}/me/accounts?fields=id&limit=100`;
   for (let page = 0; url && page < 10; page++) {
     const res: Response = await fetch(url, { headers: metaAuthHeaders(integration.access_token), signal: AbortSignal.timeout(10_000) });
     if (!res.ok) {
@@ -423,7 +417,7 @@ export async function createAdSetWithInterestRetries({
       }
 
       const accountPath = toAccountPath(adAccountId);
-      const endpoint = `/v23.0/${accountPath}/adsets`;
+      const endpoint = `/${META_GRAPH_VERSION}/${accountPath}/adsets`;
       logger('info', 'FB-ENDPOINT', 'Calling AdSet endpoint', { endpoint });
       
       const res = await fetch(
@@ -610,7 +604,7 @@ export function normalizeSpecialAdCategories(input?: string | string[]) {
 
 // 🎥 Get Best Video Thumbnail
 async function getBestVideoThumb(videoId: string, accessToken: string): Promise<string | null> {
-  const url = `https://graph.facebook.com/v23.0/${videoId}/thumbnails?fields=uri,is_preferred,height,width&limit=25`;
+  const url = `${GRAPH_BASE}/${videoId}/thumbnails?fields=uri,is_preferred,height,width&limit=25`;
   const res = await fetch(url, { headers: metaAuthHeaders(accessToken) });
   let data: any = null;
   try { data = await res.json(); } catch {}
@@ -668,7 +662,7 @@ async function waitVideoReady(
   while (Date.now() - start < timeoutMs) {
     try {
       // ✅ RELIABLE METHOD: Check thumbnails endpoint
-      const thumbsResponse = await fetch(`https://graph.facebook.com/v23.0/${videoId}/thumbnails?limit=1&fields=uri`, { headers: metaAuthHeaders(accessToken) });
+      const thumbsResponse = await fetch(`${GRAPH_BASE}/${videoId}/thumbnails?limit=1&fields=uri`, { headers: metaAuthHeaders(accessToken) });
       
       if (thumbsResponse.ok) {
         const thumbsData = await thumbsResponse.json();
@@ -687,7 +681,7 @@ async function waitVideoReady(
 
       // Best-effort status logging (don't depend on these fields)
       try {
-        const statusUrl = `https://graph.facebook.com/v23.0/${videoId}?fields=status`;
+        const statusUrl = `${GRAPH_BASE}/${videoId}?fields=status`;
         const statusResponse = await fetch(statusUrl, { headers: metaAuthHeaders(accessToken) });
         if (statusResponse.ok) {
           const statusData = await statusResponse.json();
@@ -967,7 +961,7 @@ async function uploadMediaToMeta(params: {
   apiVersion?: string;
   forceVideo?: boolean;
 }): Promise<{ hash?: string; video_id?: string; file_type: string }> {
-  const { adAccountId, fileUrl, accessToken, apiVersion = "v23.0", forceVideo = false } = params;
+  const { adAccountId, fileUrl, accessToken, apiVersion = META_GRAPH_VERSION, forceVideo = false } = params;
 
   const accountPath = toAccountPath(adAccountId);
   logger('info', 'upload-start', 'Iniciando upload de mídia', { fileUrl, accountPath, forceVideo });
@@ -1147,7 +1141,7 @@ async function createAdCreativeWithRetries(
         throw new Error('Neither video_id nor hash available from upload result');
       }
 
-      const endpoint = `/v23.0/${accountPath}/adcreatives`;
+      const endpoint = `/${META_GRAPH_VERSION}/${accountPath}/adcreatives`;
       logger('info', 'FB-ENDPOINT', 'Calling Creative endpoint', { endpoint });
       
       const response = await fetch(`https://graph.facebook.com${endpoint}`, {
@@ -1393,7 +1387,7 @@ export async function handleRequest(req: Request): Promise<Response> {
     if (!whatsappPhoneId) {
       try {
         const pageCheckRes = await fetch(
-          `https://graph.facebook.com/v23.0/${pageId}?fields=whatsapp_number{display_phone_number}`,
+          `${GRAPH_BASE}/${pageId}?fields=whatsapp_number{display_phone_number}`,
           { headers: metaAuthHeaders(accessToken), signal: AbortSignal.timeout(8000) }
         );
 
@@ -1492,20 +1486,20 @@ export async function handleRequest(req: Request): Promise<Response> {
     logger('info', 'campaign-payload', 'Campaign payload preparado (CTWA v23.0)', {
       objective: campaignPayload.objective,
       special_ad_categories: campaignPayload.special_ad_categories,
-      api_version: 'v23.0'
+      api_version: META_GRAPH_VERSION
     });
 
     // ✅ LOG específico CTWA
     logger('info', 'CTWA-CAMPAIGN-CONFIG', '📋 Configuração completa CTWA v23.0', {
       objective: 'OUTCOME_ENGAGEMENT',
-      api_version: 'v23.0',
+      api_version: META_GRAPH_VERSION,
       note: 'promoted_object será configurado no AdSet, não no Campaign'
     });
 
     const accountPath = toAccountPath(adAccountId);
     logger('info','ACCOUNT-PATH','Resolved account path',{ accountPath });
     
-    const campaignEndpoint = `/v23.0/${accountPath}/campaigns`;
+    const campaignEndpoint = `/${META_GRAPH_VERSION}/${accountPath}/campaigns`;
     logger('info', 'FB-ENDPOINT', 'Calling Campaign endpoint (v23.0)', { endpoint: campaignEndpoint });
     
     const campaignResponse = await fetch(`https://graph.facebook.com${campaignEndpoint}`, {
@@ -1526,7 +1520,7 @@ export async function handleRequest(req: Request): Promise<Response> {
         error_user_msg: errorData.error?.error_user_msg,
         fb_trace_id: fbTraceId,
         objective: 'OUTCOME_ENGAGEMENT',
-        api_version: 'v23.0'
+        api_version: META_GRAPH_VERSION
       });
       
       throw classifyMetaError(campaignResponse.status, errorData, 'campanha');
@@ -1539,7 +1533,7 @@ export async function handleRequest(req: Request): Promise<Response> {
       name: payload.campaignName,
       status: 'PAUSED',
       special_ad_categories: campaignPayload.special_ad_categories,
-      api_version: 'v23.0'
+      api_version: META_GRAPH_VERSION
     });
 
     // ✅ Delay estratégico após criação de campanha
@@ -1769,7 +1763,7 @@ export async function handleRequest(req: Request): Promise<Response> {
       }
 
       const objectStoryId = `${igUserId}_${mediaId}`;
-      const creativeEndpoint = `/v23.0/${toAccountPath(adAccountId)}/adcreatives`;
+      const creativeEndpoint = `/${META_GRAPH_VERSION}/${toAccountPath(adAccountId)}/adcreatives`;
 
       // This function only creates CTWA campaigns (destination_type: WHATSAPP).
       // The campaign is ALWAYS CTWA — don't gate on payload.whatsappLink, which is only
@@ -1799,7 +1793,7 @@ export async function handleRequest(req: Request): Promise<Response> {
 
         try {
           // audit CMP-07: Reels vêm como media_type=VIDEO + media_product_type=REELS; carrossel usa o 1º item
-          const mediaCheckUrl = `https://graph.facebook.com/v23.0/${mediaId}?fields=media_type,media_product_type,media_url,thumbnail_url,children{media_type,media_url,thumbnail_url}`;
+          const mediaCheckUrl = `${GRAPH_BASE}/${mediaId}?fields=media_type,media_product_type,media_url,thumbnail_url,children{media_type,media_url,thumbnail_url}`;
           const mediaCheckRes = await fetch(mediaCheckUrl, { headers: metaAuthHeaders(accessToken) });
           if (mediaCheckRes.ok) {
             let mediaInfo = await mediaCheckRes.json();
@@ -1842,7 +1836,7 @@ export async function handleRequest(req: Request): Promise<Response> {
             adAccountId: accountPath,
             fileUrl: postMediaUrl,
             accessToken,
-            apiVersion: 'v23.0',
+            apiVersion: META_GRAPH_VERSION,
             forceVideo: true
           });
 
@@ -2027,7 +2021,7 @@ export async function handleRequest(req: Request): Promise<Response> {
       access_token: accessToken
     };
 
-    const adEndpoint = `/v23.0/${toAccountPath(adAccountId)}/ads`;
+    const adEndpoint = `/${META_GRAPH_VERSION}/${toAccountPath(adAccountId)}/ads`;
     logger('info', 'FB-ENDPOINT', 'Calling Ad endpoint (v23.0)', {
       endpoint: adEndpoint,
       creative_id: creativeId,

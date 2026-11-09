@@ -1,6 +1,12 @@
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { requireUser, isAdminUser, isServiceRole, serviceClient, authErrorResponse } from '../_shared/auth.ts'
+import { GRAPH_BASE } from '../_shared/meta.ts'; // audit PLT-03
+import { createLogger } from '../_shared/logger.ts';
+import { toObject } from '../_shared/errors.ts';
+
+// audit PLT-06: logs estruturados (corpo/status inalterados)
+const log = createLogger('verify-and-correct-ad-set');
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -75,7 +81,7 @@ serve(async (req) => {
     const { data: expectedSettings, error: dbError } = await settingsQuery.maybeSingle()
 
     if (dbError || !expectedSettings) {
-      console.error('❌ Expected settings not found:', dbError?.message)
+      log.error('handler', '❌ Expected settings not found', { error: dbError?.message })
       return new Response(
         JSON.stringify({
           success: false,
@@ -135,7 +141,7 @@ serve(async (req) => {
     )
 
   } catch (error) {
-    console.error('❌ Verification failed:', error)
+    log.error('handler', '❌ Verification failed', { error: toObject(error) })
     const authResp = authErrorResponse(error, corsHeaders)
     if (authResp) return authResp
 
@@ -178,7 +184,7 @@ async function getMetaAccessToken(supabaseClient: any, userId: string): Promise<
 
     return integration?.access_token || null
   } catch (error) {
-    console.error('Error fetching Meta access token:', error)
+    log.error('handler', 'Error fetching Meta access token', { error: toObject(error) })
     return null
   }
 }
@@ -186,7 +192,7 @@ async function getMetaAccessToken(supabaseClient: any, userId: string): Promise<
 async function fetchAdSetFromMeta(adSetId: string, accessToken: string): Promise<MetaApiResponse> {
   // 'spend' não é campo de ad set (é de insights) — removido (SEC-15)
   const fields = 'name,targeting,daily_budget,lifetime_budget,promoted_object,status'
-  const url = `https://graph.facebook.com/v23.0/${adSetId}?fields=${fields}&access_token=${accessToken}`
+  const url = `${GRAPH_BASE}/${adSetId}?fields=${fields}&access_token=${accessToken}`
 
   console.log(`📡 Fetching Ad Set data from Meta API: ${adSetId}`)
 
@@ -194,7 +200,7 @@ async function fetchAdSetFromMeta(adSetId: string, accessToken: string): Promise
   const data = await response.json()
 
   if (!response.ok) {
-    console.error('Meta API Error:', data)
+    log.error('handler', 'Meta API Error', { error: toObject(data) })
     throw new Error(`Meta API Error: ${data.error?.message || 'Unknown error'}`)
   }
 
@@ -269,7 +275,7 @@ function compareLocality(expected: any, actual: any): boolean {
     
     return expectedStr === actualStr
   } catch (error) {
-    console.error('Error comparing locality:', error)
+    log.error('handler', 'Error comparing locality', { error: toObject(error) })
     return false
   }
 }
@@ -292,7 +298,7 @@ async function updateAdSetInMeta(
   updates: Record<string, any>,
   accessToken: string
 ): Promise<{ success: boolean; error?: any }> {
-  const url = `https://graph.facebook.com/v23.0/${adSetId}`
+  const url = `${GRAPH_BASE}/${adSetId}`
 
   console.log(`🔧 Updating Ad Set in Meta API: ${adSetId}`, updates)
 
@@ -320,7 +326,7 @@ async function updateAdSetInMeta(
     const data = await response.json()
 
     if (!response.ok) {
-      console.error('Meta API Update Error:', data)
+      log.error('handler', 'Meta API Update Error', { error: toObject(data) })
       return { success: false, error: data.error }
     }
 
@@ -328,7 +334,7 @@ async function updateAdSetInMeta(
     return { success: true }
 
   } catch (error) {
-    console.error('Error updating Ad Set in Meta:', error)
+    log.error('handler', 'Error updating Ad Set in Meta', { error: toObject(error) })
     return { success: false, error: (error as any)?.message }
   }
 }

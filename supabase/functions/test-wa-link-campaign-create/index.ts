@@ -1,6 +1,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { requireAdmin, authErrorResponse } from '../_shared/auth.ts';
 import { requireMetaAccessToken } from '../_shared/metaIntegration.ts';
+import { GRAPH_BASE } from '../_shared/meta.ts'; // audit PLT-03
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -33,7 +34,7 @@ async function testMetaConnection(adAccountId: string, accessToken: string, logs
   
   try {
     const response = await fetch(
-      `https://graph.facebook.com/v23.0/${adAccountId}?fields=id,name,currency,account_status&access_token=${accessToken}`,
+      `${GRAPH_BASE}/${adAccountId}?fields=id,name,currency,account_status&access_token=${accessToken}`,
       { method: 'GET' }
     );
     
@@ -140,7 +141,7 @@ serve(async (req) => {
     logs.push(`[CAMPAIGN] Payload: ${JSON.stringify(campaignPayload)}`);
 
     const campaignResponse = await fetch(
-      `https://graph.facebook.com/v23.0/${payload.adAccountId}/campaigns?access_token=${payload.accessToken}`,
+      `${GRAPH_BASE}/${payload.adAccountId}/campaigns?access_token=${payload.accessToken}`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -206,7 +207,7 @@ serve(async (req) => {
     logs.push(`[ADSET] Payload: ${JSON.stringify(adsetPayload)}`);
 
     const adsetResponse = await fetch(
-      `https://graph.facebook.com/v23.0/${payload.adAccountId}/adsets?access_token=${payload.accessToken}`,
+      `${GRAPH_BASE}/${payload.adAccountId}/adsets?access_token=${payload.accessToken}`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -243,7 +244,7 @@ serve(async (req) => {
       logs.push(`[MEDIA] Uploading to Meta (size: ${imageBuffer.byteLength} bytes)`);
       
       const uploadResponse = await fetch(
-        `https://graph.facebook.com/v23.0/${payload.adAccountId}/adimages?access_token=${payload.accessToken}`,
+        `${GRAPH_BASE}/${payload.adAccountId}/adimages?access_token=${payload.accessToken}`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -292,7 +293,7 @@ serve(async (req) => {
     }
 
     let creativeResponse = await fetch(
-      `https://graph.facebook.com/v23.0/${payload.adAccountId}/adcreatives?access_token=${payload.accessToken}`,
+      `${GRAPH_BASE}/${payload.adAccountId}/adcreatives?access_token=${payload.accessToken}`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -309,7 +310,7 @@ serve(async (req) => {
       creativePayload.object_story_spec.link_data.call_to_action.type = 'LEARN_MORE';
       
       creativeResponse = await fetch(
-        `https://graph.facebook.com/v23.0/${payload.adAccountId}/adcreatives?access_token=${payload.accessToken}`,
+        `${GRAPH_BASE}/${payload.adAccountId}/adcreatives?access_token=${payload.accessToken}`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -330,7 +331,7 @@ serve(async (req) => {
     logs.push(`[AD] Creating final ad`);
 
     const adResponse = await fetch(
-      `https://graph.facebook.com/v23.0/${payload.adAccountId}/ads?access_token=${payload.accessToken}`,
+      `${GRAPH_BASE}/${payload.adAccountId}/ads?access_token=${payload.accessToken}`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

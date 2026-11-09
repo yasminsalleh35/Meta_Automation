@@ -85,7 +85,7 @@ export const useRealBusinessSettings = (pageSize: number = ADMIN_PAGE_SIZE) => {
   }, [supabase, pageSize]);
 
   const loadStats = useCallback(async () => {
-    const { data, error } = await supabase.rpc('admin_business_settings_stats' as any);
+    const { data, error } = await supabase.rpc('admin_business_settings_stats');
     if (error) {
       console.error('Error loading business stats:', error);
       return;

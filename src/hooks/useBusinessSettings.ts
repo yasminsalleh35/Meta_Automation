@@ -73,7 +73,7 @@ export const useBusinessSettings = () => {
           odontSpecialties: data.odont_specialties || [],
           targetAgeMin: data.target_age_min || 18,
           targetAgeMax: data.target_age_max || 65,
-          specialtyTickets: data.specialty_tickets || {},
+          specialtyTickets: (data.specialty_tickets as Record<string, number> | null) || {}, // jsonb
           strategic_notes: data.strategic_notes || '',
           whatsappNumber: data.whatsapp_number || '',
         };
@@ -218,11 +218,11 @@ export const useBusinessSettings = () => {
       }
 
       return true;
-    } catch (error: any) {
+    } catch (error) {
       console.error('[useBusinessSettings] ❌ Save failed after:', Date.now() - startTime, 'ms', {
         errorType: error instanceof Error ? error.constructor.name : typeof error,
         errorName: error?.name,
-        errorMessage: error instanceof Error ? error.message : String(error),
+        errorMessage: error instanceof Error ? (error as Error).message : String(error),
         retryCount
       });
       

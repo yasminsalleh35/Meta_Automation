@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { normalizeInsight } from "../_shared/metrics.ts";
+import { META_GRAPH_VERSION } from '../_shared/meta.ts'; // audit PLT-03
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -108,7 +109,7 @@ serve(async (req) => {
         throw new Error("No active Meta integration found");
       }
 
-      const apiVersion = Deno.env.get('META_API_VERSION') ?? 'v23.0';
+      const apiVersion = Deno.env.get('META_API_VERSION') ?? META_GRAPH_VERSION;
       const apiUrl = `https://graph.facebook.com/${apiVersion}/${adId}/insights?fields=impressions,reach,clicks,spend,actions,cost_per_action_type,ctr&date_preset=last_30d&access_token=${singleIntegration.access_token}`;
 
       const response = await fetch(apiUrl);
@@ -189,7 +190,7 @@ serve(async (req) => {
     for (const metaCampaignId of targetMetaCampaignIds) {
       try {
         const dateRange = requestData.datePreset || "last_30d";
-        const apiVersion = Deno.env.get('META_API_VERSION') ?? 'v23.0';
+        const apiVersion = Deno.env.get('META_API_VERSION') ?? META_GRAPH_VERSION;
         
         const apiUrl = `https://graph.facebook.com/${apiVersion}/${metaCampaignId}/insights` +
           `?fields=impressions,reach,clicks,spend,actions,cost_per_action_type,ctr` +

@@ -1,0 +1,30 @@
+# audit QA-03 — security probe against a deployed project. Manual only (run after each deploy).
+# Non-destructive: POST {} / invalid bodies, read-only GET RPC calls, `limit=1` table reads.
+# Secrets: SUPABASE_URL, SUPABASE_ANON_KEY (required);
+#          PROBE_USER_A_JWT, PROBE_USER_B_ID (optional, TEST accounts only — enables the A→B checks).
+name: Security probe
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Run security probe
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          PROBE_USER_A_JWT: ${{ secrets.PROBE_USER_A_JWT }}
+          PROBE_USER_B_ID: ${{ secrets.PROBE_USER_B_ID }}
+        run: deno run --allow-net --allow-env --allow-read scripts/security-probe.ts

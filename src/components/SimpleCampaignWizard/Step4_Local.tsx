@@ -5,7 +5,7 @@ import { Slider } from '@/components/ui/slider';
 import { MapPin, Loader2, Globe, Search, X, AlertCircle } from 'lucide-react';
 import { SimpleCampaignFormData } from '@/types/simpleCampaign.types';
 import { getCitySuggestions } from '@/utils/mapboxUtils';
-import { metaAdsLocationService } from '@/services/metaAdsService';
+import { metaAdsLocationService } from '@/services/metaAds/MetaAdsLocationService';
 import { useMetaAdsIntegration } from '@/hooks/useMetaAdsIntegration';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
@@ -22,7 +22,7 @@ import { useToast } from '@/hooks/use-toast';
 
 interface Step4LocalProps {
   formData: SimpleCampaignFormData;
-  updateFormData: (field: keyof SimpleCampaignFormData, value: any) => void;
+  updateFormData: <K extends keyof SimpleCampaignFormData>(field: K, value: SimpleCampaignFormData[K]) => void;
 }
 
 interface MapboxFeature {
@@ -31,6 +31,12 @@ interface MapboxFeature {
   text: string;
   context?: Array<{ id: string; text: string }>;
 }
+
+// Sugestão de estado/região: feature do Mapbox ou resultado oficial da Meta (com meta_key).
+type RegionSuggestion = Partial<MapboxFeature> & Pick<MapboxFeature, 'text'> & {
+  meta_key?: string;
+  source?: string;
+};
 
 // ✅ Lista inicial de países
 const INITIAL_COUNTRIES = [
@@ -76,9 +82,9 @@ export const Step4Local: React.FC<Step4LocalProps> = ({ formData, updateFormData
 
   // ✅ Estados para região/estado
   const [regionQuery, setRegionQuery] = useState('');
-  const [regionSuggestions, setRegionSuggestions] = useState<any[]>([]);
+  const [regionSuggestions, setRegionSuggestions] = useState<RegionSuggestion[]>([]);
   const [isLoadingRegions, setIsLoadingRegions] = useState(false);
-  const [selectedRegion, setSelectedRegion] = useState<any>(null);
+  const [selectedRegion, setSelectedRegion] = useState<string | null>(null);
 
   const { existingIntegration } = useMetaAdsIntegration();
   // Busca Meta roda no servidor; o navegador só sabe se há integração ativa (audit SEC-12)
@@ -141,8 +147,8 @@ export const Step4Local: React.FC<Step4LocalProps> = ({ formData, updateFormData
           setShowSuggestions(features.length > 0);
           console.log(`✅ Mapbox: ${features.length} cidades encontradas para ${countryCode}`);
         }
-      } catch (error: any) {
-        if (error.name !== 'AbortError') {
+      } catch (error) {
+        if ((error as Error).name !== 'AbortError') {
           console.error('❌ Erro ao buscar cidades:', error);
         }
       } finally {
@@ -299,7 +305,7 @@ export const Step4Local: React.FC<Step4LocalProps> = ({ formData, updateFormData
               const formattedResults = metaResults.map(result => ({
                 text: result.name,
                 place_name: result.region ? `${result.name}, ${result.region}` : result.name,
-                center: [0, 0], // Meta API não retorna coordenadas precisas
+                center: [0, 0] as [number, number], // Meta API não retorna coordenadas precisas
                 context: [
                   { id: `region.${result.key}`, text: result.name },
                   { id: `country.${result.country_code}`, text: result.country_code }
@@ -346,11 +352,11 @@ export const Step4Local: React.FC<Step4LocalProps> = ({ formData, updateFormData
           });
           
           // Marcar como fonte Mapbox
-          const featuresWithSource = features.map((f: any) => ({ ...f, source: 'mapbox' }));
+          const featuresWithSource = features.map((f: MapboxFeature) => ({ ...f, source: 'mapbox' }));
           setRegionSuggestions(featuresWithSource);
         }
-      } catch (error: any) {
-        if (error.name !== 'AbortError') {
+      } catch (error) {
+        if ((error as Error).name !== 'AbortError') {
           console.error('❌ Erro ao buscar estados:', error);
         }
       } finally {
@@ -369,7 +375,7 @@ export const Step4Local: React.FC<Step4LocalProps> = ({ formData, updateFormData
   }, [regionQuery, countryCode, mapboxToken, metaConnected, targetingMode]);
 
   // ✅ Selecionar região/estado (ADICIONAR ao array)
-  const handleRegionSelect = (suggestion: any) => {
+  const handleRegionSelect = (suggestion: RegionSuggestion) => {
     const currentLocations = formData.selected_locations || [];
     
     // ✅ Validar limite máximo
@@ -384,7 +390,7 @@ export const Step4Local: React.FC<Step4LocalProps> = ({ formData, updateFormData
     }
     
     const regionName = suggestion.text;
-    const countryName = suggestion.context?.find((c: any) => c.id.startsWith('country'))?.text || '';
+    const countryName = suggestion.context?.find((c) => c.id.startsWith('country'))?.text || '';
     const displayLabel = [regionName, countryName].filter(Boolean).join(', ');
     
     // ✅ CRITICAL: Detectar se tem key Meta oficial
@@ -414,7 +420,7 @@ export const Step4Local: React.FC<Step4LocalProps> = ({ formData, updateFormData
     updateFormData('cityCoordinates', coordsOk ? { latitude: lat, longitude: lng, center: [lng, lat] } : null);
 
     // ✅ Criar nova localização
-    const newLocation: any = {
+    const newLocation: NonNullable<SimpleCampaignFormData['selected_locations']>[number] & { source?: string } = {
       name: regionName,
       type: 'region' as const,
       country_code: countryCode,

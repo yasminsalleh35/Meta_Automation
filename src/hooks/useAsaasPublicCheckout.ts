@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { useToast } from '@/hooks/use-toast';
 
-const EDGE_FUNCTION_URL = 'https://ibwhqkgvrkkqxiksbiqr.supabase.co/functions/v1/asaas-public-checkout';
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imlid2hxa2d2cmtrcXhpa3NiaXFyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDgzNTAwNzAsImV4cCI6MjA2MzkyNjA3MH0.N7QChffwKW_r1KzAMiWqSmQwXKp7CHosVcaP-HQVNuM';
+const EDGE_FUNCTION_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/asaas-public-checkout`;
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
 
 export const useAsaasPublicCheckout = () => {
   const [loading, setLoading] = useState(false);

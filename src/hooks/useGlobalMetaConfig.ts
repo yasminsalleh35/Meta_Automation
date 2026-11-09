@@ -18,7 +18,7 @@ export const useGlobalMetaConfig = () => {
   useEffect(() => {
     const fetchConfig = async () => {
       try {
-        const { data, error } = await supabase.rpc('get_meta_app_public_config' as any);
+        const { data, error } = await supabase.rpc('get_meta_app_public_config');
 
         if (error) {
           console.error('Error fetching Meta Ads config:', error.message);

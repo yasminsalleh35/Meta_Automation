@@ -5,7 +5,7 @@
 | **Date** | 2026-10-30 |
 | **Source** | The full file-by-file audit from 2026-10-30: 9 partitions, about 1,100 files, 119 migrations, 97 edge functions |
 | **Scope** | Every confirmed or plausible finding from that audit, turned into ordered, testable work items |
-| **Status** | Not started. Nothing in the repo or in production has been changed yet |
+| **Status** | In progress. See Appendix D for per-phase status and `docs/security/releases.md` for what has shipped |
 | **Owner** | Camply development |
 
 ---
@@ -1203,12 +1203,12 @@ Update this table as work lands. One row per task ID; the status values are ⬜ 
 
 | Phase | Tasks | Status | Notes |
 |---|---|---|---|
-| 0 | PRE-01…06 | ⬜ | |
-| 1 | SEC-01…06 | ⬜ | |
-| 2 | SEC-10…17 | ⬜ | |
+| 0 | PRE-01…06 | ✅ 2026-11-03 | Environment restored on the new machine; prod backup `prod_2026-11-03_pre-remediation.dump`; staging not created (changes dry-run in prod transactions ending in ROLLBACK instead) |
+| 1 | SEC-01…06 | ✅ 2026-11-03 | See `docs/security/releases.md` and `remediation-deploy-checklist.md` |
+| 2 | SEC-10…17 | ✅ 2026-11-03 | SEC-12 finished in Phase 5 (column grants on `integrations`). Regression found and fixed 2026-11-09: `verify-and-correct-ad-set` rejected the service-role call from cron |
 | 3 | PAY-01…16 | ⬜ | Blocked on Appendix C #1–4 |
 | 4 | CMP-01…16 | ✅ 2026-11-08 | No auto-retry orphans existed in production (CMP-02 clean-up not needed). Storage INSERT is already allowed by "Users can upload their own media". Close-out 2026-11-08: CMP-06 helper also in `lead-quiz-submit`, Quiz and `WhatsAppManualConfig`; CMP-07 profile schema 18–65 with `.refine`; bulk-operations returns 401; `error`/`deleted` added to `LiveCampaign.status`. `campaigns.status` has no CHECK in production (added in DATA-05). Carried to later phases: legacy wizard file deletion (PLT-01), the private bucket decision (Appendix C #5) |
 | 5 | DATA-01…07, ADM-01…06 | ✅ 2026-11-09 (ADM-06 deferred) | Migrations 20261108000010–017, 020–029 applied. DATA-01: Advanced Analytics hidden behind `VITE_FEATURE_ADVANCED_ANALYTICS` (rebuild pending); fake breakdown/demo data removed. DATA-04 uses `last_status_sync_at` as a round-robin cursor (full status pass ≈ 1 h). DATA-07 also closed `subscribers` self-write, template RPCs and `user_roles` admin self-promotion (super_admin only). Re-verification fixed the hourly `auto-verify-ad-sets` cron (401 since SEC-10 + 9 orphan test rows). SEC-12 completed: browser can no longer read `integrations.access_token/refresh_token/app_secret` (column grants, 027). ADM-03: every admin list now server-paginated; subscriptions list includes Pagar.me (028). Still open: ADM-06; `useMetaCampaignManagement`/`useMetaCampaignSync` (unreached) and other dead token readers → PLT-01 |
 | 6 | LGL-01…06 | ✅ dev 2026-11-09 — client sign-off pending | Export/delete account (30-day grace, `purge-deleted-accounts` daily cron removes Storage files then `hard_delete_pending_accounts()`), marketing opt-in off by default with server-stamped consent, cookie banner + `cookie_consents` (no tracking scripts exist today), privacy/terms factual fixes, quiz consent + honeypot, 21 claims changed. Client must approve `docs/legal/client-legal-checklist.md` and `docs/legal/marketing-claims-changes.md` (Appendix C #6) |
-| 7 | PLT-01…08 | ⬜ | |
-| 8 | QA-01…06 | ⬜ | |
+| 7 | PLT-01…08 | ✅ 2026-11-09 | 344 dead frontend files (44k lines) and `send-confirmation-email` removed; Graph API v23.0 everywhere (`_shared/meta.ts`); `advantage-campaign-create` was failing at boot (Node SDK) → direct Graph calls; vite 6 / vitest 4 / zod 4, `.npmrc` legacy-peer-deps removed, npm audit 37 → 11 moderate; initial JS 879 → 187 KB gz (lazy routes + manualChunks); generated `Database` type wired, `strictNullChecks` for `src/hooks` + `src/lib`; all 72 functions pass `deno check`; docs, robots.txt, cache headers, notifications channel fixed. Left: react-router 7 upgrade (moderate advisory), browser-side `saveIntegration` still writes tokens (write-only) |
+| 8 | QA-01…06 | ✅ 2026-11-09 | vitest tests import app code (62); Deno 72 tests incl. negative auth/tenant/rollback cases; `scripts/security-probe.ts` run on prod — its findings fixed (RPC grants, learning tables, 401s; migration 20261109000020); Playwright smoke + 87-route crawler on prod; CI `.github/workflows/ci.yml` + manual `probe.yml`. Not possible without staging/test credentials: purchase and Meta-connect E2E, cross-user probe (written as skipped tests, need `E2E_*`/`PROBE_USER_*` secrets) |

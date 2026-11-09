@@ -107,7 +107,8 @@ serve(async (req: Request): Promise<Response> => {
     // === GET CONFIGURATION VIA SQL FUNCTION COM FILTRO DE ENVIRONMENT ===
     const { data: config, error: configError } = await supabaseAdmin
       .rpc('get_pagarme_config_for_functions', { p_environment: targetEnvironment })
-      .single();
+      // audit PLT-05: tipa a linha (sem o generic o client não tipado infere {})
+      .single<Record<string, any>>();
 
     if (configError || !config) {
       logStep('❌ Failed to load config', { error: configError?.message });
@@ -320,7 +321,7 @@ serve(async (req: Request): Promise<Response> => {
     }
 
     // === SAVE PLAN IDs TO DATABASE (pagarme_config) ===
-    logStep('💾', 'Saving plan IDs to pagarme_config', { environment });
+    logStep('💾 Saving plan IDs to pagarme_config', { environment }); // audit PLT-05
 
     const { error: updateError } = await supabaseAdmin
       .from('pagarme_config')

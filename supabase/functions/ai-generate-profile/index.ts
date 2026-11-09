@@ -3,13 +3,14 @@ import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { HttpError } from "../_shared/auth.ts";
 import { consumeAiQuota } from "../_shared/aiQuota.ts";
+import { META_GRAPH_VERSION } from '../_shared/meta.ts'; // audit PLT-03
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-const META_API_VERSION = Deno.env.get('META_API_VERSION') ?? 'v23.0';
+const META_API_VERSION = Deno.env.get('META_API_VERSION') ?? META_GRAPH_VERSION;
 const LLM_TIMEOUT_MS = 30_000;
 
 interface AIConfig {

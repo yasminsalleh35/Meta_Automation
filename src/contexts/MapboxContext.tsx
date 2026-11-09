@@ -89,8 +89,9 @@ export const MapboxProvider: React.FC<MapboxProviderProps> = ({ children }) => {
           return;
         }
 
-        if (data?.setting_value?.token) {
-          const token = data.setting_value.token;
+        const settingValue = data?.setting_value as { token?: string } | null;
+        if (settingValue?.token) {
+          const token = settingValue.token;
           console.log('✅ [MAPBOX-LOAD] Token loaded from Supabase');
           setMapboxTokenState(token);
           

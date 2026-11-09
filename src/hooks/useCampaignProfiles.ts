@@ -23,7 +23,8 @@ export function useProfilesList(params?: { search?: string; onlyActive?: boolean
       
       const { data, error } = await q;
       if (error) throw error;
-      return data;
+      // placements/interests/languages são jsonb no banco; o formato é o de CampaignProfile.
+      return (data ?? []) as unknown as CampaignProfile[];
     },
   });
 }

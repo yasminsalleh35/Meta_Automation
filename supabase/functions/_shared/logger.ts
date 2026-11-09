@@ -13,6 +13,15 @@ export interface LogEntry {
   duration_ms?: number;
 }
 
+// audit PLT-06: log nunca pode derrubar a request (ex.: objeto circular ou BigInt nos dados)
+function safeStringify(data: unknown): string {
+  try {
+    return JSON.stringify(data);
+  } catch {
+    return String(data);
+  }
+}
+
 export function createLogger(functionName: string) {
   const startTime = Date.now();
 
@@ -33,16 +42,16 @@ export function createLogger(functionName: string) {
 
     switch (level) {
       case 'error':
-        console.error(`${prefix} ${message}`, data ? JSON.stringify(data) : '');
+        console.error(`${prefix} ${message}`, data ? safeStringify(data) : '');
         break;
       case 'warn':
-        console.warn(`${prefix} ${message}`, data ? JSON.stringify(data) : '');
+        console.warn(`${prefix} ${message}`, data ? safeStringify(data) : '');
         break;
       case 'debug':
-        console.debug(`${prefix} ${message}`, data ? JSON.stringify(data) : '');
+        console.debug(`${prefix} ${message}`, data ? safeStringify(data) : '');
         break;
       default:
-        console.log(`${prefix} ${message}`, data ? JSON.stringify(data) : '');
+        console.log(`${prefix} ${message}`, data ? safeStringify(data) : '');
     }
 
     return entry;

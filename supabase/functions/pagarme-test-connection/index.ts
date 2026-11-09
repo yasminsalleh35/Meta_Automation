@@ -286,7 +286,8 @@ serve(async (req: Request): Promise<Response> => {
     // Get configuration from pagarme_config table for the requested environment
     const { data: config, error: configError } = await supabase
       .rpc('get_pagarme_config_for_functions', { p_environment: environment })
-      .single();
+      // audit PLT-05: tipa a linha (sem o generic o client não tipado infere {})
+      .single<Record<string, any>>();
 
     logStep('📋 Configuration loaded', { 
       configEnv: config?.environment, 

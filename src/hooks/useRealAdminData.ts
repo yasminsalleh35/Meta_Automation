@@ -33,11 +33,11 @@ export const useRealAdminData = () => {
       ]);
 
       // Handle results with detailed logging
-      let profilesResult = [];
+      let profilesResult: Awaited<ReturnType<typeof AdminDataService.fetchProfiles>> = [];
       let userPlansResult = {};
       let campaignCountsResult = {};
-      let integrationsResult = [];
-      let notificationsResult = [];
+      let integrationsResult: Awaited<ReturnType<typeof AdminDataService.fetchIntegrations>> = [];
+      let notificationsResult: Awaited<ReturnType<typeof AdminDataService.fetchNotifications>> = [];
 
       if (profiles.status === 'fulfilled') {
         profilesResult = profiles.value;

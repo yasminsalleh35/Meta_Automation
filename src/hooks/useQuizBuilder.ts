@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
+import type { TablesInsert } from '@/integrations/supabase/types';
 import { useToast } from '@/hooks/use-toast';
 import { Quiz, QuizStep } from '@/types/quiz';
 
@@ -15,7 +16,7 @@ export const useQuizBuilder = (quizId?: string) => {
       const { data, error } = await supabase
         .from('quizzes')
         .select('*')
-        .eq('id', quizId)
+        .eq('id', quizId!) // enabled: !!quizId
         .single();
       
       if (error) throw error;
@@ -30,7 +31,7 @@ export const useQuizBuilder = (quizId?: string) => {
       const { data, error } = await supabase
         .from('quiz_steps')
         .select('*')
-        .eq('quiz_id', quizId)
+        .eq('quiz_id', quizId!) // enabled: !!quizId
         .order('order_index');
       
       if (error) throw error;
@@ -50,7 +51,8 @@ export const useQuizBuilder = (quizId?: string) => {
       } else {
         const { data, error } = await supabase
           .from('quizzes')
-          .insert(quizData)
+          // o formulário garante name/slug antes de criar
+          .insert(quizData as TablesInsert<'quizzes'>)
           .select()
           .single();
         
@@ -80,7 +82,8 @@ export const useQuizBuilder = (quizId?: string) => {
       } else {
         const { error } = await supabase
           .from('quiz_steps')
-          .insert({ ...stepData, quiz_id: quizId });
+          // o editor garante field_name/order_index antes de criar
+          .insert({ ...stepData, quiz_id: quizId } as TablesInsert<'quiz_steps'>);
         
         if (error) throw error;
       }

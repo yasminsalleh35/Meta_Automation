@@ -3,6 +3,11 @@
 // (trigger protect_objects_delete), então esta function, chamada pelo cron diário,
 // remove primeiro os arquivos de cada conta via Storage API e depois roda o hard delete.
 import { serviceClient, isCron } from '../_shared/auth.ts'
+import { createLogger } from '../_shared/logger.ts'
+import { toMessage } from '../_shared/errors.ts'
+
+// audit PLT-06: logs estruturados (respostas inalteradas)
+const log = createLogger('purge-deleted-accounts')
 
 const BUCKETS = ['user-media', 'whatsapp-campaign-media']
 const GRACE_DAYS = 30
@@ -62,7 +67,7 @@ Deno.serve(async (req) => {
       filesRemoved += await purgeUserFiles(db, id)
     } catch (e) {
       // não bloqueia a exclusão da conta; o erro fica no log para limpeza manual
-      console.error('purge-deleted-accounts storage error:', id, e)
+      log.error('storage', 'storage error', { user_id: id, error: toMessage(e) })
       fileErrors.push(id)
     }
   }
@@ -70,5 +75,6 @@ Deno.serve(async (req) => {
   const { data: deleted, error: rpcError } = await db.rpc('hard_delete_pending_accounts')
   if (rpcError) return json({ success: false, error: rpcError.message, filesRemoved }, 500)
 
+  log.info('handler', 'purge finished', { due: due?.length ?? 0, accountsDeleted: deleted, filesRemoved, fileErrors: fileErrors.length })
   return json({ success: true, due: due?.length ?? 0, accountsDeleted: deleted, filesRemoved, fileErrors })
 })

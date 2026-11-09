@@ -10,7 +10,7 @@ export type Database = {
   // Allows to automatically instantiate createClient with right options
   // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
   __InternalSupabase: {
-    PostgrestVersion: "12.2.3 (519615d)"
+    PostgrestVersion: "12.2.3"
   }
   public: {
     Tables: {
@@ -92,6 +92,27 @@ export type Database = {
           provider?: string
           temperature?: number | null
           updated_at?: string
+        }
+        Relationships: []
+      }
+      ai_usage_events: {
+        Row: {
+          created_at: string
+          function_name: string
+          id: number
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          function_name: string
+          id?: number
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          function_name?: string
+          id?: number
+          user_id?: string
         }
         Relationships: []
       }
@@ -414,6 +435,33 @@ export type Database = {
           },
         ]
       }
+      campaign_create_requests: {
+        Row: {
+          created_at: string
+          idempotency_key: string
+          response: Json | null
+          status: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          idempotency_key: string
+          response?: Json | null
+          status?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          idempotency_key?: string
+          response?: Json | null
+          status?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       campaign_jobs: {
         Row: {
           campaign_id: string
@@ -473,6 +521,39 @@ export type Database = {
           },
         ]
       }
+      campaign_metrics_cache: {
+        Row: {
+          ad_account_id: string | null
+          campaign_id: string
+          date_preset: string
+          expires_at: string
+          fetched_at: string
+          id: string
+          metrics: Json
+          user_id: string
+        }
+        Insert: {
+          ad_account_id?: string | null
+          campaign_id: string
+          date_preset?: string
+          expires_at?: string
+          fetched_at?: string
+          id?: string
+          metrics?: Json
+          user_id: string
+        }
+        Update: {
+          ad_account_id?: string | null
+          campaign_id?: string
+          date_preset?: string
+          expires_at?: string
+          fetched_at?: string
+          id?: string
+          metrics?: Json
+          user_id?: string
+        }
+        Relationships: []
+      }
       campaign_profiles: {
         Row: {
           age_max: number
@@ -485,10 +566,14 @@ export type Database = {
           id: string
           interests: Json
           is_active: boolean
+          is_auto_generated: boolean
+          is_default: boolean
           label: string
           languages: Json
+          owner_user_id: string | null
           placements: Json
           placements_mode: Database["public"]["Enums"]["placements_mode"]
+          sector: string | null
           show_dental_specialties: boolean
           show_strategic_reports: boolean
           slug: string
@@ -506,10 +591,14 @@ export type Database = {
           id?: string
           interests?: Json
           is_active?: boolean
+          is_auto_generated?: boolean
+          is_default?: boolean
           label: string
           languages?: Json
+          owner_user_id?: string | null
           placements?: Json
           placements_mode?: Database["public"]["Enums"]["placements_mode"]
+          sector?: string | null
           show_dental_specialties?: boolean
           show_strategic_reports?: boolean
           slug: string
@@ -527,10 +616,14 @@ export type Database = {
           id?: string
           interests?: Json
           is_active?: boolean
+          is_auto_generated?: boolean
+          is_default?: boolean
           label?: string
           languages?: Json
+          owner_user_id?: string | null
           placements?: Json
           placements_mode?: Database["public"]["Enums"]["placements_mode"]
+          sector?: string | null
           show_dental_specialties?: boolean
           show_strategic_reports?: boolean
           slug?: string
@@ -634,6 +727,7 @@ export type Database = {
       campaigns: {
         Row: {
           ad_account_id: string | null
+          ad_schedule: Json | null
           ad_text: string | null
           ad_title: string | null
           age_max: number | null
@@ -642,7 +736,9 @@ export type Database = {
           applied_profile_version: number | null
           budget_daily: number | null
           budget_total: number | null
+          client_request_id: string | null
           created_at: string
+          daily_insights: Json | null
           deleted_at: string | null
           destination_url: string | null
           devices: Json | null
@@ -655,6 +751,7 @@ export type Database = {
           interests: Json | null
           is_deleted_on_meta: boolean
           job_id: string | null
+          last_daily_insights_at: string | null
           last_discovered_at: string | null
           last_metrics_sync_at: string | null
           last_processed_at: string | null
@@ -667,7 +764,9 @@ export type Database = {
           media_file_id: string | null
           media_preview_url: string | null
           meta_ad_id: string | null
+          meta_ad_status: string | null
           meta_adset_id: string | null
+          meta_adset_status: string | null
           meta_campaign_id: string | null
           meta_data: Json | null
           meta_data_cached_at: string | null
@@ -681,6 +780,8 @@ export type Database = {
           placements: Json | null
           processing_status: string | null
           retry_count: number | null
+          schedule_end_time: string | null
+          schedule_start_time: string | null
           selected_locations: Json | null
           source: string
           start_date: string | null
@@ -692,6 +793,7 @@ export type Database = {
         }
         Insert: {
           ad_account_id?: string | null
+          ad_schedule?: Json | null
           ad_text?: string | null
           ad_title?: string | null
           age_max?: number | null
@@ -700,7 +802,9 @@ export type Database = {
           applied_profile_version?: number | null
           budget_daily?: number | null
           budget_total?: number | null
+          client_request_id?: string | null
           created_at?: string
+          daily_insights?: Json | null
           deleted_at?: string | null
           destination_url?: string | null
           devices?: Json | null
@@ -713,6 +817,7 @@ export type Database = {
           interests?: Json | null
           is_deleted_on_meta?: boolean
           job_id?: string | null
+          last_daily_insights_at?: string | null
           last_discovered_at?: string | null
           last_metrics_sync_at?: string | null
           last_processed_at?: string | null
@@ -725,7 +830,9 @@ export type Database = {
           media_file_id?: string | null
           media_preview_url?: string | null
           meta_ad_id?: string | null
+          meta_ad_status?: string | null
           meta_adset_id?: string | null
+          meta_adset_status?: string | null
           meta_campaign_id?: string | null
           meta_data?: Json | null
           meta_data_cached_at?: string | null
@@ -739,6 +846,8 @@ export type Database = {
           placements?: Json | null
           processing_status?: string | null
           retry_count?: number | null
+          schedule_end_time?: string | null
+          schedule_start_time?: string | null
           selected_locations?: Json | null
           source?: string
           start_date?: string | null
@@ -750,6 +859,7 @@ export type Database = {
         }
         Update: {
           ad_account_id?: string | null
+          ad_schedule?: Json | null
           ad_text?: string | null
           ad_title?: string | null
           age_max?: number | null
@@ -758,7 +868,9 @@ export type Database = {
           applied_profile_version?: number | null
           budget_daily?: number | null
           budget_total?: number | null
+          client_request_id?: string | null
           created_at?: string
+          daily_insights?: Json | null
           deleted_at?: string | null
           destination_url?: string | null
           devices?: Json | null
@@ -771,6 +883,7 @@ export type Database = {
           interests?: Json | null
           is_deleted_on_meta?: boolean
           job_id?: string | null
+          last_daily_insights_at?: string | null
           last_discovered_at?: string | null
           last_metrics_sync_at?: string | null
           last_processed_at?: string | null
@@ -783,7 +896,9 @@ export type Database = {
           media_file_id?: string | null
           media_preview_url?: string | null
           meta_ad_id?: string | null
+          meta_ad_status?: string | null
           meta_adset_id?: string | null
+          meta_adset_status?: string | null
           meta_campaign_id?: string | null
           meta_data?: Json | null
           meta_data_cached_at?: string | null
@@ -797,6 +912,8 @@ export type Database = {
           placements?: Json | null
           processing_status?: string | null
           retry_count?: number | null
+          schedule_end_time?: string | null
+          schedule_start_time?: string | null
           selected_locations?: Json | null
           source?: string
           start_date?: string | null
@@ -847,6 +964,78 @@ export type Database = {
           snapshot_name?: string
           updated_at?: string
           user_id?: string
+        }
+        Relationships: []
+      }
+      cookie_consents: {
+        Row: {
+          anon_id: string | null
+          consent: Json
+          created_at: string | null
+          id: string
+          policy_version: string
+          user_id: string | null
+        }
+        Insert: {
+          anon_id?: string | null
+          consent: Json
+          created_at?: string | null
+          id?: string
+          policy_version: string
+          user_id?: string | null
+        }
+        Update: {
+          anon_id?: string | null
+          consent?: Json
+          created_at?: string | null
+          id?: string
+          policy_version?: string
+          user_id?: string | null
+        }
+        Relationships: []
+      }
+      edge_function_logs: {
+        Row: {
+          created_at: string
+          details: Json | null
+          duration_ms: number | null
+          error_code: string | null
+          function_name: string
+          id: string
+          level: string
+          message: string
+          request_method: string | null
+          stage: string
+          status_code: number | null
+          user_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          details?: Json | null
+          duration_ms?: number | null
+          error_code?: string | null
+          function_name: string
+          id?: string
+          level?: string
+          message: string
+          request_method?: string | null
+          stage?: string
+          status_code?: number | null
+          user_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          details?: Json | null
+          duration_ms?: number | null
+          error_code?: string | null
+          function_name?: string
+          id?: string
+          level?: string
+          message?: string
+          request_method?: string | null
+          stage?: string
+          status_code?: number | null
+          user_id?: string | null
         }
         Relationships: []
       }
@@ -1467,6 +1656,33 @@ export type Database = {
         }
         Relationships: []
       }
+      meta_api_usage: {
+        Row: {
+          call_count: number
+          endpoints: Json | null
+          hour_bucket: string
+          id: string
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          call_count?: number
+          endpoints?: Json | null
+          hour_bucket: string
+          id?: string
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          call_count?: number
+          endpoints?: Json | null
+          hour_bucket?: string
+          id?: string
+          updated_at?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
       meta_rate_limits: {
         Row: {
           ad_account_id: string
@@ -1562,6 +1778,140 @@ export type Database = {
           title?: string
           type?: string
           updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      oauth_states: {
+        Row: {
+          created_at: string
+          provider: string
+          state: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          provider?: string
+          state: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          provider?: string
+          state?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      optimization_logs: {
+        Row: {
+          action_payload: Json
+          action_type: string
+          after_state: Json
+          before_state: Json
+          campaign_id: string
+          created_at: string
+          error_message: string | null
+          id: string
+          meta_campaign_id: string
+          success: boolean
+          suggestion_id: string | null
+          user_id: string
+        }
+        Insert: {
+          action_payload?: Json
+          action_type: string
+          after_state?: Json
+          before_state?: Json
+          campaign_id: string
+          created_at?: string
+          error_message?: string | null
+          id?: string
+          meta_campaign_id: string
+          success?: boolean
+          suggestion_id?: string | null
+          user_id: string
+        }
+        Update: {
+          action_payload?: Json
+          action_type?: string
+          after_state?: Json
+          before_state?: Json
+          campaign_id?: string
+          created_at?: string
+          error_message?: string | null
+          id?: string
+          meta_campaign_id?: string
+          success?: boolean
+          suggestion_id?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "optimization_logs_suggestion_id_fkey"
+            columns: ["suggestion_id"]
+            isOneToOne: false
+            referencedRelation: "optimization_suggestions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      optimization_suggestions: {
+        Row: {
+          ai_model: string | null
+          ai_provider: string | null
+          applied_at: string | null
+          campaign_id: string
+          created_at: string
+          description: string
+          dismissed_at: string | null
+          expires_at: string | null
+          id: string
+          meta_campaign_id: string
+          metrics_snapshot: Json
+          severity: string
+          status: string
+          suggested_action: Json
+          title: string
+          type: string
+          user_id: string
+        }
+        Insert: {
+          ai_model?: string | null
+          ai_provider?: string | null
+          applied_at?: string | null
+          campaign_id: string
+          created_at?: string
+          description: string
+          dismissed_at?: string | null
+          expires_at?: string | null
+          id?: string
+          meta_campaign_id: string
+          metrics_snapshot?: Json
+          severity?: string
+          status?: string
+          suggested_action?: Json
+          title: string
+          type: string
+          user_id: string
+        }
+        Update: {
+          ai_model?: string | null
+          ai_provider?: string | null
+          applied_at?: string | null
+          campaign_id?: string
+          created_at?: string
+          description?: string
+          dismissed_at?: string | null
+          expires_at?: string | null
+          id?: string
+          meta_campaign_id?: string
+          metrics_snapshot?: Json
+          severity?: string
+          status?: string
+          suggested_action?: Json
+          title?: string
+          type?: string
           user_id?: string
         }
         Relationships: []
@@ -1992,9 +2342,55 @@ export type Database = {
         }
         Relationships: []
       }
+      performance_alerts: {
+        Row: {
+          alert_type: string
+          campaign_id: string | null
+          created_at: string | null
+          description: string | null
+          id: string
+          is_read: boolean | null
+          metric_name: string | null
+          metric_value: number | null
+          severity: string
+          threshold_value: number | null
+          title: string
+          user_id: string
+        }
+        Insert: {
+          alert_type: string
+          campaign_id?: string | null
+          created_at?: string | null
+          description?: string | null
+          id?: string
+          is_read?: boolean | null
+          metric_name?: string | null
+          metric_value?: number | null
+          severity?: string
+          threshold_value?: number | null
+          title: string
+          user_id: string
+        }
+        Update: {
+          alert_type?: string
+          campaign_id?: string | null
+          created_at?: string | null
+          description?: string | null
+          id?: string
+          is_read?: boolean | null
+          metric_name?: string | null
+          metric_value?: number | null
+          severity?: string
+          threshold_value?: number | null
+          title?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           created_at: string | null
+          deletion_requested_at: string | null
           email: string
           email_verified: boolean | null
           failed_login_attempts: number | null
@@ -2002,8 +2398,11 @@ export type Database = {
           last_login_at: string | null
           last_login_ip: string | null
           locked_until: string | null
+          marketing_consent_at: string | null
+          marketing_emails_opt_in: boolean
           must_change_password: boolean | null
           name: string | null
+          notification_preferences: Json
           password_reset_expires: string | null
           password_reset_token: string | null
           status: string | null
@@ -2011,6 +2410,7 @@ export type Database = {
         }
         Insert: {
           created_at?: string | null
+          deletion_requested_at?: string | null
           email: string
           email_verified?: boolean | null
           failed_login_attempts?: number | null
@@ -2018,8 +2418,11 @@ export type Database = {
           last_login_at?: string | null
           last_login_ip?: string | null
           locked_until?: string | null
+          marketing_consent_at?: string | null
+          marketing_emails_opt_in?: boolean
           must_change_password?: boolean | null
           name?: string | null
+          notification_preferences?: Json
           password_reset_expires?: string | null
           password_reset_token?: string | null
           status?: string | null
@@ -2027,6 +2430,7 @@ export type Database = {
         }
         Update: {
           created_at?: string | null
+          deletion_requested_at?: string | null
           email?: string
           email_verified?: boolean | null
           failed_login_attempts?: number | null
@@ -2034,8 +2438,11 @@ export type Database = {
           last_login_at?: string | null
           last_login_ip?: string | null
           locked_until?: string | null
+          marketing_consent_at?: string | null
+          marketing_emails_opt_in?: boolean
           must_change_password?: boolean | null
           name?: string | null
+          notification_preferences?: Json
           password_reset_expires?: string | null
           password_reset_token?: string | null
           status?: string | null
@@ -2570,10 +2977,15 @@ export type Database = {
           created_by_admin: boolean | null
           current_period_end: string | null
           email: string
+          fallback_provider: string | null
+          grace_period_ends_at: string | null
           id: string
           is_active: boolean | null
+          last_payment_failure_at: string | null
+          last_synced_at: string | null
           pagarme_customer_id: string | null
           pagarme_subscription_id: string | null
+          payment_failure_count: number | null
           plan_expires_at: string | null
           plan_type: string | null
           provider: string | null
@@ -2594,10 +3006,15 @@ export type Database = {
           created_by_admin?: boolean | null
           current_period_end?: string | null
           email: string
+          fallback_provider?: string | null
+          grace_period_ends_at?: string | null
           id?: string
           is_active?: boolean | null
+          last_payment_failure_at?: string | null
+          last_synced_at?: string | null
           pagarme_customer_id?: string | null
           pagarme_subscription_id?: string | null
+          payment_failure_count?: number | null
           plan_expires_at?: string | null
           plan_type?: string | null
           provider?: string | null
@@ -2618,10 +3035,15 @@ export type Database = {
           created_by_admin?: boolean | null
           current_period_end?: string | null
           email?: string
+          fallback_provider?: string | null
+          grace_period_ends_at?: string | null
           id?: string
           is_active?: boolean | null
+          last_payment_failure_at?: string | null
+          last_synced_at?: string | null
           pagarme_customer_id?: string | null
           pagarme_subscription_id?: string | null
+          payment_failure_count?: number | null
           plan_expires_at?: string | null
           plan_type?: string | null
           provider?: string | null
@@ -2726,6 +3148,39 @@ export type Database = {
           id?: string
           monthly_price?: number
           updated_at?: string
+        }
+        Relationships: []
+      }
+      subscription_status_log: {
+        Row: {
+          created_at: string | null
+          event_id: string | null
+          id: string
+          new_status: string
+          previous_status: string | null
+          provider: string
+          reason: string | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          event_id?: string | null
+          id?: string
+          new_status: string
+          previous_status?: string | null
+          provider: string
+          reason?: string | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string | null
+          event_id?: string | null
+          id?: string
+          new_status?: string
+          previous_status?: string | null
+          provider?: string
+          reason?: string | null
+          user_id?: string
         }
         Relationships: []
       }
@@ -3075,6 +3530,69 @@ export type Database = {
         Args: { p_comment: string; p_lead_id: string }
         Returns: boolean
       }
+      admin_business_settings_stats: { Args: never; Returns: Json }
+      admin_campaign_stats: { Args: never; Returns: Json }
+      admin_dashboard_stats: { Args: never; Returns: Json }
+      admin_disconnect_integration: {
+        Args: { p_integration_id: string }
+        Returns: Json
+      }
+      admin_get_meta_ads_config: {
+        Args: never
+        Returns: {
+          app_id: string
+          app_secret_set: boolean
+          business_manager_id: string
+          created_at: string
+          id: string
+          updated_at: string
+        }[]
+      }
+      admin_list_subscriptions: {
+        Args: {
+          p_include_test?: boolean
+          p_limit?: number
+          p_offset?: number
+          p_provider?: string
+          p_search?: string
+          p_status?: string
+        }
+        Returns: {
+          canceled_at: string
+          created_at: string
+          current_period_end: string
+          email: string
+          environment: string
+          external_id: string
+          id: string
+          is_current: boolean
+          monthly_amount: number
+          name: string
+          plan_label: string
+          provider: string
+          source: string
+          status: string
+          total_count: number
+          updated_at: string
+          user_id: string
+        }[]
+      }
+      admin_set_active_ai_configuration: {
+        Args: { p_model_name: string; p_provider: string }
+        Returns: undefined
+      }
+      admin_set_user_status: {
+        Args: { new_status: string; uid: string }
+        Returns: Json
+      }
+      admin_upsert_meta_ads_config: {
+        Args: {
+          p_app_id: string
+          p_app_secret?: string
+          p_business_manager_id?: string
+        }
+        Returns: string
+      }
       anonymize_old_leads: { Args: never; Returns: undefined }
       check_rate_limit: {
         Args: {
@@ -3086,6 +3604,15 @@ export type Database = {
       }
       check_user_limit: {
         Args: { resource_type_param: string; user_uuid?: string }
+        Returns: boolean
+      }
+      consume_ai_quota: {
+        Args: {
+          p_function: string
+          p_per_day?: number
+          p_per_hour?: number
+          p_user_id: string
+        }
         Returns: boolean
       }
       create_campaign_template: {
@@ -3276,6 +3803,13 @@ export type Database = {
           updated_at: string
         }[]
       }
+      get_meta_app_public_config: {
+        Args: never
+        Returns: {
+          app_id: string
+          business_manager_id: string
+        }[]
+      }
       get_pagarme_config_for_functions:
         | {
             Args: never
@@ -3428,6 +3962,7 @@ export type Database = {
           subscription_status: string
         }[]
       }
+      hard_delete_pending_accounts: { Args: never; Returns: number }
       inc_view_count: { Args: { p_content: string }; Returns: undefined }
       increment_usage: {
         Args: {
@@ -3437,8 +3972,13 @@ export type Database = {
         }
         Returns: boolean
       }
+      invoke_cron_function: {
+        Args: { p_body?: Json; p_function: string }
+        Returns: number
+      }
       is_admin_or_super_admin: { Args: never; Returns: boolean }
       is_admin_user: { Args: never; Returns: boolean }
+      is_super_admin: { Args: never; Returns: boolean }
       log_security_audit: {
         Args: {
           p_action: string
@@ -3448,6 +3988,10 @@ export type Database = {
           p_table_name: string
         }
         Returns: undefined
+      }
+      notify_admins_new_support_ticket: {
+        Args: { p_ticket_id: string }
+        Returns: number
       }
       set_must_change_password: { Args: { flag: boolean }; Returns: undefined }
       sync_pagarme_plan: {
@@ -3536,12 +4080,12 @@ export type Tables<
   DefaultSchemaTableNameOrOptions extends
     | keyof (DefaultSchema["Tables"] & DefaultSchema["Views"])
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
         DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -3565,11 +4109,11 @@ export type TablesInsert<
   DefaultSchemaTableNameOrOptions extends
     | keyof DefaultSchema["Tables"]
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -3590,11 +4134,11 @@ export type TablesUpdate<
   DefaultSchemaTableNameOrOptions extends
     | keyof DefaultSchema["Tables"]
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -3615,11 +4159,11 @@ export type Enums<
   DefaultSchemaEnumNameOrOptions extends
     | keyof DefaultSchema["Enums"]
     | { schema: keyof DatabaseWithoutInternals },
-  EnumName extends DefaultSchemaEnumNameOrOptions extends {
+  EnumName extends (DefaultSchemaEnumNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaEnumNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -3632,11 +4176,11 @@ export type CompositeTypes<
   PublicCompositeTypeNameOrOptions extends
     | keyof DefaultSchema["CompositeTypes"]
     | { schema: keyof DatabaseWithoutInternals },
-  CompositeTypeName extends PublicCompositeTypeNameOrOptions extends {
+  CompositeTypeName extends (PublicCompositeTypeNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"]
-    : never = never,
+    : never) = never,
 > = PublicCompositeTypeNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }

@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
+import { HttpError, authErrorResponse } from '../_shared/auth.ts';
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -170,14 +171,14 @@ serve(async (req): Promise<Response> => {
 
   try {
     const authHeader = req.headers.get("Authorization");
-    if (!authHeader) throw new Error("No authorization header provided");
+    if (!authHeader) throw new HttpError(401, 'unauthenticated');
 
     const token = authHeader.replace("Bearer ", "");
     const { data: userData, error: userError } = await supabaseClient.auth.getUser(token);
-    if (userError) throw new Error(`Authentication error: ${userError.message}`);
+    if (userError) throw new HttpError(401, 'unauthenticated');
     
     const user = userData.user;
-    if (!user?.id) throw new Error("User not authenticated");
+    if (!user?.id) throw new HttpError(401, 'unauthenticated');
 
     if (req.method === 'GET') {
       // List user's strategy reports
@@ -253,6 +254,9 @@ serve(async (req): Promise<Response> => {
       });
     }
   } catch (error) {
+    // audit QA-03: falta de login → 401 (não 500)
+    const authResp = authErrorResponse(error, corsHeaders);
+    if (authResp) return authResp;
     console.error('Error in strategy-report function:', error);
     const errorMessage = error instanceof Error ? error.message : String(error);
     return new Response(JSON.stringify({ 

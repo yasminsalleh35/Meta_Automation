@@ -15,11 +15,24 @@
     # Após 3 dias sem violações no console: trocar para Content-Security-Policy e remover o <meta> do index.html.
     Content-Security-Policy-Report-Only = "default-src 'self'; script-src 'self' 'unsafe-inline' https://js.stripe.com https://*.supabase.co https://checkout.pagar.me https://www.youtube.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob: https:; font-src 'self' data: https://fonts.gstatic.com; connect-src 'self' https://checkout.pagar.me https://api.pagar.me https://*.supabase.co wss://*.supabase.co https://js.stripe.com https://m.stripe.com https://api.mapbox.com https://*.mapbox.com https://events.mapbox.com https://viacep.com.br https://graph.facebook.com https://*.fbcdn.net; media-src 'self' blob: https://*.supabase.co https://scontent.cdninstagram.com https://scontent.xx.fbcdn.net; worker-src 'self' blob:; child-src 'self' blob:; frame-src https://js.stripe.com https://www.youtube.com https://www.youtube-nocookie.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'"
 
-# Cache static assets (JS, CSS, images) for 1 year
+# Cache Vite's content-hashed build output (dist/assets/*-<hash>.js|css) for 1 year.
+# audit PLT-08: only hashed files may be `immutable`.
 [[headers]]
-  for = "/assets/*"
+  for = "/assets/*.js"
   [headers.values]
     Cache-Control = "public, max-age=31536000, immutable"
+
+[[headers]]
+  for = "/assets/*.css"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+# public/assets/images is copied as-is (no hash in the file name), so a replaced image
+# must be picked up: cache for 1 day, then revalidate.
+[[headers]]
+  for = "/assets/images/*"
+  [headers.values]
+    Cache-Control = "public, max-age=86400, must-revalidate"
 
 # SPA routing — all paths serve index.html, React Router handles routing
 [[redirects]]

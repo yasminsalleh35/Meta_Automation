@@ -1,6 +1,6 @@
 import { serve } from 'https://deno.land/std@0.190.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { corsHeadersFor, handlePreflight } from '../_shared/cors.ts';
+import { handlePreflight } from '../_shared/cors.ts';
 import {
   ACTIVATION_ERROR_STATES,
   activateCascade,
@@ -8,12 +8,17 @@ import {
   pauseCascade,
   type CascadeIds,
 } from '../_shared/metaCascade.ts';
+import { json } from '../_shared/response.ts';
+import { createLogger } from '../_shared/logger.ts';
+import { toObject } from '../_shared/errors.ts';
+
+// audit PLT-06: logs estruturados (respostas via _shared/response.ts, corpo/status inalterados)
+const log = createLogger('simple-campaign-activate');
 
 // Version: 7.0.0 - Shared CORS + cascade verification + status tracking (2026-03-15)
 
 serve(async (req) => {
   const origin = req.headers.get('Origin');
-  const cors = corsHeadersFor(origin);
 
   if (req.method === 'OPTIONS') {
     return handlePreflight(req);
@@ -27,31 +32,22 @@ serve(async (req) => {
 
     const authHeader = req.headers.get('Authorization');
     if (!authHeader) {
-      return new Response(
-        JSON.stringify({ error: 'Token de autorização não fornecido' }),
-        { status: 401, headers: { ...cors, 'Content-Type': 'application/json' } }
-      );
+      return json(origin, { error: 'Token de autorização não fornecido' }, 401);
     }
 
     const token = authHeader.replace('Bearer ', '');
     const { data: { user }, error: authError } = await supabaseClient.auth.getUser(token);
 
     if (authError || !user) {
-      console.error('Auth error:', authError);
-      return new Response(
-        JSON.stringify({ error: 'Usuário não autenticado' }),
-        { status: 401, headers: { ...cors, 'Content-Type': 'application/json' } }
-      );
+      log.error('handler', 'Auth error', { error: toObject(authError) });
+      return json(origin, { error: 'Usuário não autenticado' }, 401);
     }
 
     const input = await req.json().catch(() => ({}));
     const rawId = String(input.campaignId || '').trim();
 
     if (!rawId) {
-      return new Response(
-        JSON.stringify({ error: 'campaignId é obrigatório' }),
-        { status: 400, headers: { ...cors, 'Content-Type': 'application/json' } }
-      );
+      return json(origin, { error: 'campaignId é obrigatório' }, 400);
     }
 
     const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(rawId);
@@ -70,11 +66,8 @@ serve(async (req) => {
 
       campaign = data;
       if (error || !campaign) {
-        console.error('❌ [ACTIVATE] Campaign not found by UUID:', error);
-        return new Response(
-          JSON.stringify({ error: 'Campanha não encontrada' }),
-          { status: 404, headers: { ...cors, 'Content-Type': 'application/json' } }
-        );
+        log.error('handler', '❌ Campaign not found by UUID', { error: toObject(error) });
+        return json(origin, { error: 'Campanha não encontrada' }, 404);
       }
     } else if (isMetaNumericId) {
       const { data, error } = await supabaseClient
@@ -86,26 +79,17 @@ serve(async (req) => {
 
       campaign = data;
       if (error || !campaign) {
-        console.error('❌ [ACTIVATE] Campaign not found by Meta ID:', error);
-        return new Response(
-          JSON.stringify({ error: 'Campanha não encontrada pelo ID da Meta' }),
-          { status: 404, headers: { ...cors, 'Content-Type': 'application/json' } }
-        );
+        log.error('handler', '❌ Campaign not found by Meta ID', { error: toObject(error) });
+        return json(origin, { error: 'Campanha não encontrada pelo ID da Meta' }, 404);
       }
     } else {
-      return new Response(
-        JSON.stringify({ error: 'Formato de campaignId não reconhecido (esperado: UUID do DB ou ID numérico da Meta)' }),
-        { status: 400, headers: { ...cors, 'Content-Type': 'application/json' } }
-      );
+      return json(origin, { error: 'Formato de campaignId não reconhecido (esperado: UUID do DB ou ID numérico da Meta)' }, 400);
     }
 
     console.log('✅ [ACTIVATE] Campaign found:', { dbId: campaign.id, metaId: campaign.meta_campaign_id });
 
     if (!campaign.meta_campaign_id) {
-      return new Response(
-        JSON.stringify({ error: 'Campanha não possui ID do Meta Ads (meta_campaign_id)' }),
-        { status: 400, headers: { ...cors, 'Content-Type': 'application/json' } }
-      );
+      return json(origin, { error: 'Campanha não possui ID do Meta Ads (meta_campaign_id)' }, 400);
     }
 
     const hasCascadeIds = !!(campaign.meta_adset_id && campaign.meta_ad_id);
@@ -127,20 +111,14 @@ serve(async (req) => {
       .single();
 
     if (integrationError || !integration) {
-      console.error('Integration error:', integrationError);
-      return new Response(
-        JSON.stringify({ error: 'Integração com Meta Ads não encontrada' }),
-        { status: 400, headers: { ...cors, 'Content-Type': 'application/json' } }
-      );
+      log.error('handler', 'Integration error', { error: toObject(integrationError) });
+      return json(origin, { error: 'Integração com Meta Ads não encontrada' }, 400);
     }
 
     const { access_token: accessToken } = integration;
 
     if (!accessToken) {
-      return new Response(
-        JSON.stringify({ error: 'Access token não encontrado' }),
-        { status: 400, headers: { ...cors, 'Content-Type': 'application/json' } }
-      );
+      return json(origin, { error: 'Access token não encontrado' }, 400);
     }
 
     const cascadeIds: CascadeIds = {
@@ -161,7 +139,7 @@ serve(async (req) => {
     const successStates = ['ACTIVE', 'IN_PROCESS', 'PENDING_REVIEW'];
 
     if (campaignEffective && ACTIVATION_ERROR_STATES.includes(campaignEffective)) {
-      console.error('❌ Activation failed: problematic effective_status:', campaignEffective);
+      log.error('handler', '❌ Activation failed: problematic effective_status', { effective_status: campaignEffective });
       // audit CMP-09: desfaz a ativação parcial e deixa o DB coerente com a Meta
       await pauseCascade(cascadeIds, accessToken);
       const { error: rollbackDbError } = await supabaseClient
@@ -173,19 +151,16 @@ serve(async (req) => {
         })
         .eq('id', campaign.id);
       if (rollbackDbError) {
-        console.error('⚠️ Rollback DB update failed:', rollbackDbError);
+        log.error('handler', '⚠️ Rollback DB update failed', { error: toObject(rollbackDbError) });
       }
-      return new Response(
-        JSON.stringify({
+      return json(origin, {
           success: false,
           error: `Não foi possível ativar: ${campaignEffective}. Verifique políticas e configurações.`
-        }),
-        { status: 400, headers: { ...cors, 'Content-Type': 'application/json' } }
-      );
+        }, 400);
     }
 
     if (campaignEffective && !successStates.includes(campaignEffective)) {
-      console.warn('⚠️ Unknown effective_status:', campaignEffective);
+      log.warn('handler', '⚠️ Unknown effective_status', { effective_status: campaignEffective });
     } else if (campaignEffective === 'IN_PROCESS' || campaignEffective === 'PENDING_REVIEW') {
       console.log('ℹ️ Campaign is under review - this is expected');
     }
@@ -213,10 +188,10 @@ serve(async (req) => {
       .eq('id', campaign.id);
 
     if (updateError) {
-      console.error('Update error:', updateError);
+      log.error('handler', 'Update error', { error: toObject(updateError) });
       // If the cascade status columns don't exist yet, retry without them
       if (updateError.message?.includes('meta_adset_status') || updateError.message?.includes('meta_ad_status')) {
-        console.warn('⚠️ Cascade status columns not found, updating without them');
+        log.warn('handler', '⚠️ Cascade status columns not found, updating without them');
         const { error: retryError } = await supabaseClient
           .from('campaigns')
           .update({
@@ -228,17 +203,11 @@ serve(async (req) => {
           .eq('id', campaign.id);
 
         if (retryError) {
-          console.error('Retry update error:', retryError);
-          return new Response(
-            JSON.stringify({ error: 'Erro ao atualizar status da campanha' }),
-            { status: 500, headers: { ...cors, 'Content-Type': 'application/json' } }
-          );
+          log.error('handler', 'Retry update error', { error: toObject(retryError) });
+          return json(origin, { error: 'Erro ao atualizar status da campanha' }, 500);
         }
       } else {
-        return new Response(
-          JSON.stringify({ error: 'Erro ao atualizar status da campanha' }),
-          { status: 500, headers: { ...cors, 'Content-Type': 'application/json' } }
-        );
+        return json(origin, { error: 'Erro ao atualizar status da campanha' }, 500);
       }
     }
 
@@ -252,12 +221,12 @@ serve(async (req) => {
           kind: 'metrics'
         });
       if (syncError) {
-        console.warn('⚠️ Sync queue insert failed (non-blocking):', syncError.message);
+        log.warn('handler', '⚠️ Sync queue insert failed (non-blocking)', { error: syncError.message });
       } else {
         console.log(`📥 Enqueued metrics sync for ${campaign.meta_campaign_id}`);
       }
     } catch (syncErr) {
-      console.warn('⚠️ Sync queue error (non-blocking):', syncErr);
+      log.warn('handler', '⚠️ Sync queue error (non-blocking)', { error: toObject(syncErr) });
     }
 
     const successMessage = hasCascadeIds
@@ -273,8 +242,7 @@ serve(async (req) => {
       adStatus: adEffective,
     });
 
-    return new Response(
-      JSON.stringify({
+    return json(origin, {
         success: true,
         message: successMessage,
         mode: activateMode,
@@ -286,12 +254,10 @@ serve(async (req) => {
           ad: campaign.meta_ad_id || 'N/A',
           adStatus: adEffective || 'N/A',
         }
-      }),
-      { status: 200, headers: { ...cors, 'Content-Type': 'application/json' } }
-    );
+      }, 200);
 
   } catch (error: any) {
-    console.error('❌ [ACTIVATE] Meta API error:', {
+    log.error('handler', '❌ Meta API error', {
       fbtrace_id: error.fbtrace_id || 'N/A',
       code: error.code || 'N/A',
       subcode: error.error_subcode || 'N/A',
@@ -300,13 +266,10 @@ serve(async (req) => {
     });
 
     if (error.is_transient === true) {
-      return new Response(
-        JSON.stringify({
+      return json(origin, {
           error: 'Erro temporário na Meta API. Por favor, tente novamente em alguns segundos.',
           is_transient: true
-        }),
-        { status: 503, headers: { ...cors, 'Content-Type': 'application/json' } }
-      );
+        }, 503);
     }
 
     let errorMessage = 'Falha ao ativar campanha. Tente novamente ou contate o suporte.';
@@ -316,9 +279,6 @@ serve(async (req) => {
       errorMessage = error.message;
     }
 
-    return new Response(
-      JSON.stringify({ success: false, error: errorMessage, details: error.message }),
-      { status: 500, headers: { ...cors, 'Content-Type': 'application/json' } }
-    );
+    return json(origin, { success: false, error: errorMessage, details: error.message }, 500);
   }
 });

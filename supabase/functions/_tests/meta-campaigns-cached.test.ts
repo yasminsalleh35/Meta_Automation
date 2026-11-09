@@ -8,26 +8,39 @@ Deno.env.set('MCC_DISABLE_SERVE', '1');
 const { handleRequest, __setTestDeps } = await import('../meta-campaigns-cached/index.ts');
 
 const testOpts = { sanitizeOps: false, sanitizeResources: false } as const;
+const realFetch = globalThis.fetch; // restored by the last test in this file
 
 function jsonResp(obj: unknown, status = 200) {
   return new Response(JSON.stringify(obj), { status, headers: { 'content-type': 'application/json' } });
 }
 
-function makeAdmin(campaigns: any[]) {
-  const builder: any = {
-    select() { return builder; },
-    eq() { return builder; },
-    not() { return builder; },
-    ilike() { return builder; },
-    range() { return builder; },
-    order() { return builder; },
-    then(onF: any, onR: any) {
-      return Promise.resolve({ data: campaigns, error: null, count: campaigns.length }).then(onF, onR);
-    },
-  };
+// `.eq()` filters are APPLIED to the rows (so a missing user_id/ad_account_id filter would leak
+// other users' campaigns), and getUser fails for any token other than the valid one.
+function makeAdmin(campaigns: any[], opts: { validToken?: string; userId?: string } = {}) {
+  const validToken = opts.validToken ?? 't';
+  const userId = opts.userId ?? 'u1';
   return {
-    auth: { getUser: async () => ({ data: { user: { id: 'u1' } }, error: null }) },
-    from() { return builder; },
+    auth: {
+      getUser: async (token: string) => token === validToken
+        ? { data: { user: { id: userId } }, error: null }
+        : { data: { user: null }, error: { status: 401, message: 'invalid JWT' } },
+    },
+    from() {
+      const eqs: Record<string, unknown> = {};
+      const builder: any = {
+        select() { return builder; },
+        eq(col: string, val: unknown) { eqs[col] = val; return builder; },
+        not() { return builder; },
+        ilike() { return builder; },
+        range() { return builder; },
+        order() { return builder; },
+        then(onF: any, onR: any) {
+          const rows = campaigns.filter((r) => Object.entries(eqs).every(([k, v]) => String(r[k]) === String(v)));
+          return Promise.resolve({ data: rows, error: null, count: rows.length }).then(onF, onR);
+        },
+      };
+      return builder;
+    },
   };
 }
 
@@ -58,7 +71,7 @@ function req() {
 
 // Default: an IMPORTED campaign — has meta_campaign_id but NO meta_adset_id, DB budget = R$50 default.
 const dbCampaign = (over: any = {}) => ({
-  id: 'c1', name: 'CAMP', objective: 'OUTCOME_ENGAGEMENT', status: 'active',
+  id: 'c1', user_id: 'u1', ad_account_id: 'act_1', name: 'CAMP', objective: 'OUTCOME_ENGAGEMENT', status: 'active',
   meta_campaign_id: 'cmp1', meta_adset_id: null, budget_daily: 50,
   metrics: {}, created_at: '2026-01-01', meta_data: {}, ...over,
 });
@@ -123,4 +136,34 @@ Deno.test({ ...testOpts, name: '6 no integration token → DB value (R$50), meta
   const body = await (await handleRequest(req())).json();
   assertEquals(body.items[0].budgetDaily, 50);
   assertEquals(body.items[0].metaAdsetId, null);
+});
+
+// audit QA-02 — negative paths
+Deno.test({ ...testOpts, name: '7 invalid JWT (getUser fails) → 401, no DB rows, no Meta calls' }, async () => {
+  __setTestDeps({ adminFactory: () => makeAdmin([dbCampaign()]), resolveIntegration: async () => ({ access_token: 'tok' }) });
+  const calls = installMetaFetch({ batch: () => batchAdsets([]) });
+  const res = await handleRequest(new Request('https://edge.test/meta-campaigns-cached', {
+    method: 'POST',
+    headers: { Authorization: 'Bearer forged', 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ad_account_id: 'act_1' }),
+  }));
+  assertEquals(res.status, 401);
+  const body = await res.json();
+  assert(!('items' in body));
+  assertEquals(calls.length, 0);
+});
+
+Deno.test({ ...testOpts, name: '8 another user’s campaigns / ad account are never returned' }, async () => {
+  const foreign = dbCampaign({ id: 'c_victim', user_id: 'u2', name: 'VICTIM' });
+  const otherAccount = dbCampaign({ id: 'c_other_acct', ad_account_id: 'act_999', name: 'OTHER_ACCT' });
+  __setTestDeps({ adminFactory: () => makeAdmin([dbCampaign(), foreign, otherAccount]), resolveIntegration: async () => null });
+  installMetaFetch({});
+  const body = await (await handleRequest(req())).json();
+  const names = (body.items ?? []).map((i: any) => i.name);
+  assertEquals(names, ['CAMP']);
+});
+
+Deno.test('restore global fetch', () => {
+  globalThis.fetch = realFetch;
+  assertEquals(globalThis.fetch, realFetch);
 });

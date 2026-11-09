@@ -23,14 +23,14 @@ export const useAsaasPlans = (environment: AsaasEnvironment = 'sandbox') => {
 
       if (error) throw error;
 
-      setPlans(data || []);
+      setPlans((data ?? []) as AsaasPlan[]); // billing_type/environment são text no banco
 
-    } catch (error: any) {
+    } catch (error) {
       console.error('Error fetching Asaas plans:', error);
       if (isAdmin) {
         toast({
           title: "Erro ao carregar planos",
-          description: error.message,
+          description: (error as Error).message,
           variant: "destructive"
         });
       }
@@ -66,11 +66,11 @@ export const useAsaasPlans = (environment: AsaasEnvironment = 'sandbox') => {
       await fetchPlans();
       return true;
 
-    } catch (error: any) {
+    } catch (error) {
       console.error('Error creating Asaas plan:', error);
       toast({
         title: "Erro ao criar plano",
-        description: error.message,
+        description: (error as Error).message,
         variant: "destructive"
       });
       return false;
@@ -107,11 +107,11 @@ export const useAsaasPlans = (environment: AsaasEnvironment = 'sandbox') => {
       await fetchPlans();
       return true;
 
-    } catch (error: any) {
+    } catch (error) {
       console.error('Error updating Asaas plan:', error);
       toast({
         title: "Erro ao atualizar plano",
-        description: error.message,
+        description: (error as Error).message,
         variant: "destructive"
       });
       return false;
@@ -148,11 +148,11 @@ export const useAsaasPlans = (environment: AsaasEnvironment = 'sandbox') => {
       await fetchPlans();
       return true;
 
-    } catch (error: any) {
+    } catch (error) {
       console.error('Error deleting Asaas plan:', error);
       toast({
         title: "Erro ao deletar plano",
-        description: error.message,
+        description: (error as Error).message,
         variant: "destructive"
       });
       return false;

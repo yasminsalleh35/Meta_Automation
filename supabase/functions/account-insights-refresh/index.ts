@@ -13,6 +13,7 @@
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 import { trackApiCall } from '../_shared/trackApiCall.ts';
 import { countConversations } from '../_shared/metrics.ts';
+import { META_GRAPH_VERSION } from '../_shared/meta.ts'; // audit PLT-03
 
 const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
 const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -20,7 +21,7 @@ const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
 type Period = 'today' | 'last_7d' | 'last_30d';
 
-const GRAPH_VERSION = 'v21.0';
+const GRAPH_VERSION = META_GRAPH_VERSION;
 const BASE = `https://graph.facebook.com/${GRAPH_VERSION}`;
 
 const corsHeaders = {

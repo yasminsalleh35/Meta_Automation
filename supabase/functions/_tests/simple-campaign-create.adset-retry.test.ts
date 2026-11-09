@@ -8,6 +8,7 @@ const { createAdSetWithInterestRetries } = await import('../simple-campaign-crea
 
 const noopLogger = () => {};
 const testOpts = { sanitizeOps: false, sanitizeResources: false } as const;
+const realFetch = globalThis.fetch; // restored by the last test in this file
 
 interface Call { body: any; }
 
@@ -91,4 +92,9 @@ Deno.test({ ...testOpts, name: 'D first-try success → single call' }, async ()
   assertEquals(result.id, 'as_first');
   assertEquals(calls.length, 1);
   assertEquals(calls[0].body.targeting.facebook_positions, ['feed', 'story']);
+});
+
+Deno.test('restore global fetch', () => {
+  globalThis.fetch = realFetch;
+  assertEquals(globalThis.fetch, realFetch);
 });

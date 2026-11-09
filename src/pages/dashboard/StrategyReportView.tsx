@@ -55,7 +55,7 @@ const StrategyReportView: React.FC = () => {
 
       if (error) throw error;
 
-      setReport(data);
+      setReport(data as unknown as StrategyReport); // payload/result são jsonb
     } catch (error) {
       console.error('Error loading report:', error);
       toast({

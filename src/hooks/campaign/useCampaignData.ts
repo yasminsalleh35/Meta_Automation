@@ -4,6 +4,9 @@ import { useSupabase } from '@/hooks/useSupabase';
 import { useToast } from '@/hooks/use-toast';
 import { RealCampaign } from '@/types/realCampaign';
 
+// jsonb/array columns come back as Json; anything that isn't an array becomes [].
+const jsonArray = (value: unknown): unknown[] => (Array.isArray(value) ? value : []);
+
 export const useCampaignData = () => {
   const supabase = useSupabase();
   const { toast } = useToast();
@@ -81,13 +84,13 @@ export const useCampaignData = () => {
           location_state: campaign.location_state,
           location_city: campaign.location_city,
           location_radius: campaign.location_radius,
-          selected_locations: campaign.selected_locations || [],
+          selected_locations: jsonArray(campaign.selected_locations),
           age_min: campaign.age_min,
           age_max: campaign.age_max,
           gender: campaign.gender,
-          interests: campaign.interests || [],
-          placements: campaign.placements || [],
-          devices: campaign.devices || [],
+          interests: jsonArray(campaign.interests),
+          placements: jsonArray(campaign.placements),
+          devices: jsonArray(campaign.devices),
           ad_title: campaign.ad_title,
           ad_text: campaign.ad_text,
           destination_url: campaign.destination_url,
@@ -104,10 +107,8 @@ export const useCampaignData = () => {
           meta_ad_id: campaign.meta_ad_id,
           processing_status: campaign.processing_status,
           meta_integration_status: campaign.meta_integration_status,
-          verification_status: campaign.verification_status,
-          last_verified_at: campaign.last_verified_at,
           user_id: campaign.user_id,
-          error_log: campaign.error_log || [],
+          error_log: jsonArray(campaign.error_log),
           retry_count: campaign.retry_count || 0,
           last_processed_at: campaign.last_processed_at,
           job_id: campaign.job_id,

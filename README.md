@@ -1,58 +1,61 @@
 # Camplyia — Meta Ads Automation SaaS
 
-A production SaaS platform for creating and managing Meta (Facebook/Instagram) ad campaigns, focused on WhatsApp lead generation for Brazilian businesses.
+A SaaS platform for creating and managing Meta (Facebook/Instagram) ad campaigns, focused on WhatsApp lead generation for Brazilian businesses.
+
+> **Project status:** an audit on 2026-10-30 found serious security, payment and data-quality problems.
+> Remediation is in progress. See `docs/audit-fix-plan.md` (Appendix D has the live status table) and
+> `docs/security/releases.md` (what has shipped, and how to roll back).
 
 ## Tech Stack
 
-- **Frontend:** React 18 + TypeScript + Vite
+- **Frontend:** React 18 + TypeScript + Vite, hosted on Netlify
 - **Styling:** Tailwind CSS + shadcn/ui
 - **Backend:** Supabase (PostgreSQL + Edge Functions on Deno)
-- **Ads API:** Meta Marketing API v23 via `facebook-nodejs-business-sdk`
-- **Payments:** Stripe, Pagar.me V5, Asaas
+- **Ads API:** Meta Marketing API v23, called from edge functions (`fetch` against `graph.facebook.com`)
+- **Payments:** Pagar.me V5, Asaas, Stripe (legacy)
 - **Maps:** Mapbox GL
-- **AI:** OpenAI API
-- **Auth:** Supabase Auth (JWT + OAuth 2.0)
+- **AI:** OpenAI or DeepSeek (provider chosen in the `ai_configurations` table)
+- **Auth:** Supabase Auth (JWT) + Meta OAuth 2.0 (with CSRF state)
 
 ## Local Development
 
-**Requirements:** Node.js 18+ and npm
+**Requirements:** Node.js 20+ and npm. Deno 2.x to run the edge-function tests.
 
 ```sh
-# Clone the repo
 git clone git@github-yasmin:Camplyia/camply-ai-pilot.git
 cd camply-ai-pilot
 
-# Install dependencies
 npm install
 
-# Set up environment variables
-cp .env.example .env
-# Fill in the required values in .env
+cp .env.example .env   # then fill in the values (never commit .env)
 
-# Start development server (port 8080)
-npm run dev
+npm run dev            # http://localhost:8080
 ```
 
-## Environment Variables
-
-Copy `.env.example` to `.env` and fill in all values. **Never commit `.env` to git.**
+## Frontend environment variables
 
 | Variable | Description |
 |---|---|
 | `VITE_SUPABASE_URL` | Supabase project URL |
-| `VITE_SUPABASE_ANON_KEY` | Supabase anonymous/public key |
-| `VITE_SUPABASE_PROJECT_ID` | Supabase project ID |
+| `VITE_SUPABASE_ANON_KEY` | Supabase anon (public) key |
+| `VITE_SUPABASE_PROJECT_ID` | Supabase project ref |
+| `VITE_FEATURE_ADVANCED_ANALYTICS` | Optional, default off. Shows the Advanced Analytics page (hidden until rebuilt on real data) |
 
-Supabase Edge Function secrets (set via Supabase Dashboard → Edge Functions → Secrets):
+The browser code must read the Supabase URL and key from these variables (or use the client in
+`src/integrations/supabase/client.ts`). Do not hard-code them.
 
-| Secret | Description |
-|---|---|
-| `META_APP_ID` | Meta Developer App ID |
-| `META_APP_SECRET` | Meta Developer App Secret |
-| `OPENAI_API_KEY` | OpenAI API key |
-| `STRIPE_SECRET_KEY` | Stripe secret key |
-| `ASAAS_API_KEY` | Asaas API key |
-| `TOKEN_ENCRYPTION_KEY` | Key for encrypting stored OAuth tokens |
+## Edge function secrets
+
+Set with `supabase secrets set NAME=value --project-ref <ref>` or in Dashboard → Edge Functions → Secrets.
+The full list, with what each one does, is in `docs/deployment-guide.md`. In short:
+
+- **Required:** `CRON_SECRET`, `SITE_URL`, `PAGARME_ENV`, `RESEND_API_KEY`
+- **Usually set:** `PAGARME_SECRET_KEY_LIVE` / `PAGARME_SECRET_KEY_TEST`, `OPENAI_API_KEY` or `DEEPSEEK_API_KEY`, `EMAIL_FROM`, `EMAIL_REPLY_TO`, `ALLOWED_ORIGINS`, `STRIPE_SECRET_KEY` (legacy `check-subscription` only), `META_SYSTEM_USER_TOKEN` (`ai-generate-profile` only)
+- **Provided by Supabase:** `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`
+
+The Meta app ID/secret, Asaas, Pagar.me and Stripe API keys and webhook secrets are **not** function
+secrets: admins store them in the database through the admin panel, and functions read them with
+service-role-only RPCs (`get_meta_ads_config`, `get_asaas_config_for_functions`, …).
 
 ## Scripts
 
@@ -62,18 +65,28 @@ npm run build      # Production build
 npm run build:dev  # Development build
 npm run preview    # Preview production build
 npm run lint       # ESLint
+npm test           # Vitest (frontend unit tests)
+deno test supabase/functions/_tests   # Edge-function tests (needs Deno)
 ```
+
+## CI
+
+GitHub Actions (`.github/workflows/ci.yml`) runs on every push and pull request: `tsc` type-check,
+`vitest`, `deno test` for the edge functions, `vite build`, a bundle-size budget and
+`npm audit --omit=dev`.
 
 ## Deployment
 
-**Frontend:** Deployed via Vite build — push to `main` triggers auto-deploy via CI/CD.
+Summary (details and the full checklist in `docs/deployment-guide.md`):
 
-**Edge Functions:** Deploy manually via Supabase Dashboard or CLI:
-```sh
-supabase functions deploy <function-name>
-```
+- **Frontend:** push to `main` → Netlify builds and publishes (`netlify.toml`).
+- **Edge functions:** deployed by hand, one at a time:
+  `supabase functions deploy <fn> --project-ref <ref> --use-api`
+- **Migrations:** applied by hand with `psql`, one file per transaction, then recorded in
+  `supabase_migrations.schema_migrations`. **Never run `supabase db push`**: the production migration
+  history uses different timestamps from the local files, so it would re-run everything.
 
-**Production URL:** https://iacamply.com
+**Production URL:** https://camplyia.netlify.app (`iacamply.com` is the intended custom domain)
 
 ## Project Structure
 
@@ -81,13 +94,16 @@ supabase functions deploy <function-name>
 src/
   components/     # React UI components
   pages/          # Route-level page components
-  hooks/          # 154+ custom React hooks
-  services/       # Business logic (MetaAds, payments, analytics)
-  contexts/       # React context providers (Auth, I18n, Theme, MetaAssets)
-  types/          # TypeScript interfaces and types
+  hooks/          # Custom React hooks
+  services/       # Business logic (Meta Ads, payments, analytics)
+  contexts/       # React context providers (Auth, I18n, Theme, MetaAssets, ...)
+  integrations/   # Supabase client and generated types
   lib/            # Utility libraries
-  schemas/        # Zod validation schemas
   routes/         # Route definitions and guards
 supabase/
-  functions/      # 88 Supabase Edge Functions (Deno runtime)
+  functions/      # 73 edge functions (Deno) + _shared/ modules + _tests/
+  migrations/     # 152 SQL migrations (+ rollback/)
+docs/             # Plans, guides, audit remediation and release records
 ```
+
+Counts are as of 2026-11-09; dead-code removal (audit PLT-01) is still changing them.

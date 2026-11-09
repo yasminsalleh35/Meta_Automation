@@ -1,6 +1,7 @@
 // deno-lint-ignore-file
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
+import { HttpError, authErrorResponse } from '../_shared/auth.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -12,8 +13,8 @@ interface WhatsAppSelection {
   business_id: string;
   waba_id: string;
   phone_number_id: string;
-  display_phone_number?: string;
-  verified_name?: string;
+  display_phone_number?: string | null; // audit PLT-05: null ao limpar a seleção
+  verified_name?: string | null;
 }
 
 function json(status: number, data: any) {
@@ -39,14 +40,14 @@ async function assertAuthedUser(req: Request) {
 
   const authHeader = req.headers.get('Authorization');
   if (!authHeader) {
-    throw new Error('No authorization header');
+    throw new HttpError(401, 'unauthenticated');
   }
 
   const token = authHeader.replace('Bearer ', '');
   const { data: { user }, error } = await supabase.auth.getUser(token);
 
   if (error || !user) {
-    throw new Error('Invalid or expired token');
+    throw new HttpError(401, 'unauthenticated');
   }
 
   return user;
@@ -180,6 +181,12 @@ serve(async (req) => {
     });
 
   } catch (error) {
+
+    // audit QA-03: falta de login → 401 (não 500)
+
+    const authResp = authErrorResponse(error, corsHeaders);
+
+    if (authResp) return authResp;
     logError('[meta-whatsapp-save-selection]', error);
     return json(500, { 
       error: 'Failed to persist WhatsApp selection', 

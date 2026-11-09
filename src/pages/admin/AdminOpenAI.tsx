@@ -215,7 +215,7 @@ Quando responder, considere sempre o contexto específico da plataforma (Meta ou
           console.log('✅ Configuração salva na tabela ai_configurations');
           // ADM-05: desativa TODAS as outras num único UPDATE (antes: .neq(provider) AND .neq(model),
           // que deixava ativa outra config do mesmo provedor ou do mesmo modelo)
-          const { error: activateError } = await supabase.rpc('admin_set_active_ai_configuration' as any, {
+          const { error: activateError } = await supabase.rpc('admin_set_active_ai_configuration', {
             p_provider: config.provider,
             p_model_name: config.model,
           });

@@ -2,6 +2,7 @@ import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { resolveMetaIntegration } from "../_shared/metaIntegration.ts";
 import { fetchAllGraphPages } from "../_shared/metaPaging.ts";
+import { META_GRAPH_VERSION } from '../_shared/meta.ts'; // audit PLT-03
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -73,7 +74,7 @@ serve(async (req) => {
     console.log('[meta-ads-account-pages] Active integration found, provider:', integration.provider);
 
     const accessToken = integration.access_token;
-    const API_VERSION = "v19.0";
+    const API_VERSION = META_GRAPH_VERSION;
     const graphInit: RequestInit = { headers: { Authorization: `Bearer ${accessToken}` } };
 
     // Fetch ad accounts

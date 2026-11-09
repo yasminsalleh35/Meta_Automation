@@ -48,17 +48,18 @@ export const useAdminSubscriptions = (pageSize: number = ADMIN_PAGE_SIZE) => {
     try {
       setIsLoading(true);
       setError(null);
-      const { data, error } = await supabase.rpc('admin_list_subscriptions' as any, {
-        p_search: sanitizeSearchTerm(active.search) || null,
-        p_provider: active.provider || null,
-        p_status: active.status || null,
+      const { data, error } = await supabase.rpc('admin_list_subscriptions', {
+        // undefined omite o parâmetro → default null da função
+        p_search: sanitizeSearchTerm(active.search) || undefined,
+        p_provider: active.provider || undefined,
+        p_status: active.status || undefined,
         p_limit: pageSize,
         p_offset: p * pageSize,
         p_include_test: !!active.includeTest,
       });
       if (error) throw error;
       if (requestId !== requestRef.current) return; // resposta de um filtro antigo
-      const list = ((data || []) as any[]).map((r) => ({ ...r, monthly_amount: Number(r.monthly_amount) || 0 }));
+      const list = (data || []).map((r) => ({ ...r, monthly_amount: Number(r.monthly_amount) || 0 }));
       setRows(list as AdminSubscriptionRow[]);
       setTotalCount(list.length > 0 ? Number(list[0].total_count) || 0 : 0);
       setPage(p);

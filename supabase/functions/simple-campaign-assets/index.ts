@@ -3,6 +3,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0'
 import { corsHeadersFor, handlePreflight, jsonWithCors } from '../_shared/cors.ts'
 import { resolveMetaIntegration } from '../_shared/metaIntegration.ts'
+import { GRAPH_BASE, META_GRAPH_VERSION } from '../_shared/meta.ts'; // audit PLT-03
 
 const supabase = createClient(
   Deno.env.get('SUPABASE_URL') ?? '',
@@ -86,12 +87,12 @@ async function handleGetInstagramPosts(userId: string, body: any) {
     });
 
     // Obter informações da página e validar vínculo IG↔Página
-    const pageInfoUrl = `https://graph.facebook.com/v23.0/${page_id}?fields=access_token,instagram_business_account{id,username},connected_instagram_account{id,username}&access_token=${integ.access_token}`;
+    const pageInfoUrl = `${GRAPH_BASE}/${page_id}?fields=access_token,instagram_business_account{id,username},connected_instagram_account{id,username}&access_token=${integ.access_token}`;
     
     logger('info', 'validation', 'Validando vínculo página-Instagram', { 
       page_id, 
       instagram_user_id,
-      api_version: 'v23.0'
+      api_version: META_GRAPH_VERSION
     });
 
     const pageInfoRes = await fetch(pageInfoUrl);
@@ -138,18 +139,18 @@ async function handleGetInstagramPosts(userId: string, body: any) {
     // Reels Support: fetch all post types with pagination
     const afterCursor = body.after || ''; // Pagination cursor from frontend
     const limit = body.limit || 30;
-    let mediaEndpoint = `https://graph.facebook.com/v23.0/${instagram_user_id}/media?fields=id,caption,media_type,media_url,thumbnail_url,timestamp,permalink&limit=${limit}&access_token=${userAccessToken}`;
+    let mediaEndpoint = `${GRAPH_BASE}/${instagram_user_id}/media?fields=id,caption,media_type,media_url,thumbnail_url,timestamp,permalink&limit=${limit}&access_token=${userAccessToken}`;
     if (afterCursor) {
       mediaEndpoint += `&after=${afterCursor}`;
     }
 
     logger('info', 'media-fetch', 'Buscando posts do Instagram (todos os tipos)', {
       instagram_user_id,
-      api_version: 'v23.0',
+      api_version: META_GRAPH_VERSION,
       token_type: 'user_access_token',
       limit,
       has_cursor: !!afterCursor,
-      url_truncated: `/v23.0/${instagram_user_id}/media`
+      url_truncated: `/${META_GRAPH_VERSION}/${instagram_user_id}/media`
     });
 
     const mediaRes = await fetch(mediaEndpoint);

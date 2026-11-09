@@ -1,6 +1,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { requireAdmin, authErrorResponse } from '../_shared/auth.ts';
 import { requireMetaAccessToken } from '../_shared/metaIntegration.ts';
+import { GRAPH_BASE } from '../_shared/meta.ts'; // audit PLT-03
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -37,7 +38,7 @@ serve(async (req) => {
     const actId = adAccountId.startsWith('act_') ? adAccountId : `act_${adAccountId}`;
 
     // Construir URL da API (v23.0 para CTWA)
-    const adSetUrl = `https://graph.facebook.com/v23.0/${actId}/adsets?access_token=${accessToken}`;
+    const adSetUrl = `${GRAPH_BASE}/${actId}/adsets?access_token=${accessToken}`;
 
     console.log('[TEST-META-ADSET-CREATE] Calling Meta API:', {
       url: adSetUrl.replace(accessToken, 'TOKEN_MASKED'),

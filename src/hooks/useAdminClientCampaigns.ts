@@ -70,15 +70,15 @@ export const useAdminClientCampaigns = (pageSize: number = ADMIN_PAGE_SIZE) => {
   }, [pageSize]);
 
   const loadStats = useCallback(async () => {
-    const { data, error } = await supabase.rpc('admin_campaign_stats' as any);
+    const { data, error } = await supabase.rpc('admin_campaign_stats');
     if (error) {
       console.error('Error loading campaign stats:', error);
       return;
     }
-    const s = (data || {}) as Record<string, any>;
+    const s = (data || {}) as Record<string, unknown>;
     setStats({
       total: Number(s.total) || 0,
-      byStatus: s.by_status || {},
+      byStatus: (s.by_status as Record<string, number>) || {},
       totalBudget: Number(s.total_budget) || 0,
       avgBudget: Number(s.avg_budget) || 0,
       integrated: Number(s.integrated) || 0,

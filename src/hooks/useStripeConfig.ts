@@ -156,7 +156,7 @@ export const useStripeConfig = () => {
       toast({
         title: "Configurações salvas!",
         description: (() => {
-          const updatedFields = [];
+          const updatedFields: string[] = [];
           if (updates.publishable_key) updatedFields.push("Publishable Key");
           if (updates.secret_key) updatedFields.push("Secret Key");
           if (updates.webhook_secret) updatedFields.push("Webhook Secret");

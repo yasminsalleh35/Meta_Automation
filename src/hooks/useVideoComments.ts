@@ -8,7 +8,7 @@ interface Comment {
   content_id: string;
   user_id: string;
   comment_text: string;
-  parent_comment_id?: string;
+  parent_comment_id?: string | null;
   created_at: string;
   updated_at: string;
   author_name?: string;

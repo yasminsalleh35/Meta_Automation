@@ -47,11 +47,11 @@ export const useAdminUsers = (pageSize: number = ADMIN_PAGE_SIZE) => {
     ]);
     if (subs.error) console.warn('Subscribers fetch failed:', subs.error);
     if (pagarme.error) console.warn('Pagar.me subscriptions fetch failed:', pagarme.error);
-    (subs.data || []).forEach((s: any) => {
+    (subs.data || []).forEach((s) => {
       const current = s.is_active && ['active', 'trialing'].includes(String(s.subscription_status || 'active').toLowerCase());
       if (s.user_id && s.plan_type && (current || !plans[s.user_id])) plans[s.user_id] = s.plan_type;
     });
-    (pagarme.data || []).forEach((p: any) => {
+    (pagarme.data || []).forEach((p) => {
       if (p.user_id && String(p.status).toLowerCase() === 'active' && (p.environment || 'live') === 'live') {
         plans[p.user_id] = p.plan_code || 'pagarme';
       }
@@ -68,7 +68,7 @@ export const useAdminUsers = (pageSize: number = ADMIN_PAGE_SIZE) => {
       setError(null);
       const [from, to] = pageRange(nextPage, pageSize);
       let query = supabase
-        .rpc('get_profiles_admin_with_email', undefined, { count: 'exact' })
+        .rpc('get_profiles_admin_with_email', {} as never, { count: 'exact' }) // função sem argumentos (Args: never)
         .order('created_at', { ascending: false });
 
       if (active.status && STATUS_OPTIONS.has(active.status)) {
@@ -79,7 +79,7 @@ export const useAdminUsers = (pageSize: number = ADMIN_PAGE_SIZE) => {
 
       const { data, error, count } = await query.range(from, to);
       if (error) throw error;
-      const profiles = (data || []) as any[];
+      const profiles = data || [];
       const plans = await loadPlans(profiles.map((p) => p.id));
       if (requestId !== requestRef.current) return;
 

@@ -4,6 +4,7 @@ import { corsHeadersFor, handlePreflight } from '../_shared/cors.ts';
 import { authErrorResponse } from '../_shared/auth.ts';
 import { consumeAiQuota } from '../_shared/aiQuota.ts';
 import { normalizeInsight } from '../_shared/metrics.ts';
+import { GRAPH_BASE } from '../_shared/meta.ts'; // audit PLT-03
 
 // Version: 1.0.0 - AI metric evaluation with bounded optimization suggestions
 
@@ -114,7 +115,7 @@ serve(async (req) => {
 
     // Fetch campaign insights from Meta API (last 7 days)
     const accessToken = integration.access_token;
-    const insightsUrl = `https://graph.facebook.com/v23.0/${campaign.meta_campaign_id}/insights` +
+    const insightsUrl = `${GRAPH_BASE}/${campaign.meta_campaign_id}/insights` +
       `?fields=impressions,clicks,spend,cpm,cpc,ctr,reach,actions` +
       `&date_preset=last_7d&access_token=${accessToken}`;
 

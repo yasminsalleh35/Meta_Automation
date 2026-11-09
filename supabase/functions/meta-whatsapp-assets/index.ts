@@ -2,6 +2,8 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { resolveMetaIntegration } from '../_shared/metaIntegration.ts';
+import { META_GRAPH_VERSION } from '../_shared/meta.ts'; // audit PLT-03
+import { HttpError, authErrorResponse } from '../_shared/auth.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -9,7 +11,7 @@ const corsHeaders = {
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
 };
 
-const API_VERSION = Deno.env.get('META_API_VERSION') ?? 'v23.0';
+const API_VERSION = Deno.env.get('META_API_VERSION') ?? META_GRAPH_VERSION;
 
 // Rate limiting - simple in-memory counter
 const rateLimits = new Map<string, { count: number; resetTime: number }>();
@@ -78,14 +80,14 @@ async function assertAuthedUser(req: Request) {
 
   const authHeader = req.headers.get('Authorization');
   if (!authHeader) {
-    throw new Error('No authorization header');
+    throw new HttpError(401, 'unauthenticated');
   }
 
   const token = authHeader.replace('Bearer ', '');
   const { data: { user }, error } = await supabase.auth.getUser(token);
 
   if (error || !user) {
-    throw new Error('Invalid or expired token');
+    throw new HttpError(401, 'unauthenticated');
   }
 
   return user;
@@ -301,6 +303,12 @@ serve(async (req) => {
     }
 
   } catch (error) {
+
+    // audit QA-03: falta de login → 401 (não 500)
+
+    const authResp = authErrorResponse(error, corsHeaders);
+
+    if (authResp) return authResp;
     logError('[meta-whatsapp-assets]', error);
     return json(500, { 
       error: 'WhatsApp discovery failed', 

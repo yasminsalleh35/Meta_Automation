@@ -172,7 +172,7 @@ export const usePagarmeConfig = () => {
       toast({
         title: "Configurações salvas!",
         description: (() => {
-          const updatedFields = [];
+          const updatedFields: string[] = [];
           if (updates.public_key) updatedFields.push("Public Key");
           if (updates.secret_key) updatedFields.push("Secret Key");
           if (updates.webhook_secret) updatedFields.push("Webhook Secret");
@@ -189,16 +189,16 @@ export const usePagarmeConfig = () => {
       await fetchConfig();
       return true;
 
-    } catch (error: any) {
+    } catch (error) {
       console.error('[usePagarmeConfig] Error saving Pagar.me config:', error);
       console.error('[usePagarmeConfig] Error details:', {
-        message: error.message,
-        code: error.code,
-        details: error.details,
-        hint: error.hint
+        message: (error as Error).message,
+        code: (error as { code?: string }).code,
+        details: (error as { details?: string }).details,
+        hint: (error as { hint?: string }).hint
       });
       
-      if (error.message?.includes('row-level security') || error.code === 'PGRST301') {
+      if ((error as Error).message?.includes('row-level security') || (error as { code?: string }).code === 'PGRST301') {
         toast({
           title: "Acesso negado",
           description: "Apenas administradores podem modificar as configurações do Pagar.me. Verifique suas permissões.",
@@ -280,8 +280,9 @@ export const usePagarmeConfig = () => {
         
         // Try to extract JSON error message from response
         try {
-          // @ts-ignore - context.response may exist
-          const responseText = await error?.context?.response?.text?.();
+          // FunctionsHttpError traz a Response em `context`
+          const context = (error as { context?: { response?: Response } } | null)?.context;
+          const responseText = await context?.response?.text?.();
           if (responseText) {
             try {
               const errorJson = JSON.parse(responseText);
@@ -310,11 +311,11 @@ export const usePagarmeConfig = () => {
       });
       return true;
 
-    } catch (error: any) {
+    } catch (error) {
       console.error('[testConnection] Final error:', error);
       toast({
         title: "Erro na conexão",
-        description: error.message || 'Erro desconhecido ao testar conexão',
+        description: (error as Error).message || 'Erro desconhecido ao testar conexão',
         variant: "destructive"
       });
       return false;

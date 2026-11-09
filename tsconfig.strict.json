@@ -1,0 +1,7 @@
+{
+  "extends": "./tsconfig.app.json",
+  "compilerOptions": {
+    "strictNullChecks": true
+  },
+  "include": ["src/vite-env.d.ts", "src/lib", "src/hooks"]
+}

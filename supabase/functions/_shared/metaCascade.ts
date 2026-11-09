@@ -1,8 +1,8 @@
+import { GRAPH_BASE } from './meta.ts'; // audit PLT-03
 // supabase/functions/_shared/metaCascade.ts
 // Ativação/pausa em cascata Campaign → AdSet → Ad (audit CMP-09).
 // Extraído de simple-campaign-activate para ser reutilizado por meta-campaign-bulk-operations.
 
-const GRAPH_BASE = 'https://graph.facebook.com/v23.0';
 
 export interface CascadeIds {
   campaignId: string;

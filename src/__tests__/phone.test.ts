@@ -22,3 +22,16 @@ describe('normalizeBrPhone', () => {
     expect(waLinkFromPhone('123')).toBeNull();
   });
 });
+
+// QA-01: WhatsApp link builder edge cases (same module the wizard uses).
+describe('waLinkFromPhone edge cases', () => {
+  it('never carries non-digits or a message into the link', () => {
+    expect(waLinkFromPhone('+55 (11) 9 1234-5678')).toBe('https://wa.me/5511912345678');
+    expect(waLinkFromPhone('https://wa.me/5511912345678?text=ol%C3%A1')).toBe('https://wa.me/5511912345678');
+  });
+
+  it('rejects empty input', () => {
+    expect(waLinkFromPhone('')).toBeNull();
+    expect(waLinkFromPhone(null)).toBeNull();
+  });
+});

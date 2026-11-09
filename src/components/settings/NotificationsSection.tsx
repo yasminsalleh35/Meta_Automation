@@ -46,18 +46,21 @@ export const NotificationsSection: React.FC = () => {
     (async () => {
       const { data, error } = await supabase
         .from('profiles')
-        .select('marketing_emails_opt_in, marketing_consent_at, notification_preferences' as any)
+        .select('marketing_emails_opt_in, marketing_consent_at, notification_preferences')
         .eq('id', user.id)
         .maybeSingle();
       if (!active) return;
       if (error) {
         console.error('Error loading notification preferences:', error);
       } else if (data) {
-        const row = data as any;
-        const prefs = (row.notification_preferences && typeof row.notification_preferences === 'object') ? row.notification_preferences : {};
+        const row = data;
+        const rawPrefs = row.notification_preferences;
+        const prefs: Record<string, unknown> =
+          rawPrefs && typeof rawPrefs === 'object' && !Array.isArray(rawPrefs) ? rawPrefs : {};
         const next: NotificationSettings = { ...DEFAULT_SETTINGS, marketingEmails: row.marketing_emails_opt_in === true };
         for (const key of PREFERENCE_KEYS) {
-          if (typeof prefs[key] === 'boolean') next[key] = prefs[key];
+          const value = prefs[key];
+          if (typeof value === 'boolean') next[key] = value;
         }
         setSettings(next);
         setConsentAt(row.marketing_consent_at ?? null);
@@ -83,9 +86,9 @@ export const NotificationsSection: React.FC = () => {
       .update({
         marketing_emails_opt_in: settings.marketingEmails,
         notification_preferences: notificationPreferences,
-      } as any)
+      })
       .eq('id', user.id)
-      .select('marketing_consent_at' as any)
+      .select('marketing_consent_at')
       .maybeSingle();
 
     if (error || !data) {
@@ -96,7 +99,7 @@ export const NotificationsSection: React.FC = () => {
         variant: 'destructive',
       });
     } else {
-      setConsentAt((data as any).marketing_consent_at ?? null);
+      setConsentAt(data.marketing_consent_at ?? null);
       toast({
         title: 'Sucesso',
         description: 'Preferências de notificação salvas com sucesso.',

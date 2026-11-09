@@ -1,6 +1,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { requireAdmin, authErrorResponse } from '../_shared/auth.ts';
 import { requireMetaAccessToken } from '../_shared/metaIntegration.ts';
+import { GRAPH_BASE } from '../_shared/meta.ts'; // audit PLT-03
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -46,7 +47,7 @@ serve(async (req) => {
     }
 
     // Construir URL da API (v23.0 para CTWA)
-    const campaignUrl = `https://graph.facebook.com/v23.0/${actId}/campaigns?access_token=${accessToken}`;
+    const campaignUrl = `${GRAPH_BASE}/${actId}/campaigns?access_token=${accessToken}`;
 
     console.log('[TEST-META-CAMPAIGN-CREATE] Calling Meta API:', {
       url: campaignUrl.replace(accessToken, 'TOKEN_MASKED'),

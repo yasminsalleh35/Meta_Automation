@@ -43,9 +43,8 @@ Visão geral com:
 - Testar conexão
 - Gerenciar checkout público
 
-### Stripe
-- Configurado via variáveis de ambiente
-- Webhook: `STRIPE_WEBHOOK_SECRET`
+### Stripe (legado)
+- Chave e secret do webhook guardados na tabela `stripe_config` (painel admin), não em variáveis de ambiente
 
 ---
 
@@ -165,15 +164,12 @@ DELETE FROM edge_function_logs WHERE created_at < now() - interval '30 days';
 
 ## Variáveis de Ambiente Necessárias
 
-| Variável | Onde configurar | Descrição |
-|----------|----------------|-----------|
-| `SUPABASE_URL` | Supabase Dashboard | URL do projeto |
-| `SUPABASE_SERVICE_ROLE_KEY` | Supabase Dashboard | Chave service-role |
-| `META_APP_ID` | Supabase Secrets | ID do Meta App |
-| `META_APP_SECRET` | Supabase Secrets | Secret do Meta App |
-| `OPENAI_API_KEY` | Supabase Secrets | Chave OpenAI para IA |
-| `STRIPE_WEBHOOK_SECRET` | Supabase Secrets | Secret do webhook Stripe |
-| `PAGARME_API_KEY` | Supabase Secrets | Chave API Pagar.me |
-| `ASAAS_API_KEY` | Supabase Secrets | Chave API Asaas |
-| `RESEND_API_KEY` | Supabase Secrets | Chave API Resend (emails) |
-| `ALLOWED_ORIGINS` | Supabase Secrets | Origins CORS (comma-separated) |
+A lista completa e atualizada de secrets das edge functions (`CRON_SECRET`, `SITE_URL`, `PAGARME_ENV`,
+`PAGARME_SECRET_KEY_LIVE`/`_TEST`, `RESEND_API_KEY`, `EMAIL_FROM`, `ALLOWED_ORIGINS`, chaves de IA, etc.)
+está em `docs/deployment-guide.md` → "Function secrets". `SUPABASE_URL`, `SUPABASE_ANON_KEY` e
+`SUPABASE_SERVICE_ROLE_KEY` são fornecidos pelo próprio Supabase.
+
+As credenciais do Meta App (app ID/secret), Asaas, Pagar.me e Stripe (incluindo os secrets de webhook)
+**não** são variáveis de ambiente: o admin as cadastra no painel e elas ficam no banco, lidas pelas
+functions via RPCs restritas ao service role. `META_APP_ID`, `META_APP_SECRET`, `PAGARME_API_KEY`,
+`ASAAS_API_KEY` e `STRIPE_WEBHOOK_SECRET` não são lidos por nenhuma function.

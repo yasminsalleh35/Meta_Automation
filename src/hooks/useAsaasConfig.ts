@@ -3,6 +3,7 @@ import { useToast } from '@/hooks/use-toast';
 import { useSupabase } from '@/hooks/useSupabase';
 import { useUserRole } from '@/hooks/useUserRole';
 import { AsaasConfigSafe, AsaasEnvironment } from '@/types/asaas';
+import type { TablesInsert } from '@/integrations/supabase/types';
 
 interface UpdateAsaasConfigParams {
   environment?: AsaasEnvironment;
@@ -59,7 +60,7 @@ export const useAsaasConfig = (environment: AsaasEnvironment) => {
         // Process data to add flags and remove sensitive fields
         const configWithFlags: AsaasConfigSafe = {
           id: data.id,
-          environment: data.environment,
+          environment: data.environment as AsaasEnvironment,
           is_active: data.is_active,
           created_at: data.created_at,
           updated_at: data.updated_at,
@@ -114,7 +115,7 @@ export const useAsaasConfig = (environment: AsaasEnvironment) => {
         .select('id')
         .eq('environment', targetEnvironment);
 
-      const payload: any = {
+      const payload: TablesInsert<'asaas_config'> = {
         environment: targetEnvironment,
         is_active: updates.is_active !== undefined ? updates.is_active : true
       };
@@ -146,11 +147,11 @@ export const useAsaasConfig = (environment: AsaasEnvironment) => {
       await fetchConfig();
       return true;
 
-    } catch (error: any) {
+    } catch (error) {
       console.error('Error upserting Asaas config:', error);
       toast({
         title: "Erro ao salvar",
-        description: error.message || "Não foi possível salvar as configurações do Asaas.",
+        description: (error as Error).message || "Não foi possível salvar as configurações do Asaas.",
         variant: "destructive"
       });
       return false;
@@ -179,11 +180,11 @@ export const useAsaasConfig = (environment: AsaasEnvironment) => {
         throw new Error(data?.error?.message || 'Falha ao testar conexão');
       }
 
-    } catch (error: any) {
+    } catch (error) {
       console.error('Error testing Asaas connection:', error);
       toast({
         title: "Erro na conexão",
-        description: error.message || "Não foi possível conectar ao Asaas.",
+        description: (error as Error).message || "Não foi possível conectar ao Asaas.",
         variant: "destructive"
       });
       return false;

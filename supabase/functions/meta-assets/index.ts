@@ -1,6 +1,8 @@
 import { serve } from 'https://deno.land/std@0.190.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
 import { fetchAllGraphPages } from '../_shared/metaPaging.ts';
+import { GRAPH_BASE } from '../_shared/meta.ts'; // audit PLT-03
+import { HttpError, authErrorResponse } from '../_shared/auth.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -28,7 +30,7 @@ serve(async (req) => {
     // Get JWT from Authorization header
     const authHeader = req.headers.get('Authorization');
     if (!authHeader) {
-      throw new Error('No authorization header');
+      throw new HttpError(401, 'unauthenticated');
     }
 
     // Verify the JWT and get user
@@ -37,7 +39,7 @@ serve(async (req) => {
 
     if (authError || !user) {
       console.error('Auth error:', authError);
-      throw new Error('Invalid or expired token');
+      throw new HttpError(401, 'unauthenticated');
     }
 
     console.log('User authenticated:', { userId: user.id, email: user.email });
@@ -77,7 +79,7 @@ serve(async (req) => {
         console.log('Fetching Meta ad accounts...');
         // audit CMP-11: segue paging.next (limitado a MAX_GRAPH_PAGES)
         const accountsResponse = await fetchAllGraphPages(
-          `https://graph.facebook.com/v19.0/me/adaccounts?fields=id,name,account_status,currency,timezone_name,account_id&limit=100`,
+          `${GRAPH_BASE}/me/adaccounts?fields=id,name,account_status,currency,timezone_name,account_id&limit=100`,
           graphInit
         );
 
@@ -106,7 +108,7 @@ serve(async (req) => {
       try {
         console.log('Fetching Facebook pages...');
         const pagesResponse = await fetchAllGraphPages(
-          `https://graph.facebook.com/v19.0/me/accounts?fields=id,name,category,fan_count,access_token&limit=100`,
+          `${GRAPH_BASE}/me/accounts?fields=id,name,category,fan_count,access_token&limit=100`,
           graphInit
         );
 
@@ -127,7 +129,7 @@ serve(async (req) => {
             for (const page of results.pages) {
               try {
                 const instagramResponse = await fetch(
-                  `https://graph.facebook.com/v19.0/${page.id}?fields=instagram_business_account{id,username,name,profile_picture_url}&access_token=${page.access_token}`
+                  `${GRAPH_BASE}/${page.id}?fields=instagram_business_account{id,username,name,profile_picture_url}&access_token=${page.access_token}`
                 );
 
                 if (instagramResponse.ok) {
@@ -178,6 +180,12 @@ serve(async (req) => {
     );
 
   } catch (error) {
+
+    // audit QA-03: falta de login → 401 (não 500)
+
+    const authResp = authErrorResponse(error, corsHeaders);
+
+    if (authResp) return authResp;
     console.error('Error in meta-assets function:', error);
     const errorMsg = error instanceof Error ? error.message : String(error);
     return new Response(

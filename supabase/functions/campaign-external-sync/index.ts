@@ -1,13 +1,14 @@
 // External Campaign Sync - Meta API v23 Compatible
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
 import { resolveMetaIntegration } from '../_shared/metaIntegration.ts';
+import { META_GRAPH_VERSION } from '../_shared/meta.ts'; // audit PLT-03
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-const META_API_VERSION = 'v23.0';
+const META_API_VERSION = META_GRAPH_VERSION;
 const META_BASE_URL = `https://graph.facebook.com/${META_API_VERSION}`;
 
 interface MetaCampaignData {

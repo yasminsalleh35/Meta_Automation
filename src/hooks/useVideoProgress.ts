@@ -6,11 +6,11 @@ import { useAuth } from '@/contexts/AuthContext';
 interface VideoProgress {
   id: string;
   user_id: string;
-  content_id: string;
-  progress_percentage: number;
-  completed: boolean;
-  is_favorited: boolean;
-  completed_at?: string;
+  content_id: string | null;
+  progress_percentage: number | null;
+  completed: boolean | null;
+  is_favorited: boolean | null;
+  completed_at?: string | null;
   created_at: string;
   updated_at: string;
 }

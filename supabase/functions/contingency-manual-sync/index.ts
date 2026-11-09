@@ -2,6 +2,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.49.8'
 import { corsHeadersFor, handlePreflight } from '../_shared/cors.ts'
 import { serviceClient } from '../_shared/auth.ts'
 import { mapMetaEffectiveStatus, type CampaignStatus } from '../_shared/status.ts'
+import { GRAPH_BASE } from '../_shared/meta.ts'; // audit PLT-03
 
 // audit CMP-10: lê o effective_status real na Meta (best-effort) com o token do dono da campanha
 async function fetchCanonicalStatus(userId: string, metaCampaignId: string): Promise<CampaignStatus | null> {
@@ -16,7 +17,7 @@ async function fetchCanonicalStatus(userId: string, metaCampaignId: string): Pro
     if (!integ?.access_token) return null;
 
     const res = await fetch(
-      `https://graph.facebook.com/v23.0/${encodeURIComponent(metaCampaignId)}?fields=effective_status`,
+      `${GRAPH_BASE}/${encodeURIComponent(metaCampaignId)}?fields=effective_status`,
       { headers: { Authorization: `Bearer ${integ.access_token}` } }
     );
     if (!res.ok) return null;

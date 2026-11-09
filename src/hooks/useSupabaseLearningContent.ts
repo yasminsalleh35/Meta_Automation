@@ -1,14 +1,15 @@
 import { useState, useCallback, useEffect } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
+import type { Json, TablesUpdate } from '@/integrations/supabase/types';
 
 interface LearningCategory {
   id: string;
   name: string;
-  description?: string;
-  icon?: string;
-  sort_order?: number;
-  is_active?: boolean;
+  description?: string | null;
+  icon?: string | null;
+  sort_order?: number | null;
+  is_active?: boolean | null;
 }
 
 interface SupplementaryMaterial {
@@ -38,6 +39,23 @@ interface LearningContent {
   created_at: string;
   updated_at: string;
 }
+
+// Linha do banco (supplementary_material é jsonb) -> modelo da UI.
+const toLearningContent = (row: unknown): LearningContent => {
+  const content = row as LearningContent;
+  return { ...content, supplementary_material: content.supplementary_material || [] };
+};
+
+// Modelo da UI -> colunas de learning_contents (`category` é um join, não uma coluna).
+const toLearningContentRow = (content: Partial<LearningContent>): TablesUpdate<'learning_contents'> => {
+  const { category: _category, supplementary_material, ...columns } = content;
+  return {
+    ...columns,
+    ...(supplementary_material !== undefined
+      ? { supplementary_material: supplementary_material as unknown as Json }
+      : {}),
+  };
+};
 
 interface LoadContentsParams {
   published?: boolean;
@@ -97,12 +115,7 @@ export const useSupabaseLearningContent = () => {
 
       if (error) throw error;
 
-      const processedData = (data || []).map(item => ({
-        ...item,
-        supplementary_material: item.supplementary_material || []
-      }));
-
-      setContents(processedData);
+      setContents((data || []).map(toLearningContent));
     } catch (error) {
       console.error('Error loading learning contents:', error);
       toast({
@@ -152,9 +165,10 @@ export const useSupabaseLearningContent = () => {
       const { data, error } = await supabase
         .from('learning_contents')
         .insert([{
-          ...newContent,
+          ...toLearningContentRow({ ...newContent, supplementary_material: newContent.supplementary_material || [] }),
+          // o formulário garante título/tipo/nível antes de criar
+          title: newContent.title as string,
           view_count: 0,
-          supplementary_material: newContent.supplementary_material || []
         }])
         .select(`
           *,
@@ -164,7 +178,7 @@ export const useSupabaseLearningContent = () => {
 
       if (error) throw error;
 
-      setContents(prev => [data, ...prev]);
+      setContents(prev => [toLearningContent(data), ...prev]);
       
       toast({
         title: "Sucesso",
@@ -192,7 +206,7 @@ export const useSupabaseLearningContent = () => {
       
       const { data, error } = await supabase
         .from('learning_contents')
-        .update(updatedContent)
+        .update(toLearningContentRow(updatedContent))
         .eq('id', contentId)
         .select(`
           *,
@@ -203,7 +217,7 @@ export const useSupabaseLearningContent = () => {
       if (error) throw error;
 
       setContents(prev => prev.map(content => 
-        content.id === contentId ? data : content
+        content.id === contentId ? toLearningContent(data) : content
       ));
       
       toast({

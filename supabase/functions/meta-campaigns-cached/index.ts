@@ -1,8 +1,9 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
 import { resolveMetaIntegration } from "../_shared/metaIntegration.ts";
+import { META_GRAPH_VERSION } from '../_shared/meta.ts'; // audit PLT-03
 
-const META_API_VERSION = "v23.0";
+const META_API_VERSION = META_GRAPH_VERSION;
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",

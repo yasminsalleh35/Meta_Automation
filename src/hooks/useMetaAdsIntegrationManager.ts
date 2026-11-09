@@ -4,6 +4,12 @@ import { useToast } from '@/hooks/use-toast';
 import { useSupabase } from '@/hooks/useSupabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { INTEGRATION_SAFE_COLUMNS } from '@/lib/integrationColumns';
+import type { Json } from '@/integrations/supabase/types';
+
+// Página selecionada: só o id, ou o objeto vindo da Meta (id + nome, tokens etc.).
+type MetaPageRef = string | { id: string; [key: string]: unknown };
+const pageIdOf = (page: MetaPageRef | undefined): string | null =>
+  page === undefined ? null : typeof page === 'string' ? page : page.id ?? null;
 
 export const useMetaAdsIntegrationManager = () => {
   const supabase = useSupabase();
@@ -54,7 +60,7 @@ export const useMetaAdsIntegrationManager = () => {
     appSecret: string,
     accessToken: string,
     selectedAccounts: string[],
-    selectedPages: any[], // Changed from string[] to any[] to accept MetaPage objects
+    selectedPages: MetaPageRef[], // ids ou objetos MetaPage
     businessManagerId?: string
   ) => {
     if (!session?.user) {
@@ -66,7 +72,7 @@ export const useMetaAdsIntegrationManager = () => {
       console.log('💾 Starting integration save process...');
 
       // ✅ CORREÇÃO: Usar Edge Function para buscar páginas Meta (evita CSP)
-      let realPagesData = [];
+      let realPagesData: MetaPageRef[] = [];
       try {
         console.log('📊 Fetching pages via Edge Function...');
         const { data: assetsResult, error: assetsError } = await supabase.functions.invoke('meta-assets', {
@@ -113,9 +119,9 @@ export const useMetaAdsIntegrationManager = () => {
         access_token: accessToken,
         app_id: appId,
         selected_accounts: selectedAccounts,
-        selected_pages: selectedPages.length > 0 ? selectedPages : (realPagesData.length > 0 ? realPagesData : []),
+        selected_pages: (selectedPages.length > 0 ? selectedPages : realPagesData) as Json,
         ad_account_id: selectedAccounts.length > 0 ? selectedAccounts[0] : null,
-        page_id: selectedPages.length > 0 ? (typeof selectedPages[0] === 'string' ? selectedPages[0] : selectedPages[0]?.id) : (realPagesData.length > 0 ? realPagesData[0].id : null),
+        page_id: pageIdOf(selectedPages.length > 0 ? selectedPages[0] : realPagesData[0]),
         business_manager_id: businessManagerId,
         updated_at: new Date().toISOString()
       };

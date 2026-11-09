@@ -1,6 +1,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { requireAdmin, authErrorResponse } from '../_shared/auth.ts';
 import { requireMetaAccessToken } from '../_shared/metaIntegration.ts';
+import { GRAPH_BASE } from '../_shared/meta.ts'; // audit PLT-03
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -37,7 +38,7 @@ serve(async (req) => {
     console.log('[TEST-META-AD-CREATE] Validating Creative and AdSet compatibility...');
     
     // Buscar detalhes do Creative
-    const creativeUrl = `https://graph.facebook.com/v23.0/${adConfig.creative.creative_id}?fields=id,object_story_id,object_story_spec&access_token=${accessToken}`;
+    const creativeUrl = `${GRAPH_BASE}/${adConfig.creative.creative_id}?fields=id,object_story_id,object_story_spec&access_token=${accessToken}`;
     const creativeResponse = await fetch(creativeUrl);
     const creativeData = await creativeResponse.json();
 
@@ -49,7 +50,7 @@ serve(async (req) => {
     });
     
     // Buscar detalhes do AdSet
-    const adSetUrl = `https://graph.facebook.com/v23.0/${adConfig.adset_id}?fields=id,optimization_goal,destination_type,promoted_object&access_token=${accessToken}`;
+    const adSetUrl = `${GRAPH_BASE}/${adConfig.adset_id}?fields=id,optimization_goal,destination_type,promoted_object&access_token=${accessToken}`;
     const adSetResponse = await fetch(adSetUrl);
     const adSetData = await adSetResponse.json();
 
@@ -102,7 +103,7 @@ serve(async (req) => {
     const actId = adAccountId.startsWith('act_') ? adAccountId : `act_${adAccountId}`;
 
     // Construir URL da API (v23.0 para CTWA)
-    const adUrl = `https://graph.facebook.com/v23.0/${actId}/ads?access_token=${accessToken}`;
+    const adUrl = `${GRAPH_BASE}/${actId}/ads?access_token=${accessToken}`;
 
     console.log('[TEST-META-AD-CREATE] Calling Meta API:', {
       url: adUrl.replace(accessToken, 'TOKEN_MASKED'),

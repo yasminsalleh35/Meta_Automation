@@ -21,7 +21,14 @@ serve(async (req) => {
   }
 
   try {
-    const body = await req.json();
+    // audit QA-03: corpo inválido → 400 (não 500)
+    let body: any;
+    try {
+      body = await req.json();
+    } catch {
+      return new Response(JSON.stringify({ success: false, error: 'invalid_json' }),
+        { status: 400, headers: { ...headers, 'Content-Type': 'application/json' } });
+    }
     const { action } = body;
 
     // Autorização (audit SEC-10): write só via service role; list/stats só admin (user_roles,

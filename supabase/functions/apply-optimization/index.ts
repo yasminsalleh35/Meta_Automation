@@ -1,6 +1,7 @@
 import { serve } from 'https://deno.land/std@0.190.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { corsHeadersFor, handlePreflight } from '../_shared/cors.ts';
+import { GRAPH_BASE } from '../_shared/meta.ts'; // audit PLT-03
 
 // Version: 1.0.0 - Apply optimization suggestions via Meta API with audit logging
 
@@ -101,7 +102,7 @@ serve(async (req) => {
     }
 
     const accessToken = integration.access_token;
-    const baseUrl = 'https://graph.facebook.com/v23.0';
+    const baseUrl = GRAPH_BASE;
     const action = suggestion.suggested_action;
     const actionType = action?.action || suggestion.type;
 

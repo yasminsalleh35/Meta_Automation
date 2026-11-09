@@ -1,48 +1,52 @@
+import { lazy, Suspense } from "react";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route, Outlet, Navigate } from "react-router-dom";
+import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AuthProvider } from "./contexts/AuthContext";
 import { I18nProvider } from "./contexts/I18nContext";
-import Index from "./pages/Index";
 import HomeRouterGate from "./components/HomeRouterGate";
-import DentistLandingPage from "./pages/landing/DentistLandingPage";
-import TermsOfService from "./pages/legal/TermsOfService";
-import PrivacyPolicy from "./pages/legal/PrivacyPolicy";
-import UsageContract from "./pages/legal/UsageContract";
-import Login from "./pages/auth/Login";
-import Register from "./pages/auth/Register";
-import ForgotPassword from "./pages/auth/ForgotPassword";
-import ResetPassword from "./pages/auth/ResetPassword";
-import EmailConfirmation from "./pages/auth/EmailConfirmation";
-import ConfirmEmail from "./pages/auth/ConfirmEmail";
-import SetPassword from "./pages/auth/SetPassword";
-import MetaCallback from "./pages/auth/MetaCallback";
-import MetaCallbackGeneral from "./pages/auth/MetaCallbackGeneral";
 import PublicAuthLayout from "./components/layouts/PublicAuthLayout";
 import ProtectedRoute from "./components/ProtectedRoute";
 import AppShell from "./components/layouts/AppShell";
 import ProvidersPrivados from "./components/ProvidersPrivados";
-import PrivateRoutes from "./routes/PrivateRoutes";
-import Quiz from "./pages/Quiz";
-import SubscriptionPlans from "./pages/subscription/SubscriptionPlans";
-import CheckoutPageV5 from "./pages/checkout/index";
-import SubscriptionSuccess from "./pages/subscription/SubscriptionSuccess";
-import SubscriptionCanceled from "./pages/subscription/SubscriptionCanceled";
-import CheckoutSuccess from "./pages/checkout/CheckoutSuccess";
-import CheckoutError from "./pages/checkout/CheckoutError";
-import AdminPagarme from "./pages/admin/AdminPagarme";
-import MonthlyPlanPage from "./pages/plans/MonthlyPlanPage";
-import AnnualPlanPage from "./pages/plans/AnnualPlanPage";
-import QuizPublic from "./pages/QuizPublic";
-import IAPage from "./pages/IAPage";
 import { CookieConsentBanner } from "./components/legal/CookieConsentBanner";
+import { PageLoader } from "./components/PageLoader";
+
+// audit PLT-04: páginas carregadas sob demanda (React.lazy) — o bundle inicial só leva o shell.
+const Index = lazy(() => import("./pages/Index"));
+const DentistLandingPage = lazy(() => import("./pages/landing/DentistLandingPage"));
+const TermsOfService = lazy(() => import("./pages/legal/TermsOfService"));
+const PrivacyPolicy = lazy(() => import("./pages/legal/PrivacyPolicy"));
+const UsageContract = lazy(() => import("./pages/legal/UsageContract"));
+const Login = lazy(() => import("./pages/auth/Login"));
+const Register = lazy(() => import("./pages/auth/Register"));
+const ForgotPassword = lazy(() => import("./pages/auth/ForgotPassword"));
+const ResetPassword = lazy(() => import("./pages/auth/ResetPassword"));
+const EmailConfirmation = lazy(() => import("./pages/auth/EmailConfirmation"));
+const ConfirmEmail = lazy(() => import("./pages/auth/ConfirmEmail"));
+const SetPassword = lazy(() => import("./pages/auth/SetPassword"));
+const MetaCallback = lazy(() => import("./pages/auth/MetaCallback"));
+const MetaCallbackGeneral = lazy(() => import("./pages/auth/MetaCallbackGeneral"));
+const PrivateRoutes = lazy(() => import("./routes/PrivateRoutes"));
+const Quiz = lazy(() => import("./pages/Quiz"));
+const SubscriptionPlans = lazy(() => import("./pages/subscription/SubscriptionPlans"));
+const CheckoutPageV5 = lazy(() => import("./pages/checkout/index"));
+const SubscriptionSuccess = lazy(() => import("./pages/subscription/SubscriptionSuccess"));
+const SubscriptionCanceled = lazy(() => import("./pages/subscription/SubscriptionCanceled"));
+const CheckoutSuccess = lazy(() => import("./pages/checkout/CheckoutSuccess"));
+const CheckoutError = lazy(() => import("./pages/checkout/CheckoutError"));
+const MonthlyPlanPage = lazy(() => import("./pages/plans/MonthlyPlanPage"));
+const AnnualPlanPage = lazy(() => import("./pages/plans/AnnualPlanPage"));
+const QuizPublic = lazy(() => import("./pages/QuizPublic"));
+const IAPage = lazy(() => import("./pages/IAPage"));
 
 const queryClient = new QueryClient();
 
 const AppWithRoutes = () => {
   return (
+    <Suspense fallback={<PageLoader fullScreen />}>
     <Routes>
       {/* ROTAS PÚBLICAS (NÃO montar providers do app aqui) */}
       <Route path="/auth/*" element={<PublicAuthLayout />}>
@@ -106,6 +110,7 @@ const AppWithRoutes = () => {
         }
       />
     </Routes>
+    </Suspense>
   );
 };
 

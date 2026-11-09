@@ -9,6 +9,12 @@ import {
   type CascadeIds,
 } from "../_shared/metaCascade.ts";
 import { mapMetaEffectiveStatus } from "../_shared/status.ts";
+import { GRAPH_BASE } from '../_shared/meta.ts'; // audit PLT-03
+import { createLogger } from '../_shared/logger.ts';
+import { toObject } from '../_shared/errors.ts';
+
+// audit PLT-06: logs estruturados (corpo/status inalterados)
+const log = createLogger('meta-campaign-bulk-operations');
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -76,7 +82,7 @@ serve(async (req) => {
     }
 
     const accessToken = integration.access_token;
-    const baseUrl = 'https://graph.facebook.com/v23.0';
+    const baseUrl = GRAPH_BASE;
 
     const results = [];
     
@@ -169,7 +175,7 @@ serve(async (req) => {
           .eq('user_id', userData.user.id);
 
         if (updateError) {
-          console.error(`Error updating local campaign ${campaignId}:`, updateError);
+          log.error('handler', 'Error updating local campaign', { campaignId, error: toObject(updateError) });
         }
 
         results.push({
@@ -181,7 +187,7 @@ serve(async (req) => {
         });
 
       } catch (error) {
-        console.error(`Error processing campaign ${metaCampaignId}:`, error);
+        log.error('handler', 'Error processing campaign', { metaCampaignId, error: toObject(error) });
         results.push({
           success: false,
           campaignId,
@@ -209,7 +215,7 @@ serve(async (req) => {
     });
     
   } catch (error) {
-    console.error('Bulk operations edge function error:', error);
+    log.error('handler', 'Bulk operations edge function error', { error: toObject(error) });
     
     const errorMessage = error instanceof Error ? error.message : String(error);
     const errorResponse = { 

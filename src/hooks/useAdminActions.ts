@@ -5,7 +5,7 @@ import { useToast } from '@/hooks/use-toast';
 // ADM-02: status changes go through the admin-only RPC. A direct profiles update hit 0 rows
 // (no admin UPDATE policy) while the UI reported success.
 const setUserStatus = async (userId: string, status: 'active' | 'suspended') => {
-  const { error } = await supabase.rpc('admin_set_user_status' as any, { uid: userId, new_status: status });
+  const { error } = await supabase.rpc('admin_set_user_status', { uid: userId, new_status: status });
   if (error) throw error;
 };
 

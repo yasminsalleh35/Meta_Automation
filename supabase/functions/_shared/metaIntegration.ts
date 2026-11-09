@@ -6,7 +6,7 @@ export type ResolvedIntegration = {
   access_token: string,
   ad_account_id?: string | null,
   page_id?: string | null,
-  instagram_actor_id?: string | null
+  instagram_user_id?: string | null // audit PLT-03: era instagram_actor_id (descontinuado pela Meta)
 };
 
 export async function resolveMetaIntegration(userId: string): Promise<ResolvedIntegration | null> {
@@ -39,7 +39,7 @@ export async function resolveMetaIntegration(userId: string): Promise<ResolvedIn
         access_token: data.access_token,
         ad_account_id: data.ad_account_id ?? null,
         page_id: data.page_id ?? null,
-        instagram_actor_id: null // preenchido dinamicamente se necessário
+        instagram_user_id: null // preenchido dinamicamente se necessário
       };
     }
   }

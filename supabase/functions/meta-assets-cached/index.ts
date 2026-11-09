@@ -5,9 +5,15 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { fetchAllGraphPages } from "../_shared/metaPaging.ts";
+import { META_GRAPH_VERSION } from '../_shared/meta.ts'; // audit PLT-03
+import { createLogger } from '../_shared/logger.ts';
+import { toObject } from '../_shared/errors.ts';
+
+// audit PLT-06: logs estruturados (corpo/status inalterados)
+const log = createLogger('meta-assets-cached');
 
 const ASSETS_TTL = 24 * 60 * 60 * 1000; // 24 horas
-const API_VERSION = 'v23.0';
+const API_VERSION = META_GRAPH_VERSION;
 
 interface MetaAssets {
   facebookPages: any[];
@@ -52,7 +58,7 @@ serve(async (req) => {
   const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
   
   if (!supabaseUrl || !supabaseKey) {
-    console.error("[META-ASSETS-CACHED] Missing Supabase environment variables");
+    log.error('handler', 'Missing Supabase environment variables');
     return j({ error: "Missing Supabase configuration" }, { status: 500, headers });
   }
   
@@ -83,7 +89,7 @@ serve(async (req) => {
       .maybeSingle();
 
     if (intError) {
-      console.error('[META-ASSETS-CACHED] Error fetching integration:', intError);
+      log.error('handler', 'Error fetching integration', { error: toObject(intError) });
       return j({ error: 'Integration not found', code: 'NO_INTEGRATION' }, { status: 404, headers });
     }
 
@@ -156,7 +162,7 @@ serve(async (req) => {
     // audit CMP-11: falha na Meta NÃO sobrescreve o cache — devolve o erro e mantém o cache anterior
     if (!pagesRes.ok || !adAccountsRes.ok) {
       const failed = !pagesRes.ok ? pagesRes : adAccountsRes;
-      console.error('[META-ASSETS-CACHED] Meta API error, keeping previous cache:', failed.status, failed.error);
+      log.error('handler', 'Meta API error, keeping previous cache', { status: failed.status, error: toObject(failed.error) });
       return j({
         error: failed.error?.message ?? 'Meta API error',
         code: 'META_API_ERROR',
@@ -219,7 +225,7 @@ serve(async (req) => {
       .eq('id', integration.id);
 
     if (updateError) {
-      console.error('[META-ASSETS-CACHED] Failed to update cache:', updateError);
+      log.error('handler', 'Failed to update cache', { error: toObject(updateError) });
     } else {
       console.info('[META-ASSETS-CACHED] ✅ Cache updated in DB', {
         pages: facebookPages.length,
@@ -237,7 +243,7 @@ serve(async (req) => {
     } as CachedResponse, { status: 200, headers });
 
   } catch (error: any) {
-    console.error('[META-ASSETS-CACHED] Unexpected error:', error);
+    log.error('handler', 'Unexpected error', { error: toObject(error) });
     return j({ 
       error: error?.message ?? 'Unknown error',
       facebookPages: [],

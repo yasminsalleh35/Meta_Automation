@@ -7,9 +7,9 @@ interface UserProfile {
   id: string;
   name: string | null;
   email: string;
-  status: string;
-  created_at: string;
-  updated_at: string;
+  status: string | null;
+  created_at: string | null;
+  updated_at: string | null;
 }
 
 interface ProfileFormData {

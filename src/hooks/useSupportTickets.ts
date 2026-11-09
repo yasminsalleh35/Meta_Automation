@@ -145,7 +145,7 @@ export const useSupportTickets = () => {
 
       // ADM-05: uma notificação por admin (antes ia para o próprio usuário). Falha aqui não
       // invalida o ticket já criado.
-      const { error: notifyError } = await supabase.rpc('notify_admins_new_support_ticket' as any, {
+      const { error: notifyError } = await supabase.rpc('notify_admins_new_support_ticket', {
         p_ticket_id: (data as SupportTicket).id,
       });
       if (notifyError) {

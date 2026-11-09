@@ -11,7 +11,7 @@ interface SubscriptionPlan {
   price_annual: number | null;
   stripe_price_id_monthly: string | null;
   stripe_price_id_annual: string | null;
-  limits: Record<string, any>;
+  limits: Record<string, unknown>;
   features: string[] | null;
   is_active: boolean;
   created_at: string;
@@ -48,7 +48,7 @@ export const useSubscriptionPlans = () => {
         return;
       }
 
-      setPlans(data || []);
+      setPlans((data ?? []) as unknown as SubscriptionPlan[]); // limits é jsonb
     } catch (error) {
       console.error('Error fetching plans:', error);
       toast({

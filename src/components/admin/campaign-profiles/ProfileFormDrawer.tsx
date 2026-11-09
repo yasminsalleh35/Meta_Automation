@@ -28,7 +28,9 @@ import {
 import { Switch } from '@/components/ui/switch';
 import { useToast } from '@/hooks/use-toast';
 
-type FormData = z.infer<typeof zCampaignProfileForm>;
+type FormData = z.output<typeof zCampaignProfileForm>;
+// zod 4: campos com .default() são opcionais na entrada do formulário
+type FormInput = z.input<typeof zCampaignProfileForm>;
 
 interface ProfileFormDrawerProps {
   open: boolean;
@@ -54,7 +56,7 @@ export function ProfileFormDrawer({
     setValue,
     reset,
     formState: { errors, isSubmitting },
-  } = useForm<FormData>({
+  } = useForm<FormInput, unknown, FormData>({
     resolver: zodResolver(zCampaignProfileForm),
     defaultValues: {
       slug: '',

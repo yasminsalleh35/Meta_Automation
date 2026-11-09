@@ -1,3 +1,4 @@
+import { META_GRAPH_VERSION } from '../_shared/meta.ts'; // audit PLT-03
 // ==== [ADD] Interest utils (utils.ts) ========================================
 
 type InterestInput =
@@ -208,7 +209,7 @@ export function applyProfileOverlayOnTargeting(
 
 // ==== [ADD] Resolve AI interest names to Meta IDs ============================
 
-const META_API_VERSION = 'v23.0';
+const META_API_VERSION = META_GRAPH_VERSION;
 
 /**
  * Takes an array of interests (possibly with empty IDs from AI suggestions)

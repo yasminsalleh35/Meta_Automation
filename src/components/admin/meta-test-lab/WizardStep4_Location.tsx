@@ -16,12 +16,12 @@ import { Badge } from '@/components/ui/badge';
 import { MapPin, Globe, Search, X, Loader2 } from 'lucide-react';
 import { TestWizardFormData } from '@/types/testWizard.types';
 import { useMapbox } from '@/contexts/MapboxContext';
-import { metaAdsLocationService } from '@/services/metaAdsService';
+import { metaAdsLocationService } from '@/services/metaAds/MetaAdsLocationService';
 import { useMetaAdsIntegration } from '@/hooks/useMetaAdsIntegration';
 
 interface WizardStep4LocationProps {
   formData: TestWizardFormData;
-  updateFormData: (field: keyof TestWizardFormData, value: any) => void;
+  updateFormData: <K extends keyof TestWizardFormData>(field: K, value: TestWizardFormData[K]) => void;
 }
 
 interface MapboxFeature {
@@ -30,6 +30,12 @@ interface MapboxFeature {
   text: string;
   context?: Array<{ id: string; text: string }>;
 }
+
+// Sugestão de estado/região: feature do Mapbox ou resultado oficial da Meta (com meta_key).
+type RegionSuggestion = Partial<MapboxFeature> & Pick<MapboxFeature, 'text'> & {
+  meta_key?: string;
+  source?: string;
+};
 
 const COUNTRIES = [
   { code: 'BR', name: 'Brasil', flag: '🇧🇷' },
@@ -48,9 +54,9 @@ export const WizardStep4_Location: React.FC<WizardStep4LocationProps> = ({ formD
   
   // Estados para região/estado
   const [regionQuery, setRegionQuery] = useState('');
-  const [regionSuggestions, setRegionSuggestions] = useState<any[]>([]);
+  const [regionSuggestions, setRegionSuggestions] = useState<RegionSuggestion[]>([]);
   const [isLoadingRegions, setIsLoadingRegions] = useState(false);
-  const [selectedRegion, setSelectedRegion] = useState<any>(null);
+  const [selectedRegion, setSelectedRegion] = useState<string | null>(null);
   
   const { mapboxToken } = useMapbox();
   const { existingIntegration } = useMetaAdsIntegration();
@@ -99,8 +105,8 @@ export const WizardStep4_Location: React.FC<WizardStep4LocationProps> = ({ formD
           setShowSuggestions(true);
           console.log(`✅ Mapbox: ${data.features?.length || 0} cidades encontradas para ${formData.countryCode}`);
         }
-      } catch (error: any) {
-        if (error.name !== 'AbortError') {
+      } catch (error) {
+        if ((error as Error).name !== 'AbortError') {
           console.error('❌ Erro ao buscar cidades:', error);
         }
       } finally {
@@ -208,11 +214,11 @@ export const WizardStep4_Location: React.FC<WizardStep4LocationProps> = ({ formD
             results: features.map((f: MapboxFeature) => f.place_name)
           });
           
-          const featuresWithSource = features.map((f: any) => ({ ...f, source: 'mapbox' }));
+          const featuresWithSource = features.map((f: MapboxFeature) => ({ ...f, source: 'mapbox' }));
           setRegionSuggestions(featuresWithSource);
         }
-      } catch (error: any) {
-        if (error.name !== 'AbortError') {
+      } catch (error) {
+        if ((error as Error).name !== 'AbortError') {
           console.error('❌ Erro ao buscar estados:', error);
         }
       } finally {
@@ -272,9 +278,9 @@ export const WizardStep4_Location: React.FC<WizardStep4LocationProps> = ({ formD
     updateFormData('selected_locations', []);
   };
 
-  const handleRegionSelect = (suggestion: any) => {
+  const handleRegionSelect = (suggestion: RegionSuggestion) => {
     const regionName = suggestion.text;
-    const countryName = suggestion.context?.find((c: any) => c.id.startsWith('country'))?.text || '';
+    const countryName = suggestion.context?.find((c) => c.id.startsWith('country'))?.text || '';
     const displayLabel = [regionName, countryName].filter(Boolean).join(', ');
     
     setSelectedRegion(displayLabel);

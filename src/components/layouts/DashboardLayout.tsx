@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { Suspense, useState } from 'react';
 import { Outlet, useSearchParams } from 'react-router-dom';
 import { SidebarProvider } from '@/components/ui/sidebar';
 import { AppSidebar } from '@/components/AppSidebar';
@@ -9,6 +9,7 @@ import { TrialBanner } from '@/components/trial/TrialBanner';
 import { useResponsive } from '@/hooks/useResponsive';
 import { useAutoDiscoverCampaigns } from '@/hooks/useAutoDiscoverCampaigns';
 import ErrorBoundary from '@/components/ErrorBoundary';
+import { PageLoader } from '@/components/PageLoader';
 
 const DashboardLayout: React.FC = () => {
   const { isMobile } = useResponsive();
@@ -57,7 +58,9 @@ const DashboardLayout: React.FC = () => {
                 )}
 
                 <ErrorBoundary>
-                  <Outlet />
+                  <Suspense fallback={<PageLoader />}>
+                    <Outlet />
+                  </Suspense>
                 </ErrorBoundary>
               </div>
             </main>

@@ -10,7 +10,11 @@ Deno.env.set('SCC_DISABLE_SERVE', '1');
 const { handleRequest, __setSupabaseFactoryForTests } = await import('../simple-campaign-create/index.ts');
 
 // ---- Make smartDelay / setTimeout-based waits instant (microtask, no leaked timers) ----------
-globalThis.setTimeout = ((fn: (...a: unknown[]) => void) => {
+// Installed per test (see `scc()` below) and ALWAYS restored afterwards, together with `fetch`,
+// so other test files in the same `deno test` run see the real globals.
+const realSetTimeout = globalThis.setTimeout;
+const realFetch = globalThis.fetch;
+const fastSetTimeout = ((fn: (...a: unknown[]) => void) => {
   Promise.resolve().then(() => fn());
   return 0 as unknown as number;
 }) as unknown as typeof globalThis.setTimeout;
@@ -29,18 +33,30 @@ interface MockConfig {
   requests?: Map<string, { status: string; response: unknown; updated_at: string }>;
   // profiles row of the caller (audit ADM-02: status 'suspended' blocks creation)
   profile?: Record<string, unknown> | null;
+  // Bearer token → user. getUser() FAILS (data.user = null + error) for any other token,
+  // exactly like supabase-js does for an expired/forged JWT.
+  tokens?: Record<string, Record<string, unknown>>;
+  // Extra integration rows (e.g. another user's). `.eq()` filters are applied to all rows.
+  otherIntegrations?: Array<Record<string, unknown>>;
 }
 
 function makeSupabase(cfg: MockConfig) {
   cfg.requests ??= new Map();
   cfg.campaignInserts ??= [];
   // A chainable query-builder whose terminal ops resolve based on table + operation.
+  // A chainable query-builder whose terminal ops resolve based on table + operation.
+  // `.eq()` filters are APPLIED: a row is returned only if every eq'd column matches.
   function builder(table: string) {
     const state: { table: string; op: 'select' | 'insert' | 'update'; payload?: any; eqs: Record<string, unknown> } =
       { table, op: 'select', eqs: {} };
+    const matches = (row: Record<string, unknown> | null | undefined) =>
+      !!row && Object.entries(state.eqs).every(([k, v]) => String(row[k]) === String(v));
+    const first = (rows: Array<Record<string, unknown> | null | undefined>) => rows.find(matches) ?? null;
     const resolve = async () => {
       if (table === 'campaign_create_requests') {
         const key = String(state.eqs.idempotency_key ?? state.payload?.idempotency_key);
+        const owner = String(state.eqs.user_id ?? state.payload?.user_id ?? '');
+        if (owner && owner !== String(cfg.user.id)) return { data: null, error: null }; // another user's key
         if (state.op === 'insert') {
           if (cfg.requests!.has(key)) return { data: null, error: { code: '23505', message: 'duplicate' } };
           cfg.requests!.set(key, { status: 'in_progress', response: null, updated_at: new Date().toISOString() });
@@ -60,8 +76,13 @@ function makeSupabase(cfg: MockConfig) {
         cfg.contingencyInserts.push(state.payload);
         return { data: { id: 'cont_1' }, error: null };
       }
-      if (table === 'profiles') return { data: cfg.profile === undefined ? { status: 'active' } : cfg.profile, error: null };
-      if (table === 'integrations') return { data: cfg.integration, error: null };
+      if (table === 'profiles') {
+        const row = cfg.profile === undefined ? { status: 'active' } : cfg.profile;
+        return { data: first([row ? { id: cfg.user.id, ...row } : null]), error: null };
+      }
+      if (table === 'integrations') {
+        return { data: first([cfg.integration, ...(cfg.otherIntegrations ?? [])]), error: null };
+      }
       if (table === 'business_settings') return { data: null, error: null };
       return { data: null, error: null };
     };
@@ -78,12 +99,18 @@ function makeSupabase(cfg: MockConfig) {
     return api;
   }
 
+  const tokens = cfg.tokens ?? { testtoken: cfg.user, t: cfg.user };
   return {
     rpc(_name: string) {
       return { single: async () => ({ data: cfg.metaConfig, error: null }) };
     },
     auth: {
-      getUser: async (_token: string) => ({ data: { user: cfg.user }, error: null }),
+      getUser: async (token: string) => {
+        const user = tokens[token];
+        return user
+          ? { data: { user }, error: null }
+          : { data: { user: null }, error: { name: 'AuthApiError', status: 401, message: 'invalid JWT: token is expired' } };
+      },
     },
     functions: {
       invoke: async (_name: string, _opts: unknown) => ({ data: null, error: null }),
@@ -190,10 +217,27 @@ function makeRequest(extra: Record<string, unknown> = {}): Request {
 
 const testOpts = { sanitizeOps: false, sanitizeResources: false } as const;
 
+// Deno.test wrapper: fast timers during the test, real setTimeout/fetch restored afterwards.
+function scc(name: string, fn: () => Promise<void>) {
+  Deno.test({
+    ...testOpts,
+    name,
+    async fn() {
+      globalThis.setTimeout = fastSetTimeout;
+      try {
+        await fn();
+      } finally {
+        globalThis.setTimeout = realSetTimeout;
+        globalThis.fetch = realFetch;
+      }
+    },
+  });
+}
+
 // ---------------------------------------------------------------------------------------------
 // Scenario 1 — Happy path: image upload CTWA succeeds end to end
 // ---------------------------------------------------------------------------------------------
-Deno.test({ ...testOpts, name: 'S1 happy path → status:created, no rollback, token hygiene + CORS' }, async () => {
+scc('S1 happy path → status:created, no rollback, token hygiene + CORS', async () => {
   const cfg = baseConfig();
   __setSupabaseFactoryForTests(() => makeSupabase(cfg));
   const calls = installFetch({});
@@ -245,7 +289,7 @@ Deno.test({ ...testOpts, name: 'S1 happy path → status:created, no rollback, t
 // ---------------------------------------------------------------------------------------------
 // Scenario 2 — Ad creation fails → rollback deletes the campaign, contingency flagged rolled_back
 // ---------------------------------------------------------------------------------------------
-Deno.test({ ...testOpts, name: 'S2 deterministic ad failure (Meta 4xx) → rollback DELETE + 422 failed, no contingency' }, async () => {
+scc('S2 deterministic ad failure (Meta 4xx) → rollback DELETE + 422 failed, no contingency', async () => {
   const cfg = baseConfig();
   __setSupabaseFactoryForTests(() => makeSupabase(cfg));
   const calls = installFetch({ failAds: true });
@@ -268,7 +312,7 @@ Deno.test({ ...testOpts, name: 'S2 deterministic ad failure (Meta 4xx) → rollb
   assertEquals(cfg.contingencyInserts.length, 0);
 });
 
-Deno.test({ ...testOpts, name: 'S2b transient ad failure (Meta 5xx) → rollback + 202 queued + contingency(rolled_back)' }, async () => {
+scc('S2b transient ad failure (Meta 5xx) → rollback + 202 queued + contingency(rolled_back)', async () => {
   const cfg = baseConfig();
   __setSupabaseFactoryForTests(() => makeSupabase(cfg));
   const calls = installFetch({ failAdsTransient: true });
@@ -293,7 +337,7 @@ Deno.test({ ...testOpts, name: 'S2b transient ad failure (Meta 5xx) → rollback
 // ---------------------------------------------------------------------------------------------
 // Scenario 3 — Meta succeeds but DB insert fails → reconcile, NO rollback, real ids kept
 // ---------------------------------------------------------------------------------------------
-Deno.test({ ...testOpts, name: 'S3 db-save failure → created on Meta + reconcilePending, contingency(needs_db_reconcile), no rollback' }, async () => {
+scc('S3 db-save failure → created on Meta + reconcilePending, contingency(needs_db_reconcile), no rollback', async () => {
   const cfg = baseConfig({ campaignsInsertError: { message: 'db down', code: '500' } });
   __setSupabaseFactoryForTests(() => makeSupabase(cfg));
   const calls = installFetch({});
@@ -322,7 +366,7 @@ Deno.test({ ...testOpts, name: 'S3 db-save failure → created on Meta + reconci
 // ---------------------------------------------------------------------------------------------
 // Scenario 4 — CORS preflight
 // ---------------------------------------------------------------------------------------------
-Deno.test({ ...testOpts, name: 'S4 OPTIONS preflight → 204 with origin-scoped CORS' }, async () => {
+scc('S4 OPTIONS preflight → 204 with origin-scoped CORS', async () => {
   __setSupabaseFactoryForTests(() => makeSupabase(baseConfig()));
   installFetch({});
   const req = new Request('https://edge.test/simple-campaign-create', {
@@ -336,9 +380,9 @@ Deno.test({ ...testOpts, name: 'S4 OPTIONS preflight → 204 with origin-scoped 
 });
 
 // ---------------------------------------------------------------------------------------------
-// Scenario 5 — Auth + payload guards (early failures still flow through contingency 200 / errors)
+// Scenario 5 — Auth guard (audit CMP-01): no user = 401 UNAUTHENTICATED, never a contingency/200
 // ---------------------------------------------------------------------------------------------
-Deno.test({ ...testOpts, name: 'S5 missing Authorization → 401, no Meta calls, no contingency' }, async () => {
+scc('S5 missing Authorization → 401, no Meta calls, no contingency', async () => {
   const cfg = baseConfig();
   __setSupabaseFactoryForTests(() => makeSupabase(cfg));
   const calls = installFetch({});
@@ -360,7 +404,7 @@ Deno.test({ ...testOpts, name: 'S5 missing Authorization → 401, no Meta calls,
 // Regression for Meta error 105/1815630: the WhatsApp CTA must be the BARE
 // { type: 'WHATSAPP_MESSAGE' } (no value.link), and the thumbnail must be kept.
 // ---------------------------------------------------------------------------------------------
-Deno.test({ ...testOpts, name: 'S6 existing-post VIDEO → bare WHATSAPP_MESSAGE CTA (no value.link) + thumbnail' }, async () => {
+scc('S6 existing-post VIDEO → bare WHATSAPP_MESSAGE CTA (no value.link) + thumbnail', async () => {
   const cfg = baseConfig();
   (cfg.integration as any).selected_instagram_ids = ['ig_1'];
   __setSupabaseFactoryForTests(() => makeSupabase(cfg));
@@ -400,7 +444,7 @@ Deno.test({ ...testOpts, name: 'S6 existing-post VIDEO → bare WHATSAPP_MESSAGE
 // ---------------------------------------------------------------------------------------------
 // Scenario 7 — per-campaign WhatsApp number pins promoted_object.whatsapp_phone_number_id.
 // ---------------------------------------------------------------------------------------------
-Deno.test({ ...testOpts, name: 'S7 whatsapp_meta selected → ad set promoted_object pins whatsapp_phone_number_id' }, async () => {
+scc('S7 whatsapp_meta selected → ad set promoted_object pins whatsapp_phone_number_id', async () => {
   const cfg = baseConfig();
   __setSupabaseFactoryForTests(() => makeSupabase(cfg));
   const calls = installFetch({});
@@ -421,7 +465,7 @@ Deno.test({ ...testOpts, name: 'S7 whatsapp_meta selected → ad set promoted_ob
 // ---------------------------------------------------------------------------------------------
 // Scenario 8 — self-heal: if Meta rejects the pinned WhatsApp number, retry WITHOUT it (page default).
 // ---------------------------------------------------------------------------------------------
-Deno.test({ ...testOpts, name: 'S8 pinned WhatsApp rejected → strips it, retries page-only, succeeds' }, async () => {
+scc('S8 pinned WhatsApp rejected → strips it, retries page-only, succeeds', async () => {
   const cfg = baseConfig();
   __setSupabaseFactoryForTests(() => makeSupabase(cfg));
   const calls = installFetch({ adsetFailFirst: true });
@@ -444,7 +488,7 @@ Deno.test({ ...testOpts, name: 'S8 pinned WhatsApp rejected → strips it, retri
 // ---------------------------------------------------------------------------------------------
 // audit CMP-01/03/05/06/08 — validações antes de tocar na Meta + idempotência
 // ---------------------------------------------------------------------------------------------
-Deno.test({ ...testOpts, name: 'S9 no selected_locations → 422 NO_LOCATION, nothing created on Meta' }, async () => {
+scc('S9 no selected_locations → 422 NO_LOCATION, nothing created on Meta', async () => {
   const cfg = baseConfig();
   __setSupabaseFactoryForTests(() => makeSupabase(cfg));
   const calls = installFetch({});
@@ -455,7 +499,7 @@ Deno.test({ ...testOpts, name: 'S9 no selected_locations → 422 NO_LOCATION, no
   assert(!calls.some((c) => c.method === 'POST' && c.url.includes('/campaigns')), 'no campaign may be created');
 });
 
-Deno.test({ ...testOpts, name: 'S10 page not owned by the user → 422 PAGE_NOT_ALLOWED' }, async () => {
+scc('S10 page not owned by the user → 422 PAGE_NOT_ALLOWED', async () => {
   const cfg = baseConfig();
   __setSupabaseFactoryForTests(() => makeSupabase(cfg));
   const calls = installFetch({ myPages: ['page1', 'page2'] });
@@ -466,7 +510,7 @@ Deno.test({ ...testOpts, name: 'S10 page not owned by the user → 422 PAGE_NOT_
   assert(!calls.some((c) => c.method === 'POST' && c.url.includes('/campaigns')));
 });
 
-Deno.test({ ...testOpts, name: 'S11 selected Page B (owned, not stored) → ad set + creative use Page B' }, async () => {
+scc('S11 selected Page B (owned, not stored) → ad set + creative use Page B', async () => {
   const cfg = baseConfig();
   __setSupabaseFactoryForTests(() => makeSupabase(cfg));
   const calls = installFetch({ myPages: ['page1', 'pageB'] });
@@ -480,7 +524,7 @@ Deno.test({ ...testOpts, name: 'S11 selected Page B (owned, not stored) → ad s
   assertEquals((cfg.campaignInserts![0] as any).facebook_page, 'pageB');
 });
 
-Deno.test({ ...testOpts, name: 'S12 invalid WhatsApp number → 422 INVALID_WHATSAPP; valid one is normalised' }, async () => {
+scc('S12 invalid WhatsApp number → 422 INVALID_WHATSAPP; valid one is normalised', async () => {
   const cfg = baseConfig();
   __setSupabaseFactoryForTests(() => makeSupabase(cfg));
   installFetch({});
@@ -495,7 +539,7 @@ Deno.test({ ...testOpts, name: 'S12 invalid WhatsApp number → 422 INVALID_WHAT
   assertEquals(creative.object_story_spec.link_data.link, 'https://wa.me/5511912345678');
 });
 
-Deno.test({ ...testOpts, name: 'S13 same idempotencyKey twice → one Meta campaign, second call replays' }, async () => {
+scc('S13 same idempotencyKey twice → one Meta campaign, second call replays', async () => {
   const cfg = baseConfig();
   __setSupabaseFactoryForTests(() => makeSupabase(cfg));
   const calls = installFetch({});
@@ -506,7 +550,7 @@ Deno.test({ ...testOpts, name: 'S13 same idempotencyKey twice → one Meta campa
   assertEquals(calls.filter((c) => c.method === 'POST' && c.url.includes('/campaigns')).length, 1);
 });
 
-Deno.test({ ...testOpts, name: 'S14 idempotencyKey still in progress → 409, no Meta calls' }, async () => {
+scc('S14 idempotencyKey still in progress → 409, no Meta calls', async () => {
   const cfg = baseConfig();
   cfg.requests = new Map([['key-busy-0001', { status: 'in_progress', response: null, updated_at: new Date().toISOString() }]]);
   __setSupabaseFactoryForTests(() => makeSupabase(cfg));
@@ -517,7 +561,7 @@ Deno.test({ ...testOpts, name: 'S14 idempotencyKey still in progress → 409, no
   assertEquals(cfg.requests.get('key-busy-0001')!.status, 'in_progress'); // registro original intacto
 });
 
-Deno.test({ ...testOpts, name: 'S15 dayparting Mon–Fri → lifetime budget for scheduled days only, pacing day_parting, ADVERTISER tz' }, async () => {
+scc('S15 dayparting Mon–Fri → lifetime budget for scheduled days only, pacing day_parting, ADVERTISER tz', async () => {
   const cfg = baseConfig();
   __setSupabaseFactoryForTests(() => makeSupabase(cfg));
   const calls = installFetch({});
@@ -536,7 +580,7 @@ Deno.test({ ...testOpts, name: 'S15 dayparting Mon–Fri → lifetime budget for
 });
 
 // audit ADM-02 — conta suspensa pelo admin
-Deno.test({ ...testOpts, name: 'S16 suspended account → 403 ACCOUNT_SUSPENDED, no Meta calls, no contingency' }, async () => {
+scc('S16 suspended account → 403 ACCOUNT_SUSPENDED, no Meta calls, no contingency', async () => {
   const cfg = baseConfig({ profile: { status: 'suspended' } });
   __setSupabaseFactoryForTests(() => makeSupabase(cfg));
   const calls = installFetch({});
@@ -550,4 +594,113 @@ Deno.test({ ...testOpts, name: 'S16 suspended account → 403 ACCOUNT_SUSPENDED,
   assertEquals(cfg.contingencyInserts.length, 0);
   assertEquals(cfg.campaignInserts!.length, 0);
   assertEquals(cfg.requests!.size, 0); // nem reivindica a chave de idempotência
+});
+// ---------------------------------------------------------------------------------------------
+// audit QA-02 — negative paths: auth failure, foreign ids, deterministic Meta error + rollback
+// ---------------------------------------------------------------------------------------------
+scc('N1 expired/forged JWT (getUser fails) → 401 UNAUTHENTICATED, no DB writes, no Meta calls', async () => {
+  const cfg = baseConfig();
+  __setSupabaseFactoryForTests(() => makeSupabase(cfg));
+  const calls = installFetch({});
+  const req = makeRequest({ idempotencyKey: 'key-badjwt-0001' });
+  const forged = new Request(req.url, {
+    method: 'POST',
+    headers: { 'Authorization': 'Bearer forged.jwt.value', 'Origin': 'https://iacamply.com', 'Content-Type': 'application/json' },
+    body: await req.text(),
+  });
+  const res = await handleRequest(forged);
+  const body = await res.json();
+  assertEquals(res.status, 401);
+  assertEquals(body.success, false);
+  assertEquals(body.code, 'UNAUTHENTICATED');
+  assertEquals(calls.length, 0);
+  assertEquals(cfg.requests!.size, 0);
+  assertEquals(cfg.campaignInserts!.length, 0);
+  assertEquals(cfg.contingencyInserts.length, 0);
+});
+
+scc('N2 "Bearer" with empty token → 401', async () => {
+  const cfg = baseConfig();
+  __setSupabaseFactoryForTests(() => makeSupabase(cfg));
+  const calls = installFetch({});
+  const res = await handleRequest(new Request('https://edge.test/simple-campaign-create', {
+    method: 'POST',
+    headers: { 'Authorization': 'Bearer ', 'Origin': 'https://iacamply.com', 'Content-Type': 'application/json' },
+    body: '{}',
+  }));
+  assertEquals(res.status, 401);
+  await res.body?.cancel();
+  assertEquals(calls.length, 0);
+});
+
+scc('N3 only ANOTHER user has a Meta integration → 422 NO_INTEGRATION (eq user_id applied), no Meta calls', async () => {
+  const cfg = baseConfig();
+  const foreign = { ...cfg.integration, id: 'int2', user_id: 'u2', access_token: 'victim-token', ad_account_id: '999' };
+  cfg.integration = { ...cfg.integration, status: 'revoked' }; // caller's own integration is not active
+  cfg.otherIntegrations = [foreign];
+  __setSupabaseFactoryForTests(() => makeSupabase(cfg));
+  const calls = installFetch({});
+  const res = await handleRequest(makeRequest());
+  const body = await res.json();
+  assertEquals(res.status, 422);
+  assertEquals(body.code, 'NO_INTEGRATION');
+  assertEquals(calls.length, 0);
+  // the other user's token must never be used
+  assert(!JSON.stringify(calls).includes('victim-token'));
+});
+
+scc('N4 another user’s Page id (not in /me/accounts) → 422 PAGE_NOT_ALLOWED, nothing created/saved', async () => {
+  const cfg = baseConfig();
+  __setSupabaseFactoryForTests(() => makeSupabase(cfg));
+  const calls = installFetch({ myPages: ['page1'] });
+  const res = await handleRequest(makeRequest({ fanpage: 'victim_page_42' }));
+  const body = await res.json();
+  assertEquals(res.status, 422);
+  assertEquals(body.success, false);
+  assertEquals(body.code, 'PAGE_NOT_ALLOWED');
+  // only the ownership lookup went to Meta, with the caller's own token
+  assert(calls.every((c) => c.method === 'GET'), 'no write call may reach Meta');
+  assert(calls.some((c) => c.url.includes('/me/accounts')));
+  assertEquals(cfg.campaignInserts!.length, 0);
+  assertEquals(cfg.contingencyInserts.length, 0);
+});
+
+scc('N5 deterministic Meta error on ad → 422 + rollback DELETE of the created campaign, nothing saved', async () => {
+  const cfg = baseConfig();
+  __setSupabaseFactoryForTests(() => makeSupabase(cfg));
+  const calls = installFetch({ failAds: true });
+  const res = await handleRequest(makeRequest({ idempotencyKey: 'key-rollback-01' }));
+  const body = await res.json();
+  assertEquals(res.status, 422);
+  assertEquals(body.status, 'failed');
+  assert(body.campaignId == null || body.campaignId !== 'cmp_1', 'a rolled-back campaign id must not be returned as created');
+  const deletes = calls.filter((c) => c.method === 'DELETE');
+  assert(deletes.length >= 1, 'expected rollback DELETE(s)');
+  assert(deletes.some((d) => d.url.includes('/cmp_1')), 'rollback must delete the created campaign');
+  // rollback DELETEs are authenticated by header, never by query token
+  assert(deletes.every((d) => !d.url.includes('access_token=')));
+  assertEquals(cfg.campaignInserts!.length, 0);
+  assertEquals(cfg.contingencyInserts.length, 0);
+  // the idempotency record is finalised (not left in_progress forever)
+  assert(cfg.requests!.get('key-rollback-01')?.status !== 'in_progress');
+});
+
+scc('N6 empty JSON body with a valid user → 422 INVALID_PAYLOAD, no Meta calls', async () => {
+  const cfg = baseConfig();
+  __setSupabaseFactoryForTests(() => makeSupabase(cfg));
+  const calls = installFetch({});
+  const res = await handleRequest(new Request('https://edge.test/simple-campaign-create', {
+    method: 'POST',
+    headers: { 'Authorization': 'Bearer testtoken', 'Origin': 'https://iacamply.com', 'Content-Type': 'application/json' },
+    body: '{}',
+  }));
+  const body = await res.json();
+  assertEquals(res.status, 422);
+  assertEquals(body.code, 'INVALID_PAYLOAD');
+  assertEquals(calls.length, 0);
+});
+
+Deno.test('globals restored after simple-campaign-create tests', () => {
+  assertEquals(globalThis.setTimeout, realSetTimeout);
+  assertEquals(globalThis.fetch, realFetch);
 });

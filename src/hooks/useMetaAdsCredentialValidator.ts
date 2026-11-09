@@ -2,7 +2,6 @@
 import { useState } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { useGlobalMetaConfig } from '@/hooks/useGlobalMetaConfig';
-import { metaAdsAuthService } from '@/services/metaAds/MetaAdsAuthService';
 import { useMetaAdsPermissionLevels, PermissionLevel } from './useMetaAdsPermissionLevels';
 import { supabase } from '@/integrations/supabase/client';
 import { INTEGRATION_SAFE_COLUMNS } from '@/lib/integrationColumns';
@@ -78,7 +77,7 @@ export const useMetaAdsCredentialValidator = () => {
       }
       const oauthState = `${crypto.randomUUID()}${crypto.randomUUID()}`.replace(/-/g, '');
       const { error: stateError } = await supabase
-        .from('oauth_states' as any)
+        .from('oauth_states')
         .insert({ state: oauthState, user_id: currentUser.id, provider: 'meta_ads' });
       if (stateError) {
         console.error('❌ Failed to register OAuth state:', stateError.message);
@@ -134,8 +133,9 @@ export const useMetaAdsCredentialValidator = () => {
         }
       }, 100);
 
-      return new Promise<{accessToken: string, grantedScopes: string[], integration?: any}>((resolve, reject) => {
-        let checkClosedInterval: NodeJS.Timeout;
+      return new Promise<{accessToken: string, grantedScopes: string[], integration?: unknown}>((resolve, reject) => {
+        // eslint-disable-next-line prefer-const -- lido em cleanup() antes de ser atribuído
+        let checkClosedInterval: ReturnType<typeof setInterval> | undefined;
         let isResolved = false;
         let messageListenerActive = true;
 

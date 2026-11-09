@@ -22,6 +22,7 @@ import {
   BellOff
 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
+import type { TablesUpdate } from '@/integrations/supabase/types';
 import { useToast } from '@/hooks/use-toast';
 import { formatDistanceToNow } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -53,6 +54,7 @@ interface ContingencyCampaign {
   id: string;
   user_id: string;
   status: 'pending' | 'in_progress' | 'completed' | 'failed' | 'auto_retry_success' | 'auto_retry_failed';
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- snapshot livre do wizard (jsonb)
   campaign_data: any;
   error_message: string;
   error_stack: string;
@@ -85,7 +87,8 @@ type ContingencyCounts = Record<(typeof COUNTED_STATUSES)[number] | 'total', num
 const EMPTY_COUNTS: ContingencyCounts = { pending: 0, auto_retry_success: 0, auto_retry_failed: 0, in_progress: 0, completed: 0, total: 0 };
 
 // ADM-05: o wizard grava public_url; registros antigos/outros fluxos usam publicUrl
-const mediaUrl = (meta: any): string => (meta?.public_url || meta?.publicUrl || '') as string;
+const mediaUrl = (meta: { public_url?: string; publicUrl?: string } | null | undefined): string =>
+  meta?.public_url || meta?.publicUrl || '';
 
 const AdminContingency: React.FC = () => {
   const { toast } = useToast();
@@ -135,7 +138,7 @@ const AdminContingency: React.FC = () => {
     if (!soundEnabled) return;
     
     try {
-      const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+      const audioContext = new (window.AudioContext || (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext)();
       
       // First beep
       const oscillator1 = audioContext.createOscillator();
@@ -221,6 +224,7 @@ const AdminContingency: React.FC = () => {
 
       const enrichedData = (data || []).map(item => ({
         ...item,
+        status: item.status as ContingencyCampaign['status'], // text no banco
         user_email: item.profiles?.email,
         user_name: item.profiles?.name
       }));
@@ -331,7 +335,7 @@ const AdminContingency: React.FC = () => {
 
   const updateStatus = async (id: string, status: string, notes?: string) => {
     try {
-      const updates: any = { status };
+      const updates: TablesUpdate<'campaign_contingency'> = { status };
       if (notes) updates.admin_notes = notes;
       if (status === 'completed') {
         const { data: { user } } = await supabase.auth.getUser();

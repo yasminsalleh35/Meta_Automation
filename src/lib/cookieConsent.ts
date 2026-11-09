@@ -71,12 +71,12 @@ async function persistConsentRemote(record: CookieConsentRecord): Promise<void> 
   try {
     const { data } = await supabase.auth.getSession();
     const userId = data.session?.user?.id ?? null;
-    await supabase.from('cookie_consents' as any).insert({
+    await supabase.from('cookie_consents').insert({
       user_id: userId,
       anon_id: getAnonId(),
       consent: { ...record.choices, timestamp: record.timestamp },
       policy_version: record.version,
-    } as any);
+    });
   } catch {
     // best-effort
   }

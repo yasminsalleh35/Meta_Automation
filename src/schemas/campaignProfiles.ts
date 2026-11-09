@@ -12,7 +12,7 @@ const placementOptions = [
 ] as const;
 
 export const zCampaignProfileForm = z.object({
-  slug: z.string().min(2).max(60).regex(/^[a-z0-9\-]+$/, 'Slug deve conter apenas letras minúsculas, números e hífens'),
+  slug: z.string().min(2).max(60).regex(/^[a-z0-9-]+$/, 'Slug deve conter apenas letras minúsculas, números e hífens'),
   label: z.string().min(2).max(120),
   description: z.string().max(1000).optional().nullable(),
   age_min: z.number().int().min(18).max(65),

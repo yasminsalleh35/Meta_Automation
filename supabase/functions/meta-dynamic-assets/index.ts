@@ -3,8 +3,9 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { handlePreflight, jsonWithCors } from "../_shared/cors.ts";
 import { assertRateLimit } from "../_shared/rateLimit.ts";
 import { fetchAllGraphPages } from "../_shared/metaPaging.ts";
+import { META_GRAPH_VERSION } from '../_shared/meta.ts'; // audit PLT-03
 
-const API_VERSION = Deno.env.get("META_API_VERSION") ?? "v22.0"; // ✅ PHASE 4: Updated to latest stable version
+const API_VERSION = Deno.env.get("META_API_VERSION") ?? META_GRAPH_VERSION; // ✅ PHASE 4: Updated to latest stable version
 
 // Cache global para assets com TTL de 5 minutos
 const assetsCache = new Map<string, { data: any; timestamp: number }>();

@@ -4,18 +4,20 @@ import { useToast } from '@/hooks/use-toast';
 import { useSupabase } from '@/hooks/useSupabase';
 import { useAuth } from '@/contexts/AuthContext';
 
+export type MediaMetadata = { prompt?: string; [key: string]: unknown };
+
 export interface MediaFile {
   id: string;
   filename: string;
   file_type: string;
-  file_size: number;
+  file_size: number | null;
   file_path: string;
-  public_url?: string;
-  storage_path?: string;
-  thumbnail_url?: string;
-  source: string;
-  metadata: Record<string, any>;
-  tags: string[];
+  public_url?: string | null;
+  storage_path?: string | null;
+  thumbnail_url?: string | null;
+  source: string | null;
+  metadata: MediaMetadata;
+  tags: string[] | null;
   created_at: string;
   user_id: string;
 }
@@ -45,7 +47,7 @@ export const useMediaLibrary = () => {
       // Cast dos dados do Supabase para nosso tipo customizado
       const typedMediaFiles: MediaFile[] = (data || []).map(item => ({
         ...item,
-        metadata: (item.metadata as Record<string, any>) || {}
+        metadata: (item.metadata as MediaMetadata) || {}
       }));
       
       setMediaFiles(typedMediaFiles);
@@ -228,13 +230,14 @@ export const useMediaLibrary = () => {
                     if (i === attempts - 1) throw err;
                   }
                 }
+                throw new Error('Falha ao salvar a mídia no banco');
               };
 
               const insertedData = await insertWithRetry();
 
               const newMediaFile: MediaFile = {
                 ...insertedData,
-                metadata: (insertedData.metadata as Record<string, any>) || {}
+                metadata: (insertedData.metadata as MediaMetadata) || {}
               };
               
               setMediaFiles(prev => [newMediaFile, ...prev]);
@@ -283,7 +286,7 @@ export const useMediaLibrary = () => {
   };
 
   // Salvar mídia gerada por IA
-  const saveGeneratedMedia = async (url: string, prompt: string, metadata: Record<string, any> = {}): Promise<MediaFile | null> => {
+  const saveGeneratedMedia = async (url: string, prompt: string, metadata: MediaMetadata = {}): Promise<MediaFile | null> => {
     if (!user?.id) return null;
 
     try {

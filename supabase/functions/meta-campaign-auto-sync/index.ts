@@ -3,6 +3,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { isCron, requireUser, authErrorResponse } from "../_shared/auth.ts";
 import { normalizeInsight } from "../_shared/metrics.ts";
 import { mapMetaEffectiveStatus } from "../_shared/status.ts";
+import { META_GRAPH_VERSION } from '../_shared/meta.ts'; // audit PLT-03
 
 // audit DATA-04: pg_cron invokes this every 10 min through pg_net with a 150s
 // timeout. Each run works through campaigns oldest-`last_status_sync_at` first,
@@ -12,7 +13,7 @@ const RUN_BUDGET_MS = 90_000;        // stop starting new campaigns after this
 const FETCH_TIMEOUT_MS = 15_000;     // per Meta request attempt
 const MAX_CANDIDATES_PER_RUN = 300;  // campaigns loaded per run (ordered by cursor)
 const DELAY_BETWEEN_CAMPAIGNS_MS = 500;
-const META_API_VERSION = 'v19.0';
+const META_API_VERSION = META_GRAPH_VERSION;
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",

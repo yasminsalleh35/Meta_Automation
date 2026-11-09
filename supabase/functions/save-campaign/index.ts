@@ -1,6 +1,7 @@
 
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
+import { HttpError, authErrorResponse } from '../_shared/auth.ts';
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -23,7 +24,7 @@ serve(async (req) => {
     const authHeader = req.headers.get("Authorization");
     if (!authHeader) {
       console.error('No authorization header provided');
-      throw new Error("No authorization header provided");
+      throw new HttpError(401, 'unauthenticated');
     }
 
     const token = authHeader.replace("Bearer ", "");
@@ -37,13 +38,13 @@ serve(async (req) => {
     
     if (userError) {
       console.error('Authentication error:', userError);
-      throw new Error(`Authentication error: ${userError.message}`);
+      throw new HttpError(401, 'unauthenticated');
     }
     
     const user = userData.user;
     if (!user?.id) {
       console.error('User not authenticated');
-      throw new Error("User not authenticated");
+      throw new HttpError(401, 'unauthenticated');
     }
 
     console.log('User authenticated:', user.id);
@@ -256,6 +257,12 @@ serve(async (req) => {
     });
     
   } catch (error) {
+    
+    // audit QA-03: falta de login → 401 (não 500)
+    
+    const authResp = authErrorResponse(error, corsHeaders);
+    
+    if (authResp) return authResp;
     console.error('Edge function error:', error);
     
     const errorMessage = error instanceof Error ? error.message : String(error);

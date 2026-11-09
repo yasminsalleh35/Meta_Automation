@@ -7,6 +7,12 @@ import { serve } from 'https://deno.land/std@0.190.0/http/server.ts';
 import { requireUser, authErrorResponse } from '../_shared/auth.ts';
 import { corsHeadersFor, handlePreflight } from '../_shared/cors.ts';
 import { EXPORT_TABLES, sanitizeRow, exportFileName } from '../_shared/dataSubject.ts';
+import { json } from '../_shared/response.ts';
+import { createLogger } from '../_shared/logger.ts';
+import { toMessage } from '../_shared/errors.ts';
+
+// audit PLT-06: logs estruturados + respostas de erro via _shared/response.ts (corpo/status inalterados)
+const log = createLogger('user-data-export');
 
 const PAGE_SIZE = 1000;
 const MAX_ROWS_PER_TABLE = 50000;
@@ -43,7 +49,7 @@ serve(async (req) => {
         const rows = await fetchAll(spec.table, spec.column, user.id);
         data[spec.table] = rows.map((r) => sanitizeRow(r, spec.omit));
       } catch (e) {
-        console.error('[user-data-export] table failed', spec.table, (e as Error)?.message);
+        log.error('export', 'table failed', { table: spec.table, error: toMessage(e) });
         errors[spec.table] = 'Não foi possível exportar esta tabela';
       }
     }
@@ -56,7 +62,7 @@ serve(async (req) => {
         .filter((r) => r.is_internal !== true)
         .map((r) => sanitizeRow(r));
     } catch (e) {
-      console.error('[user-data-export] ticket_responses failed', (e as Error)?.message);
+      log.error('export', 'ticket_responses failed', { error: toMessage(e) });
       errors.ticket_responses = 'Não foi possível exportar esta tabela';
     }
 
@@ -85,10 +91,7 @@ serve(async (req) => {
   } catch (e) {
     const authResp = authErrorResponse(e, cors);
     if (authResp) return authResp;
-    console.error('[user-data-export] error', (e as Error)?.message);
-    return new Response(JSON.stringify({ success: false, error: 'Não foi possível exportar seus dados. Tente novamente.' }), {
-      status: 500,
-      headers: { ...cors, 'Content-Type': 'application/json' },
-    });
+    log.error('handler', 'error', { error: toMessage(e) });
+    return json(origin, { success: false, error: 'Não foi possível exportar seus dados. Tente novamente.' }, 500);
   }
 });

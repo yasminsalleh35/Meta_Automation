@@ -3,38 +3,34 @@ import { Routes, Route, Navigate, useParams } from 'react-router-dom';
 import DashboardLayout from '@/components/layouts/DashboardLayout';
 import AdminLayout from '@/components/layouts/AdminLayout';
 import AdminRoute from '@/components/AdminRoute';
-import { Loader2 } from 'lucide-react';
+import { PageLoader } from '@/components/PageLoader';
 import { FEATURE_ADVANCED_ANALYTICS } from '@/lib/featureFlags';
 
-// ── Lazy loading fallback ───────────────────────────────────────────────────
-const PageLoader = () => (
-  <div className="flex items-center justify-center py-20">
-    <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-  </div>
+// ── audit PLT-04: every page is code-split (React.lazy); the layouts wrap <Outlet/> in Suspense ──
+// ── Dashboard pages ──────────────────────────────────────────────────────────
+const Dashboard = React.lazy(() => import('@/pages/dashboard/Dashboard'));
+const Campaigns = React.lazy(() => import('@/pages/dashboard/Campaigns'));
+const SimpleCampaignWizardPage = React.lazy(() => import('@/pages/dashboard/SimpleCampaignWizard'));
+const SimpleCampaignListPage = React.lazy(() => import('@/pages/dashboard/SimpleCampaignList'));
+const SimpleCampaignInsightsPage = React.lazy(() => import('@/pages/dashboard/SimpleCampaignInsights'));
+const Media = React.lazy(() => import('@/pages/dashboard/Media'));
+const AdvantageCampaignPage = React.lazy(() => import('@/pages/dashboard/AdvantageCampaign'));
+const MyBusiness = React.lazy(() => import('@/pages/dashboard/MyBusiness'));
+const AdvancedAnalytics = React.lazy(() => import('@/pages/dashboard/AdvancedAnalytics'));
+const AdSetVerification = React.lazy(() => import('@/pages/dashboard/AdSetVerification'));
+const SubscriptionPageDashboard = React.lazy(() => import('@/pages/dashboard/SubscriptionPage'));
+const Integrations = React.lazy(() => import('@/pages/dashboard/Integrations'));
+const Tutorials = React.lazy(() => import('@/pages/dashboard/Tutorials'));
+const Guides = React.lazy(() => import('@/pages/dashboard/Guides'));
+const Support = React.lazy(() => import('@/pages/dashboard/Support'));
+const StrategyReports = React.lazy(() => import('@/pages/dashboard/StrategyReports'));
+const StrategyReportView = React.lazy(() => import('@/pages/dashboard/StrategyReportView'));
+const Notifications = React.lazy(() => import('@/pages/dashboard/Notifications'));
+const Settings = React.lazy(() => import('@/pages/dashboard/Settings'));
+const NotFound = React.lazy(() => import('@/pages/NotFound'));
+const IntegrationTutorial = React.lazy(() =>
+  import('@/components/admin/meta-ads/IntegrationTutorial').then((m) => ({ default: m.IntegrationTutorial }))
 );
-
-// ── Dashboard pages (eagerly loaded) ────────────────────────────────────────
-import Dashboard from '@/pages/dashboard/Dashboard';
-import Campaigns from '@/pages/dashboard/Campaigns';
-import SimpleCampaignWizardPage from '@/pages/dashboard/SimpleCampaignWizard';
-import SimpleCampaignListPage from '@/pages/dashboard/SimpleCampaignList';
-import SimpleCampaignInsightsPage from '@/pages/dashboard/SimpleCampaignInsights';
-import Media from '@/pages/dashboard/Media';
-import AdvantageCampaignPage from '@/pages/dashboard/AdvantageCampaign';
-import MyBusiness from '@/pages/dashboard/MyBusiness';
-import AdvancedAnalytics from '@/pages/dashboard/AdvancedAnalytics';
-import AdSetVerification from '@/pages/dashboard/AdSetVerification';
-import SubscriptionPageDashboard from '@/pages/dashboard/SubscriptionPage';
-import Integrations from '@/pages/dashboard/Integrations';
-import Tutorials from '@/pages/dashboard/Tutorials';
-import Guides from '@/pages/dashboard/Guides';
-import Support from '@/pages/dashboard/Support';
-import StrategyReports from '@/pages/dashboard/StrategyReports';
-import StrategyReportView from '@/pages/dashboard/StrategyReportView';
-import Notifications from '@/pages/dashboard/Notifications';
-import Settings from '@/pages/dashboard/Settings';
-import NotFound from '@/pages/NotFound';
-import { IntegrationTutorial } from '@/components/admin/meta-ads/IntegrationTutorial';
 
 // CampaignPage is a stub; send campaign detail links to the insights page with the real id.
 const CampaignInsightsRedirect: React.FC = () => {
@@ -42,52 +38,52 @@ const CampaignInsightsRedirect: React.FC = () => {
   return <Navigate to={id ? `/dashboard/simple-campaign-insights/${id}` : '/dashboard/campaigns'} replace />;
 };
 
-// ── Phase 6+7: Lazy loaded pages (monitoring + admin) ───────────────────────
+// ── Monitoring + edge logs ───────────────────────────────────────────────────
 const Monitoring = React.lazy(() => import('@/pages/dashboard/Monitoring'));
 const AdminEdgeLogs = React.lazy(() => import('@/pages/admin/AdminEdgeLogs'));
 
 // Onboarding Pages
-import Welcome from '@/pages/onboarding/Welcome';
-import PlanSelection from '@/pages/onboarding/PlanSelection';
-import TrialStarted from '@/pages/onboarding/TrialStarted';
+const Welcome = React.lazy(() => import('@/pages/onboarding/Welcome'));
+const PlanSelection = React.lazy(() => import('@/pages/onboarding/PlanSelection'));
+const TrialStarted = React.lazy(() => import('@/pages/onboarding/TrialStarted'));
 
 // Checkout Pages
-import CheckoutSuccess from '@/pages/checkout/Success';
-import CheckoutCancel from '@/pages/checkout/Cancel';
-import CheckoutParcelado from '@/pages/checkout/Parcelado';
-import ParceladoExample from '@/pages/checkout/ParceladoExample';
+const CheckoutSuccess = React.lazy(() => import('@/pages/checkout/Success'));
+const CheckoutCancel = React.lazy(() => import('@/pages/checkout/Cancel'));
+const CheckoutParcelado = React.lazy(() => import('@/pages/checkout/Parcelado'));
+const ParceladoExample = React.lazy(() => import('@/pages/checkout/ParceladoExample'));
 
 // Integration Pages
-import MetaIntegrationSuccess from '@/pages/integrations/MetaIntegrationSuccess';
+const MetaIntegrationSuccess = React.lazy(() => import('@/pages/integrations/MetaIntegrationSuccess'));
 
 // Admin Pages
-import AdminDashboard from '@/pages/admin/AdminDashboard';
-import AdminUsers from '@/pages/admin/AdminUsers';
-import AdminSubscriptions from '@/pages/admin/AdminSubscriptions';
-import AdminLeads from '@/pages/admin/AdminLeads';
-import AdminSectors from '@/pages/admin/AdminSectors';
-import AdminLearning from '@/pages/admin/AdminLearning';
-import AdminMetaAds from '@/pages/admin/AdminMetaAds';
-import AdminPagarme from '@/pages/admin/AdminPagarme';
-import AdminAsaas from '@/pages/admin/AdminAsaas';
-import PaymentsIntegration from '@/pages/admin/PaymentsIntegration';
-import AdminSettings from '@/pages/admin/AdminSettings';
-import AdminAIMonitoring from '@/pages/admin/AdminAIMonitoring';
-import AdminClientBusinesses from '@/pages/admin/AdminClientBusinesses';
-import AdminClientCampaigns from '@/pages/admin/AdminClientCampaigns';
-import AdminNotifications from '@/pages/admin/AdminNotifications';
-import AdminOpenAI from '@/pages/admin/AdminOpenAI';
-import AdminAIMedia from '@/pages/admin/AdminAIMedia';
-import AdminCampaignProfiles from '@/pages/admin/AdminCampaignProfiles';
-import MapboxSettings from '@/pages/admin/MapboxSettings';
-import PlansAdmin from '@/pages/admin/PlansAdmin';
-import MetaTestLab from '@/pages/admin/MetaTestLab';
-import AdminContingency from '@/pages/admin/AdminContingency';
-import AdminCustomReport from '@/pages/admin/AdminCustomReport';
-import AdminQuizzes from '@/pages/admin/AdminQuizzes';
-import AdminQuizBuilder from '@/pages/admin/AdminQuizBuilder';
-import AdminQuizLeads from '@/pages/admin/AdminQuizLeads';
-import AdminQuizLeadDetail from '@/pages/admin/AdminQuizLeadDetail';
+const AdminDashboard = React.lazy(() => import('@/pages/admin/AdminDashboard'));
+const AdminUsers = React.lazy(() => import('@/pages/admin/AdminUsers'));
+const AdminSubscriptions = React.lazy(() => import('@/pages/admin/AdminSubscriptions'));
+const AdminLeads = React.lazy(() => import('@/pages/admin/AdminLeads'));
+const AdminSectors = React.lazy(() => import('@/pages/admin/AdminSectors'));
+const AdminLearning = React.lazy(() => import('@/pages/admin/AdminLearning'));
+const AdminMetaAds = React.lazy(() => import('@/pages/admin/AdminMetaAds'));
+const AdminPagarme = React.lazy(() => import('@/pages/admin/AdminPagarme'));
+const AdminAsaas = React.lazy(() => import('@/pages/admin/AdminAsaas'));
+const PaymentsIntegration = React.lazy(() => import('@/pages/admin/PaymentsIntegration'));
+const AdminSettings = React.lazy(() => import('@/pages/admin/AdminSettings'));
+const AdminAIMonitoring = React.lazy(() => import('@/pages/admin/AdminAIMonitoring'));
+const AdminClientBusinesses = React.lazy(() => import('@/pages/admin/AdminClientBusinesses'));
+const AdminClientCampaigns = React.lazy(() => import('@/pages/admin/AdminClientCampaigns'));
+const AdminNotifications = React.lazy(() => import('@/pages/admin/AdminNotifications'));
+const AdminOpenAI = React.lazy(() => import('@/pages/admin/AdminOpenAI'));
+const AdminAIMedia = React.lazy(() => import('@/pages/admin/AdminAIMedia'));
+const AdminCampaignProfiles = React.lazy(() => import('@/pages/admin/AdminCampaignProfiles'));
+const MapboxSettings = React.lazy(() => import('@/pages/admin/MapboxSettings'));
+const PlansAdmin = React.lazy(() => import('@/pages/admin/PlansAdmin'));
+const MetaTestLab = React.lazy(() => import('@/pages/admin/MetaTestLab'));
+const AdminContingency = React.lazy(() => import('@/pages/admin/AdminContingency'));
+const AdminCustomReport = React.lazy(() => import('@/pages/admin/AdminCustomReport'));
+const AdminQuizzes = React.lazy(() => import('@/pages/admin/AdminQuizzes'));
+const AdminQuizBuilder = React.lazy(() => import('@/pages/admin/AdminQuizBuilder'));
+const AdminQuizLeads = React.lazy(() => import('@/pages/admin/AdminQuizLeads'));
+const AdminQuizLeadDetail = React.lazy(() => import('@/pages/admin/AdminQuizLeadDetail'));
 
 const PrivateRoutes: React.FC = () => {
   return (

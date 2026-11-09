@@ -1,7 +1,7 @@
 
 import { serve } from 'https://deno.land/std@0.190.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { FacebookAdsApi, AdAccount, Campaign, AdSet, AdCreative, Ad } from 'https://esm.sh/facebook-nodejs-business-sdk@19.0.3';
+import { GRAPH_BASE } from '../_shared/meta.ts';
 import { toMessage, toObject } from '../_shared/errors.ts';
 import type { CampaignStatus } from '../_shared/status.ts';
 
@@ -27,6 +27,22 @@ interface AdvantageCampaignPayload {
   title: string;
   copy: string;
   whatsapp_number: string;
+}
+
+// audit QA-03/PLT-02: o facebook-nodejs-business-sdk (Node) não inicializava no Edge Runtime
+// (WORKER_ERROR até no OPTIONS). Chamadas diretas à Graph API no lugar do SDK.
+// Em erro, lança { response: { error } } no mesmo formato que o catch abaixo já trata.
+async function graphCreate(adAccountId: string, edge: string, params: Record<string, unknown>, accessToken: string): Promise<{ id: string }> {
+  const res = await fetch(`${GRAPH_BASE}/${adAccountId}/${edge}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify(params),
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok || body?.error) {
+    throw { response: { error: body?.error ?? { message: `HTTP ${res.status}` } } };
+  }
+  return body as { id: string };
 }
 
 serve(async (req) => {
@@ -128,9 +144,6 @@ serve(async (req) => {
       );
     }
 
-    // Initialize Facebook Ads API
-    FacebookAdsApi.init(accessToken);
-    console.log('🚀 Facebook Ads API initialized for Advantage+');
 
     // Clean and fix ad_account_id
     const cleanAdAccountId = ad_account_id.replace(/^act_+/, 'act_');
@@ -174,7 +187,6 @@ serve(async (req) => {
 
     // 1. Create Campaign - Advantage+ Traffic
     console.log('📈 Creating Advantage+ Campaign...');
-    const campaignFields: string[] = [];
     const campaignParams = {
       name: `${payload.name} - Advantage+ Tráfego WhatsApp`,
       objective: 'OUTCOME_TRAFFIC',
@@ -184,12 +196,11 @@ serve(async (req) => {
       is_adset_budget_sharing_enabled: false
     };
 
-    const campaign = await (new AdAccount(adAccountId)).createCampaign(campaignFields, campaignParams);
+    const campaign = await graphCreate(adAccountId, 'campaigns', campaignParams, accessToken);
     console.log('✅ Advantage+ Campaign created:', campaign.id);
 
     // 2. Create AdSet - Advantage+ Targeting (sem segmentação manual)
     console.log('🎯 Creating Advantage+ AdSet (automated targeting)...');
-    const adSetFields: string[] = [];
     const adSetParams = {
       name: `${payload.name} - Advantage+ AdSet`,
       campaign_id: campaign.id,
@@ -215,12 +226,11 @@ serve(async (req) => {
       status: 'PAUSED'
     };
 
-    const adSet = await (new AdAccount(adAccountId)).createAdSet(adSetFields, adSetParams);
+    const adSet = await graphCreate(adAccountId, 'adsets', adSetParams, accessToken);
     console.log('✅ Advantage+ AdSet created:', adSet.id);
 
     // 3. Create Ad Creative - Advantage+
     console.log('🎨 Creating Advantage+ Creative...');
-    const creativeFields: string[] = [];
     
     // Determine media object based on type
     let mediaObject = {};
@@ -234,7 +244,9 @@ serve(async (req) => {
       name: `${payload.name} - Advantage+ Creative`,
       object_story_spec: {
         page_id: payload.fanpage_id,
-        instagram_actor_id: payload.instagram_actor_id,
+        // audit PLT-03: a Meta descontinuou instagram_actor_id no object_story_spec → instagram_user_id
+        // (o payload do frontend mantém o nome antigo do campo)
+        instagram_user_id: payload.instagram_actor_id,
         link_data: {
           ...mediaObject,
           link: whatsappLink,
@@ -251,12 +263,11 @@ serve(async (req) => {
       }
     };
 
-    const creative = await (new AdAccount(adAccountId)).createAdCreative(creativeFields, creativeParams);
+    const creative = await graphCreate(adAccountId, 'adcreatives', creativeParams, accessToken);
     console.log('✅ Advantage+ Creative created:', creative.id);
 
     // 4. Create Ad - Advantage+
     console.log('📢 Creating Advantage+ Ad...');
-    const adFields: string[] = [];
     const adParams = {
       name: `${payload.name} - Advantage+ Ad`,
       adset_id: adSet.id,
@@ -264,7 +275,7 @@ serve(async (req) => {
       status: 'PAUSED'
     };
 
-    const ad = await (new AdAccount(adAccountId)).createAd(adFields, adParams);
+    const ad = await graphCreate(adAccountId, 'ads', adParams, accessToken);
     console.log('✅ Advantage+ Ad created:', ad.id);
 
     // Save campaign to database

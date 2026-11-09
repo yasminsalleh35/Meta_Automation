@@ -11,6 +11,7 @@ import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { fetchAllGraphPages } from "../_shared/metaPaging.ts";
 import { mapMetaEffectiveStatus } from "../_shared/status.ts";
+import { META_GRAPH_VERSION } from '../_shared/meta.ts'; // audit PLT-03
 
 type OAuthExchangeBody = {
   code: string;
@@ -143,7 +144,7 @@ serve(async (req) => {
 
   const APP_ID = metaConfig.app_id;
   const APP_SECRET = metaConfig.app_secret;
-  const API_VERSION = Deno.env.get('META_API_VERSION') ?? 'v23.0';
+  const API_VERSION = Deno.env.get('META_API_VERSION') ?? META_GRAPH_VERSION;
 
   // Validate redirect URI against allowed URIs
   const validRedirectUris = [
