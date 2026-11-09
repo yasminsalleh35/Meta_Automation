@@ -49,7 +49,7 @@ const plans = [
       'Relatórios estratégicos',
       'Suporte prioritário',
       'API personalizada',
-      '12x R$ 208,25 sem juros',
+      'Parcelamento em até 12x no cartão',
       'Economia de R$ 1.700/ano'
     ],
     popular: true,

@@ -28,15 +28,15 @@ export const ComparisonTable: React.FC = () => {
       camply: {
         title: 'R$ 397,99',
         subtitle: 'Melhor custo-benefício',
-        highlight: 'Até 5x mais barato'
+        highlight: 'Valor fixo mensal'
       },
       gestor: {
         title: 'A partir de R$ 1.200',
-        subtitle: '3x mais caro'
+        subtitle: 'Valor varia por profissional'
       },
       agencia: {
         title: 'A partir de R$ 2.000',
-        subtitle: '5x mais caro'
+        subtitle: 'Valor varia por escopo'
       }
     },
     {
@@ -44,8 +44,8 @@ export const ComparisonTable: React.FC = () => {
       icon: Zap,
       camply: {
         title: 'Automática com IA',
-        subtitle: '24h por dia trabalhando',
-        highlight: 'Nunca para de otimizar'
+        subtitle: 'Monitoramento automático contínuo',
+        highlight: 'Sugestões de otimização com IA'
       },
       gestor: {
         title: 'Manual (sujeita a erros)',

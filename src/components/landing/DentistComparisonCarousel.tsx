@@ -24,7 +24,7 @@ export const DentistComparisonCarousel: React.FC = () => {
       camply: {
         title: "~R$ 167/mês",
         subtitle: "Plano anual fixo",
-        highlight: "Até 10x mais barato"
+        highlight: "Valor fixo"
       },
       gestor: {
         title: "R$ 1.500 a R$ 5.000/mês",
@@ -56,8 +56,8 @@ export const DentistComparisonCarousel: React.FC = () => {
       icon: TrendingUp,
       title: "Otimização",
       camply: {
-        title: "IA 24/7 em tempo real",
-        subtitle: "Nunca para de melhorar",
+        title: "Monitoramento automático",
+        subtitle: "Sugestões de otimização com IA",
         highlight: "Otimização constante"
       },
       gestor: {

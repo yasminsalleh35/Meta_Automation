@@ -244,7 +244,7 @@ export const StepReview: React.FC<StepReviewProps> = ({ data, updateData }) => {
                 </ul>
                 <span className="text-xs text-gray-500 mt-2 block">
                   Seus dados são tratados conforme nossa{' '}
-                  <a href="/privacy" className="text-blue-600 hover:underline" target="_blank">
+                  <a href="/legal/privacy" className="text-blue-600 hover:underline" target="_blank" rel="noopener noreferrer">{/* audit LGL-05 */}
                     Política de Privacidade
                   </a>
                   . Você pode solicitar a exclusão a qualquer momento.

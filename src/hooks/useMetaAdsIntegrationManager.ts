@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { useSupabase } from '@/hooks/useSupabase';
 import { useAuth } from '@/contexts/AuthContext';
+import { INTEGRATION_SAFE_COLUMNS } from '@/lib/integrationColumns';
 
 export const useMetaAdsIntegrationManager = () => {
   const supabase = useSupabase();
@@ -25,7 +26,7 @@ export const useMetaAdsIntegrationManager = () => {
         
         const { data, error } = await supabase
           .from('integrations')
-          .select('*')
+          .select(INTEGRATION_SAFE_COLUMNS) // sem tokens no navegador (audit SEC-12)
           .eq('user_id', session.user.id)
           .eq('provider', query.provider)
           .single();

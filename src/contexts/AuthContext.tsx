@@ -5,6 +5,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useRecoveryState } from '@/hooks/useRecoveryState';
 import { clearUserData } from '@/lib/clearUserData';
 import { toast } from '@/hooks/use-toast';
+import { accountBlockMessage, ACCOUNT_SUSPENDED_MESSAGE } from '@/lib/accountStatus';
 
 // Limpeza de URL com tokens (sem navegar)
 function cleanTokensFromURL() {
@@ -16,9 +17,11 @@ function cleanTokensFromURL() {
 }
 
 // ADM-02: contas suspensas pelo admin (profiles.status = 'suspended') são desconectadas.
-export const ACCOUNT_SUSPENDED_MESSAGE = 'Sua conta está suspensa. Entre em contato com o suporte.';
+// audit LGL-03: idem para contas com exclusão pedida (profiles.status = 'pending_deletion').
+export { ACCOUNT_SUSPENDED_MESSAGE, ACCOUNT_PENDING_DELETION_MESSAGE } from '@/lib/accountStatus';
 
-async function isAccountSuspended(userId: string): Promise<boolean> {
+/** Mensagem de bloqueio da conta (suspensa / exclusão pedida) ou null se pode entrar. */
+async function getAccountBlockMessage(userId: string): Promise<string | null> {
   const { data, error } = await supabase
     .from('profiles')
     .select('status')
@@ -26,9 +29,9 @@ async function isAccountSuspended(userId: string): Promise<boolean> {
     .maybeSingle();
   if (error) {
     console.error('Error checking account status:', error);
-    return false; // falha de leitura não derruba a sessão; o backend também bloqueia
+    return null; // falha de leitura não derruba a sessão; o backend também bloqueia
   }
-  return (data as { status?: string } | null)?.status === 'suspended';
+  return accountBlockMessage((data as { status?: string } | null)?.status);
 }
 
 export interface AuthUser extends User {
@@ -73,11 +76,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     console.log('AuthProvider: Initializing auth state', { isActiveRecovery });
     
     // ADM-02: encerra a sessão de uma conta suspensa e avisa o usuário.
-    const signOutSuspended = async () => {
+    const signOutSuspended = async (message: string) => {
       if (isMounted) setAccountSuspended(true);
       toast({
-        title: 'Conta suspensa',
-        description: ACCOUNT_SUSPENDED_MESSAGE,
+        title: message === ACCOUNT_SUSPENDED_MESSAGE ? 'Conta suspensa' : 'Conta em exclusão',
+        description: message,
         variant: 'destructive',
       });
       try {
@@ -98,9 +101,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const { data: { session } } = await supabase.auth.getSession();
         console.log('Initial session check:', session ? 'session found' : 'no session');
 
-        const suspended = session?.user ? await isAccountSuspended(session.user.id) : false;
-        if (suspended && isMounted) {
-          await signOutSuspended();
+        const blockMessage = session?.user ? await getAccountBlockMessage(session.user.id) : null;
+        if (blockMessage && isMounted) {
+          await signOutSuspended(blockMessage);
         } else if (session?.user && isMounted) {
           lastUserIdRef.current = session.user.id;
           const authUser: AuthUser = {
@@ -179,8 +182,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               // ADM-02: conta suspensa → sair (fora do callback, ver PLT-08)
               const suspendedCheckUid = session.user.id;
               setTimeout(async () => {
-                if (isMounted && await isAccountSuspended(suspendedCheckUid)) {
-                  await signOutSuspended();
+                const blockMessage = isMounted ? await getAccountBlockMessage(suspendedCheckUid) : null;
+                if (isMounted && blockMessage) {
+                  await signOutSuspended(blockMessage);
                 }
               }, 0);
 
@@ -241,11 +245,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       throw error;
     }
 
-    // ADM-02: conta suspensa não entra
-    if (data?.user && await isAccountSuspended(data.user.id)) {
+    // ADM-02 / LGL-03: conta suspensa ou com exclusão pedida não entra
+    const blockMessage = data?.user ? await getAccountBlockMessage(data.user.id) : null;
+    if (blockMessage) {
       await supabase.auth.signOut();
       setAccountSuspended(true);
-      throw new Error(ACCOUNT_SUSPENDED_MESSAGE);
+      throw new Error(blockMessage);
     }
     setAccountSuspended(false);
 

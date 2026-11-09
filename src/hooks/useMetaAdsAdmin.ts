@@ -1,7 +1,9 @@
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { useSupabase } from '@/hooks/useSupabase';
+import { buildIlikeOrFilter, pageRange, ADMIN_PAGE_SIZE } from '@/lib/postgrestSearch';
+import { INTEGRATION_SAFE_COLUMNS } from '@/lib/integrationColumns';
 
 interface User {
   id: string;
@@ -42,9 +44,6 @@ interface MetaAdsAdminConfigRow {
   updated_at: string;
 }
 
-// Colunas não sensíveis — nunca access_token (audit SEC-12)
-const INTEGRATION_PUBLIC_COLUMNS = 'id, user_id, provider, status, created_at, app_id, ad_account_id, page_id';
-
 export const useMetaAdsAdmin = () => {
   const { toast } = useToast();
   const supabase = useSupabase();
@@ -58,29 +57,51 @@ export const useMetaAdsAdmin = () => {
     businessManagerId: ''
   });
 
-  const fetchUsersAndIntegrations = async () => {
+  // Audit ADM-03: usuários paginados no servidor (50/página, busca por nome/email) e só as
+  // integrações dos usuários da página — antes carregava todos (corte de 1.000 linhas).
+  const [usersTotal, setUsersTotal] = useState(0);
+  const [usersPage, setUsersPage] = useState(0);
+  const [usersLoading, setUsersLoading] = useState(false);
+  const usersSearchRef = useRef('');
+  const usersPageRef = useRef(0);
+  const usersRequestRef = useRef(0);
+
+  const fetchUsersAndIntegrations = async (search?: string, nextPage: number = usersPageRef.current) => {
+    if (search !== undefined) usersSearchRef.current = search;
+    const requestId = ++usersRequestRef.current;
+    setUsersLoading(true);
     try {
-      // Buscar todos os usuários usando função administrativa segura
-      const { data: usersData, error: usersError } = await supabase
-        .rpc('get_profiles_admin_with_email');
+      const [from, to] = pageRange(nextPage, ADMIN_PAGE_SIZE);
+      let usersQuery = supabase
+        .rpc('get_profiles_admin_with_email', undefined, { count: 'exact' })
+        .order('created_at', { ascending: false });
+      const searchFilter = buildIlikeOrFilter(['name', 'email'], usersSearchRef.current);
+      if (searchFilter) usersQuery = usersQuery.or(searchFilter);
+      const { data: usersData, error: usersError, count } = await usersQuery.range(from, to);
 
       if (usersError) throw usersError;
+      const ids = (usersData || []).map(user => user.id);
 
       // Buscar todas as integrações Meta Ads
       const { data: integrationsData, error: integrationsError } = await supabase
         .from('integrations')
-        .select(INTEGRATION_PUBLIC_COLUMNS)
-        .eq('provider', 'meta_ads');
+        .select(INTEGRATION_SAFE_COLUMNS) // nunca access_token (audit SEC-12)
+        .eq('provider', 'meta_ads')
+        .in('user_id', ids.length > 0 ? ids : ['00000000-0000-0000-0000-000000000000']);
 
       if (integrationsError) throw integrationsError;
+      if (requestId !== usersRequestRef.current) return;
 
       // Combinar dados
-      const usersWithIntegrations: UserWithIntegration[] = usersData.map(user => ({
+      const usersWithIntegrations: UserWithIntegration[] = (usersData || []).map(user => ({
         ...user,
-        integration: (integrationsData as Integration[]).find(int => int.user_id === user.id)
+        integration: ((integrationsData || []) as Integration[]).find(int => int.user_id === user.id)
       }));
 
       setUsers(usersWithIntegrations);
+      setUsersTotal(count ?? 0);
+      setUsersPage(nextPage);
+      usersPageRef.current = nextPage;
     } catch (error) {
       console.error('Error fetching data:', error);
       toast({
@@ -90,6 +111,7 @@ export const useMetaAdsAdmin = () => {
       });
     } finally {
       setLoading(false);
+      if (requestId === usersRequestRef.current) setUsersLoading(false);
     }
   };
 
@@ -207,6 +229,10 @@ export const useMetaAdsAdmin = () => {
 
   return {
     users,
+    usersTotal,
+    usersPage,
+    usersPageSize: ADMIN_PAGE_SIZE,
+    usersLoading,
     loading,
     globalConfig,
     setGlobalConfig,

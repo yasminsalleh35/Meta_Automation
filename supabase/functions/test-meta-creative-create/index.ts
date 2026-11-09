@@ -2,6 +2,7 @@
 // Last updated: 2025-10-09 - ✅ CORREÇÃO v23: IMAGE usa image_url (dark post), VIDEO usa source_instagram_media_id
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { requireAdmin, authErrorResponse } from '../_shared/auth.ts';
+import { requireMetaAccessToken } from '../_shared/metaIntegration.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -14,8 +15,9 @@ serve(async (req) => {
   }
 
   // Laboratório de testes Meta: somente admin (audit SEC-06/SEC-10)
+  let adminUserId = '';
   try {
-    await requireAdmin(req);
+    adminUserId = (await requireAdmin(req)).user.id;
   } catch (e) {
     const resp = authErrorResponse(e, corsHeaders);
     if (resp) return resp;
@@ -33,9 +35,11 @@ serve(async (req) => {
       instagramMediaId,
       adTitle, 
       adText, 
-      callToAction, 
-      accessToken 
+      callToAction
     } = payload;
+
+    // Token lido no servidor da integração do admin; o navegador não o envia (audit SEC-12)
+    const accessToken = await requireMetaAccessToken(adminUserId);
 
     console.log('[TEST-META-CREATIVE-CREATE] Request received:', {
       creativeType: creativeType || 'upload',
@@ -376,7 +380,7 @@ serve(async (req) => {
     return new Response(
       JSON.stringify({
         success: false,
-        error: error.message,
+        error: error instanceof Error ? error.message : String(error),
       }),
       {
         status: 500,

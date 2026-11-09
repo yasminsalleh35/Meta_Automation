@@ -58,10 +58,10 @@ export default function AnnualPlanPage() {
   return (
     <>
       <Helmet>
-        <title>Plano Anual Camply - 12x R$ 249,99 sem juros | Economize R$ 1.200</title>
+        <title>Plano Anual Camply - 12x R$ 249,99 no cartão | Economize R$ 1.200</title>
         <meta 
           name="description" 
-          content="Apenas R$ 249,99 por mês! Plano Anual com implantação inclusa e suporte especializado. Pague em 12x sem juros. Economize R$ 1.200."
+          content="Apenas R$ 249,99 por mês! Plano Anual com implantação inclusa e suporte especializado. Pague em até 12x no cartão. Economize R$ 1.200."
         />
       </Helmet>
 
@@ -101,7 +101,7 @@ export default function AnnualPlanPage() {
               <div className="text-5xl sm:text-6xl font-extrabold mb-2 bg-gradient-to-r from-primary to-camply-blue bg-clip-text text-transparent">
                 12x de R$ 249<span className="text-3xl">,99</span>
               </div>
-              <div className="text-muted-foreground mb-4">sem juros no cartão</div>
+              <div className="text-muted-foreground mb-4">no cartão de crédito</div>
                 
                 <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-secondary/10 text-secondary text-sm font-bold border border-secondary/30">
                   <Zap className="w-4 h-4" />

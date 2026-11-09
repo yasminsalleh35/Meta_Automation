@@ -8,7 +8,6 @@ import { ProblemSection } from '@/components/landing/ProblemSection';
 import { ComparisonTable } from '@/components/landing/ComparisonTable';
 import { HowItWorksSection } from '@/components/landing/HowItWorksSection';
 import { FeaturesSection } from '@/components/landing/FeaturesSection';
-import { MetaCertificationsSection } from '@/components/landing/MetaCertificationsSection';
 import { PricingSection } from '@/components/landing/PricingSection';
 import { CTASection } from '@/components/landing/CTASection';
 import { LandingFooter } from '@/components/landing/LandingFooter';
@@ -36,7 +35,7 @@ const Index = () => {
       <ComparisonTable />
       <HowItWorksSection />
       <FeaturesSection />
-      <MetaCertificationsSection />
+      {/* audit LGL-06: seção "Meta Certified" removida (selos/certificação não comprovados) */}
       <PricingSection />
       <CTASection />
       <LandingFooter />

@@ -54,7 +54,8 @@ export const WizardStep4_Location: React.FC<WizardStep4LocationProps> = ({ formD
   
   const { mapboxToken } = useMapbox();
   const { existingIntegration } = useMetaAdsIntegration();
-  const metaAccessToken = existingIntegration?.access_token;
+  // Busca Meta roda no servidor; o navegador só sabe se há integração ativa (audit SEC-12)
+  const metaConnected = existingIntegration?.status === 'active';
   
   const debounceTimerRef = useRef<NodeJS.Timeout>();
   const abortControllerRef = useRef<AbortController>();
@@ -139,13 +140,13 @@ export const WizardStep4_Location: React.FC<WizardStep4LocationProps> = ({ formD
 
       try {
         // PRIORIDADE 1: Tentar Meta API oficial (se token disponível)
-        if (metaAccessToken) {
+        if (metaConnected) {
           console.log(`🔍 [META-API] Buscando estados via Meta API oficial: ${regionQuery} (${formData.countryCode})`);
           
           try {
             const metaResults = await metaAdsLocationService.getLocationSuggestions(
               regionQuery,
-              metaAccessToken,
+              '', // token fica no servidor (audit SEC-12)
               formData.countryCode,
               ['region']
             );
@@ -227,7 +228,7 @@ export const WizardStep4_Location: React.FC<WizardStep4LocationProps> = ({ formD
         regionAbortControllerRef.current.abort();
       }
     };
-  }, [regionQuery, formData.countryCode, mapboxToken, metaAccessToken, targetingMode]);
+  }, [regionQuery, formData.countryCode, mapboxToken, metaConnected, targetingMode]);
 
   const handleCitySelect = (suggestion: MapboxFeature) => {
     const [lng, lat] = suggestion.center;

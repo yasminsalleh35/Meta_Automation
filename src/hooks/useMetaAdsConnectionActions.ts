@@ -83,7 +83,8 @@ export const useMetaAdsConnectionActions = ({
         throw new Error('Token de acesso não foi recebido');
       }
       
-      const token = result.accessToken || result.integration?.access_token;
+      // Token não chega ao navegador (audit SEC-12); a integração salva no servidor basta
+      const token = result.accessToken || '';
       
       console.log('✅ OAuth completed, token received:', {
         hasToken: !!token,

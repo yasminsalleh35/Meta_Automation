@@ -37,6 +37,7 @@ import MonthlyPlanPage from "./pages/plans/MonthlyPlanPage";
 import AnnualPlanPage from "./pages/plans/AnnualPlanPage";
 import QuizPublic from "./pages/QuizPublic";
 import IAPage from "./pages/IAPage";
+import { CookieConsentBanner } from "./components/legal/CookieConsentBanner";
 
 const queryClient = new QueryClient();
 
@@ -117,6 +118,8 @@ const App = () => (
         <BrowserRouter>
           <AuthProvider>
             <AppWithRoutes />
+            {/* audit LGL-02: consentimento de cookies em todas as rotas */}
+            <CookieConsentBanner />
           </AuthProvider>
         </BrowserRouter>
       </TooltipProvider>

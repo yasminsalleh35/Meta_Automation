@@ -133,7 +133,7 @@ export const AsaasCheckoutSection: React.FC = () => {
             <div className="pt-6 border-t border-gray-200">
               <div className="flex items-center gap-3 text-sm text-camply-dark/60">
                 <Shield className="w-5 h-5 text-camply-blue" />
-                <span>Pagamento seguro • Parcelamento sem juros</span>
+                <span>Pagamento seguro • Parcelamento em até 12x no cartão</span>
               </div>
             </div>
           </Card>
@@ -141,7 +141,7 @@ export const AsaasCheckoutSection: React.FC = () => {
 
         <div className="text-center mt-12">
           <p className="text-base text-camply-dark/60 font-medium">
-            ✓ Cancele quando quiser • ✓ Suporte 24/7 • ✓ Sem taxas ocultas
+            ✓ Cancele quando quiser • ✓ Suporte por WhatsApp em horário comercial • ✓ Sem taxas ocultas
           </p>
         </div>
       </div>

@@ -12,14 +12,12 @@ import LogConsole from './LogConsole';
 interface AdTestPanelProps {
   adAccountId: string;
   adSetId: string;
-  accessToken: string;
   creativeId?: string;
 }
 
 const AdTestPanel: React.FC<AdTestPanelProps> = ({
   adAccountId,
   adSetId,
-  accessToken,
   creativeId,
 }) => {
   const { toast } = useToast();
@@ -70,7 +68,7 @@ const AdTestPanel: React.FC<AdTestPanelProps> = ({
         body: {
           adAccountId,
           adConfig: config,
-          accessToken,
+          // token resolvido no servidor (audit SEC-12)
         },
       });
 

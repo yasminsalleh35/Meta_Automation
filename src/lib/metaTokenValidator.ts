@@ -38,8 +38,10 @@ class MetaTokenValidator {
     return this.instance;
   }
 
-  async validate(accessToken: string, globalConfig: any): Promise<ValidationResult> {
-    const cacheKey = `${accessToken?.slice(0, 10)}_${globalConfig?.appId}`;
+  // integrationKey identifica a integração ativa (id:updated_at); o token em si só é lido
+  // no servidor pela edge function meta-validation (audit SEC-12)
+  async validate(integrationKey: string, globalConfig: any): Promise<ValidationResult> {
+    const cacheKey = `${integrationKey}_${globalConfig?.appId}`;
     
     // ✅ FASE 4.2: Check cache first
     const cached = this.cache.get(cacheKey);
@@ -61,7 +63,7 @@ class MetaTokenValidator {
     console.log('[MetaTokenValidator] 🔍 Starting new validation request');
 
     try {
-      const result = await this.doValidation(accessToken, globalConfig);
+      const result = await this.doValidation(integrationKey, globalConfig);
       
       // ✅ FASE 4.2: Cache the result
       this.cache.set(cacheKey, { result, timestamp: Date.now() });
@@ -88,14 +90,14 @@ class MetaTokenValidator {
     }
   }
 
-  private async doValidation(accessToken: string, globalConfig: any): Promise<ValidationResult> {
-    if (!accessToken || !globalConfig?.appId) {
+  private async doValidation(integrationKey: string, globalConfig: any): Promise<ValidationResult> {
+    if (!integrationKey || !globalConfig?.appId) {
       return {
         isValid: false,
         isChecking: false,
         isCompatible: false,
         needsReconnection: false,
-        error: 'Missing access token or app configuration'
+        error: 'Missing active integration or app configuration'
       };
     }
 

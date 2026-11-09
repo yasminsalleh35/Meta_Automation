@@ -5,6 +5,7 @@ import { useGlobalMetaConfig } from '@/hooks/useGlobalMetaConfig';
 import { metaAdsAuthService } from '@/services/metaAds/MetaAdsAuthService';
 import { useMetaAdsPermissionLevels, PermissionLevel } from './useMetaAdsPermissionLevels';
 import { supabase } from '@/integrations/supabase/client';
+import { INTEGRATION_SAFE_COLUMNS } from '@/lib/integrationColumns';
 
 // ✅ CORREÇÃO: Detecção aprimorada de interferência de extensões
 const detectExtensionInterference = () => {
@@ -195,7 +196,7 @@ export const useMetaAdsCredentialValidator = () => {
               // Buscar integração salva no banco de dados
               const { data: integration, error } = await supabase
                 .from('integrations')
-                .select('*')
+                .select(INTEGRATION_SAFE_COLUMNS) // token fica no servidor (audit SEC-12)
                 .eq('provider', 'meta_ads')
                 .eq('status', 'active')
                 .single();
@@ -221,7 +222,8 @@ export const useMetaAdsCredentialValidator = () => {
               });
 
               resolve({
-                accessToken: integration.access_token,
+                // O token não é legível no navegador (audit SEC-12); as edge functions o leem
+                accessToken: '',
                 grantedScopes: ['ads_management', 'pages_show_list'],
                 integration
               });

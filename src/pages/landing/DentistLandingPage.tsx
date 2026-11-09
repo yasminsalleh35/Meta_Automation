@@ -7,10 +7,10 @@ import { Badge } from '@/components/ui/badge';
 import { SimpleMessagesAnimation } from '@/components/landing/SimpleMessagesAnimation';
 import { AIWorkflowAnimation } from '@/components/landing/AIWorkflowAnimation';
 import { DentistScheduleAnimation } from '@/components/landing/DentistScheduleAnimation';
-import { MetaCertificationsSection } from '@/components/landing/MetaCertificationsSection';
 import { PrecisionAIAnimation } from '@/components/animations/PrecisionAIAnimation';
 import { DentistComparisonCarousel } from '@/components/landing/DentistComparisonCarousel';
 import { PricingSection } from '@/components/landing/PricingSection';
+import { CookiePreferencesLink } from '@/components/legal/CookieConsentBanner';
 import { 
   Check, 
   Clock, 
@@ -106,7 +106,7 @@ export const DentistLandingPage: React.FC = () => {
             <div className="relative w-full aspect-video">
               <iframe
                 className="absolute top-0 left-0 w-full h-full rounded-lg sm:rounded-xl shadow-lg"
-                src="https://www.youtube.com/embed/SVsJsBt4rjc"
+                src="https://www.youtube-nocookie.com/embed/SVsJsBt4rjc" /* audit LGL-02: modo de privacidade (sem cookies até o play) */
                 title="Camply: Como funciona a plataforma para dentistas"
                 frameBorder="0"
                 allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
@@ -200,7 +200,7 @@ export const DentistLandingPage: React.FC = () => {
           <div className="max-w-4xl mx-auto">
             <div className="relative aspect-video rounded-2xl overflow-hidden shadow-2xl">
               <iframe
-                src="https://www.youtube.com/embed/KXLpZ21NlAo?si=J7vlHDYUSZZ6dq8T"
+                src="https://www.youtube-nocookie.com/embed/KXLpZ21NlAo" /* audit LGL-02 */
                 title="Como configurar sua primeira campanha no Camply"
                 allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
                 allowFullScreen
@@ -232,7 +232,7 @@ export const DentistLandingPage: React.FC = () => {
                       <div>
                         <h4 className="font-semibold text-blue-900 mb-2">Camply: Economia Real</h4>
                         <p className="text-blue-800">
-                          <strong>Economize cerca de 90–95%</strong> em gestão mensal comparado ao mercado, 
+                          Valor fixo, sem taxa por lead, 
                           com pacote completo por <strong className="bg-yellow-200 px-2 py-1 rounded animate-pulse">menos de R$ 170/mês</strong>.
                         </p>
                       </div>
@@ -272,8 +272,8 @@ export const DentistLandingPage: React.FC = () => {
                         <span className="font-semibold text-green-800">Conclusão</span>
                       </div>
                       <p className="text-green-700 text-sm">
-                        Com Camply, você <strong>economiza milhares de reais por ano</strong> 
-                        e ainda tem resultados superiores com IA especializada.
+                        Com a Camply, você paga um <strong>valor fixo</strong> e acompanha seus anúncios 
+                        em um só lugar, com sugestões de IA especializada.
                       </p>
                     </div>
                   </div>
@@ -359,28 +359,9 @@ export const DentistLandingPage: React.FC = () => {
         </div>
       </section>
 
-      {/* Meta Certifications */}
-      <MetaCertificationsSection />
+      {/* audit LGL-06: seção "Meta Certified" removida (selos/certificação não comprovados) */}
 
-      {/* Results */}
-      <section className="py-16 sm:py-20 px-4 bg-camply-blue text-white">
-        <div className="container-responsive text-center">
-          <h2 className="heading-responsive font-bold mb-12 sm:mb-16">Resultados Reais</h2>
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-6 sm:gap-8">
-            {[
-              { icon: Users, label: "+75.000 leads gerados", value: "📥" },
-              { icon: Clock, label: "4min23s para lançar uma campanha", value: "⏱️" },
-              { icon: TrendingUp, label: "Até 73% menos custo por lead vs. agências", value: "📈" },
-              { icon: DollarSign, label: "Economia de +R$ 12 mil/ano em gestão de tráfego", value: "💰" }
-            ].map((stat, index) => (
-              <div key={index} className="text-center">
-                <div className="text-3xl sm:text-4xl mb-3 sm:mb-4">{stat.value}</div>
-                <p className="text-sm sm:text-base lg:text-lg font-semibold leading-tight">{stat.label}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
+      {/* audit LGL-06: seção "Resultados Reais" removida (números sem comprovação) */}
 
       {/* How it Works */}
       <section className="py-16 sm:py-20 px-4 bg-gray-50">
@@ -486,7 +467,7 @@ export const DentistLandingPage: React.FC = () => {
             <div className="text-center mb-8 sm:mb-12">
               <div className="inline-flex items-center px-3 sm:px-4 py-2 bg-red-100 text-red-700 rounded-full mb-4 sm:mb-6 text-sm sm:text-base">
                 <Clock className="w-3 h-3 sm:w-4 sm:h-4 mr-2" />
-                Oferta Limitada - Últimas Vagas
+                Plano Anual
               </div>
               <h2 className="text-2xl sm:text-3xl lg:text-4xl font-bold text-gray-900 mb-3 sm:mb-4">
                 Investimento que Transforma sua Clínica
@@ -524,7 +505,7 @@ export const DentistLandingPage: React.FC = () => {
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div className="text-center">
                         <CreditCard className="w-6 h-6 sm:w-8 sm:h-8 mx-auto text-blue-600 mb-2" />
-                        <p className="font-semibold text-gray-900 text-sm sm:text-base">12x sem juros</p>
+                        <p className="font-semibold text-gray-900 text-sm sm:text-base">Até 12x no cartão</p>
                         <p className="text-blue-600 text-base sm:text-lg font-bold">R$ 166,66/mês</p>
                       </div>
                       <div className="text-center">
@@ -549,7 +530,7 @@ export const DentistLandingPage: React.FC = () => {
                     { icon: Shield, title: "Acesso completo por 12 meses", desc: "Plataforma completa sem limitações" },
                     { icon: Infinity, title: "Campanhas ilimitadas", desc: "Crie quantas campanhas precisar" },
                     { icon: BarChart3, title: "Relatórios automáticos", desc: "Análises precisas e detalhadas" },
-                    { icon: Bot, title: "Otimização por IA", desc: "Inteligência artificial trabalhando 24h" },
+                    { icon: Bot, title: "Otimização por IA", desc: "Sugestões de otimização geradas por IA" },
                     { icon: Headphones, title: "Suporte especializado", desc: "Equipe técnica dedicada" },
                     { icon: DollarSign, title: "Valor fixo garantido", desc: "Sem taxas por lead ou surpresas" }
                   ].map((feature, index) => (
@@ -573,12 +554,8 @@ export const DentistLandingPage: React.FC = () => {
                       <span className="text-xs sm:text-sm font-medium text-green-800">Pagamento 100% Seguro</span>
                     </div>
                     <div className="flex items-center gap-2">
-                      <Users className="w-4 h-4 sm:w-5 sm:h-5 text-green-600" />
-                      <span className="text-xs sm:text-sm font-medium text-green-800">+500 Dentistas Confiam</span>
-                    </div>
-                    <div className="flex items-center gap-2">
                       <Award className="w-4 h-4 sm:w-5 sm:h-5 text-green-600" />
-                      <span className="text-xs sm:text-sm font-medium text-green-800">Garantia de Resultados</span>
+                      <span className="text-xs sm:text-sm font-medium text-green-800">Acompanhamento dos resultados no painel</span>
                     </div>
                   </div>
                 </div>
@@ -587,8 +564,8 @@ export const DentistLandingPage: React.FC = () => {
                 <Link to="/auth/register">
                   <Button size="lg" className="w-full bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white px-8 sm:px-10 py-4 sm:py-6 text-lg sm:text-xl font-bold shadow-xl hover:shadow-2xl transition-all transform hover:scale-105 btn-touch">
                     <Zap className="w-5 h-5 sm:w-6 sm:h-6 mr-2 sm:mr-3" />
-                    <span className="hidden sm:inline">Garantir Minha Vaga por R$ 2.000</span>
-                    <span className="sm:hidden">Garantir Minha Vaga</span>
+                    <span className="hidden sm:inline">Assinar o Plano Anual por R$ 2.000</span>
+                    <span className="sm:hidden">Assinar o Plano Anual</span>
                     <ArrowRight className="w-5 h-5 sm:w-6 sm:h-6 ml-2 sm:ml-3" />
                   </Button>
                 </Link>
@@ -603,39 +580,7 @@ export const DentistLandingPage: React.FC = () => {
         </div>
       </section>
 
-      {/* Testimonials */}
-      <section className="py-16 sm:py-20 px-4 bg-gray-50">
-        <div className="container-responsive">
-          <h2 className="heading-responsive font-bold text-gray-900 mb-12 sm:mb-16 text-center">
-            Dentistas recomendam:
-          </h2>
-          <div className="grid lg:grid-cols-2 gap-6 sm:gap-8 max-w-4xl mx-auto">
-            {[
-              {
-                quote: "Eu gastava R$ 1.800 por mês com agência. Com Camply, pago uma vez no ano e tenho mais resultado.",
-                author: "Dr. Matheus Ferreira",
-                specialty: "Ortodontista"
-              },
-              {
-                quote: "O painel me mostra quando o anúncio tá ruim, e a IA melhora pra mim sem eu mexer em nada.",
-                author: "Dra. Luana Tavares",
-                specialty: "Especialista em Estética Dental"
-              }
-            ].map((testimonial, index) => (
-              <Card key={index} className="shadow-md border-gray-200 h-full">
-                <CardContent className="card-responsive h-full flex flex-col">
-                  <Quote className="w-8 h-8 sm:w-10 sm:h-10 text-camply-blue mb-4 sm:mb-6 flex-shrink-0" />
-                  <p className="text-base sm:text-lg text-gray-700 mb-4 sm:mb-6 italic leading-relaxed flex-grow">"{testimonial.quote}"</p>
-                  <div className="text-right border-t border-gray-100 pt-3 sm:pt-4">
-                    <p className="font-semibold text-gray-900 text-sm sm:text-base">— {testimonial.author}</p>
-                    <p className="text-gray-600 text-sm">{testimonial.specialty}</p>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        </div>
-      </section>
+      {/* audit LGL-06: depoimentos removidos (sem autorização/comprovação). Reinserir apenas com casos reais autorizados. */}
 
       {/* CTA Section */}
       <section className="py-16 sm:py-20 px-4 bg-camply-blue text-white">
@@ -707,6 +652,12 @@ export const DentistLandingPage: React.FC = () => {
             />
           </div>
           <p className="text-gray-400 text-sm sm:text-base">© 2024 Camply. Todos os direitos reservados.</p>
+          {/* audit LGL-02/LGL-01: links legais + reabrir preferências de cookies */}
+          <div className="mt-3 flex flex-wrap items-center justify-center gap-4 text-sm text-gray-400">
+            <Link to="/legal/privacy" className="hover:text-white transition-colors">Privacidade</Link>
+            <Link to="/legal/terms" className="hover:text-white transition-colors">Termos</Link>
+            <CookiePreferencesLink className="hover:text-white transition-colors" />
+          </div>
         </div>
       </footer>
     </div>

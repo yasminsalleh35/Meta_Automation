@@ -3,23 +3,24 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
 import { Search, Filter, X } from 'lucide-react';
-import { Lead, LeadsFilters as ILeadsFilters } from '@/hooks/admin/useLeads';
+import { LeadsFilters as ILeadsFilters, LeadFilterOptions } from '@/hooks/admin/useLeads';
 
 interface LeadsFiltersProps {
   filters: ILeadsFilters;
   onFiltersChange: (filters: ILeadsFilters) => void;
-  leads: Lead[];
-  // ADM-05: quantidade após os filtros (as opções usam todos os leads)
-  resultCount?: number;
+  // ADM-05/ADM-03: opções calculadas no hook a partir de todos os leads (a lista é paginada)
+  options: LeadFilterOptions;
+  // total no servidor após os filtros
+  resultCount: number;
 }
 
 export const LeadsFilters: React.FC<LeadsFiltersProps> = ({
   filters,
   onFiltersChange,
-  leads,
+  options,
   resultCount
 }) => {
-  const count = resultCount ?? leads.length;
+  const count = resultCount;
   const statusOptions = [
     { value: 'novo', label: 'Novo' },
     { value: 'contatado', label: 'Contatado' },
@@ -28,19 +29,8 @@ export const LeadsFilters: React.FC<LeadsFiltersProps> = ({
     { value: 'perdido', label: 'Perdido' },
   ];
 
-  const uniqueSpecialties = Array.from(
-    new Set(
-      // ADM-05: une specialties (novo) e specialty (legado); ignora vazios (Radix não aceita value '')
-      leads.flatMap(lead => [
-        ...(Array.isArray(lead.specialties) ? lead.specialties : []),
-        ...(lead.specialty ? [lead.specialty] : []),
-      ]).filter((s): s is string => typeof s === 'string' && s.trim() !== '')
-    )
-  ).sort();
-
-  const uniqueUtmSources = Array.from(
-    new Set(leads.map(lead => lead.utm_source).filter(Boolean))
-  ).sort();
+  const uniqueSpecialties = options.specialties;
+  const uniqueUtmSources = options.utmSources;
 
   const hasActiveFilters = Object.values(filters).some(value => 
     value !== undefined && value !== '' && 

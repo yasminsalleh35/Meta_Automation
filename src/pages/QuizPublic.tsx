@@ -9,6 +9,9 @@ import { ArrowLeft, ArrowRight, CheckCircle2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { safeUrl } from '@/lib/safeUrl';
 import { DynamicQuizStep } from '@/components/quiz/DynamicQuizStep';
+import { Card, CardContent } from '@/components/ui/card';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Label } from '@/components/ui/label';
 
 interface QuizStep {
   id: string;
@@ -27,6 +30,9 @@ const QuizPublic: React.FC = () => {
   const [currentStep, setCurrentStep] = useState(0);
   const [responses, setResponses] = useState<Record<string, any>>({});
   const [isComplete, setIsComplete] = useState(false);
+  // audit LGL-05: consentimento LGPD (etapa final) + honeypot anti-spam, como em /quiz
+  const [consent, setConsent] = useState(false);
+  const [honeypot, setHoneypot] = useState('');
 
   // Buscar quiz e steps
   const { data: quiz, isLoading } = useQuery({
@@ -89,7 +95,10 @@ const QuizPublic: React.FC = () => {
           responses,
           utm_data: utmData,
           device,
-          referrer
+          referrer,
+          consent,
+          consent_at: new Date().toISOString(),
+          company: honeypot, // honeypot (quiz-submit descarta se preenchido)
         }
       });
 
@@ -120,7 +129,11 @@ const QuizPublic: React.FC = () => {
     setResponses(prev => ({ ...prev, [fieldName]: value }));
   };
 
+  // Etapa extra de consentimento após as etapas dinâmicas (audit LGL-05)
+  const isConsentStep = !!steps && currentStep === steps.length;
+
   const canProceed = () => {
+    if (isConsentStep) return consent;
     if (!steps || currentStep >= steps.length) return false;
     const currentStepData = steps[currentStep];
     if (!currentStepData.required) return true;
@@ -130,7 +143,7 @@ const QuizPublic: React.FC = () => {
   };
 
   const handleNext = () => {
-    if (steps && currentStep < steps.length - 1) {
+    if (steps && currentStep < steps.length) {
       setCurrentStep(prev => prev + 1);
     }
   };
@@ -218,8 +231,9 @@ const QuizPublic: React.FC = () => {
     );
   }
 
-  const progress = ((currentStep + 1) / steps.length) * 100;
-  const currentStepData = steps[currentStep];
+  const totalSteps = steps.length + 1; // + etapa de consentimento
+  const progress = ((currentStep + 1) / totalSteps) * 100;
+  const currentStepData = isConsentStep ? null : steps[currentStep];
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-camply-blue/10 via-white to-camply-green/10 py-8 px-4">
@@ -233,7 +247,7 @@ const QuizPublic: React.FC = () => {
         {/* Progress */}
         <div className="mb-8">
           <div className="flex justify-between text-sm text-muted-foreground mb-2">
-            <span>Etapa {currentStep + 1} de {steps.length}</span>
+            <span>Etapa {currentStep + 1} de {totalSteps}</span>
             <span>{Math.round(progress)}% completo</span>
           </div>
           <Progress value={progress} className="w-full" />
@@ -249,11 +263,42 @@ const QuizPublic: React.FC = () => {
               exit={{ opacity: 0, x: -20 }}
               transition={{ duration: 0.3 }}
             >
-              <DynamicQuizStep
-                step={currentStepData}
-                value={responses[currentStepData.field_name]}
-                onChange={(value) => updateResponse(currentStepData.field_name, value)}
-              />
+              {currentStepData ? (
+                <DynamicQuizStep
+                  step={currentStepData}
+                  value={responses[currentStepData.field_name]}
+                  onChange={(value) => updateResponse(currentStepData.field_name, value)}
+                />
+              ) : (
+                <Card className="border-2 border-blue-100">
+                  <CardContent className="p-6">
+                    <div className="flex items-start space-x-3">
+                      <Checkbox
+                        id="quiz-public-consent"
+                        checked={consent}
+                        onCheckedChange={(checked) => setConsent(checked === true)}
+                        className="mt-1"
+                      />
+                      <div className="flex-1">
+                        <Label htmlFor="quiz-public-consent" className="cursor-pointer text-sm leading-relaxed">
+                          <span className="font-medium">Autorizo o contato</span> e concordo que meus dados sejam utilizados para:
+                          <ul className="mt-2 ml-4 space-y-1 text-xs text-gray-600">
+                            <li>• Análise das minhas respostas e elaboração de uma proposta</li>
+                            <li>• Contato comercial pelos canais informados</li>
+                          </ul>
+                          <span className="text-xs text-gray-500 mt-2 block">
+                            Seus dados são tratados conforme nossa{' '}
+                            <a href="/legal/privacy" className="text-blue-600 hover:underline" target="_blank" rel="noopener noreferrer">
+                              Política de Privacidade
+                            </a>
+                            . Você pode solicitar a exclusão a qualquer momento.
+                          </span>
+                        </Label>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
             </motion.div>
           </AnimatePresence>
         </div>
@@ -270,7 +315,7 @@ const QuizPublic: React.FC = () => {
             Anterior
           </Button>
 
-          {currentStep < steps.length - 1 ? (
+          {currentStep < steps.length ? (
             <Button
               onClick={handleNext}
               disabled={!canProceed()}
@@ -289,6 +334,18 @@ const QuizPublic: React.FC = () => {
             </Button>
           )}
         </div>
+
+        {/* Honeypot - oculto para usuários (audit LGL-05) */}
+        <input
+          type="text"
+          name="company"
+          value={honeypot}
+          onChange={(e) => setHoneypot(e.target.value)}
+          style={{ display: 'none' }}
+          tabIndex={-1}
+          autoComplete="off"
+          aria-hidden="true"
+        />
       </div>
     </div>
   );

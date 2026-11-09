@@ -19,7 +19,8 @@ interface CompatibilityStatus {
 }
 
 export const useMetaAdsTokenCompatibility = (
-  accessToken?: string,
+  // Chave da integração ativa (id:updated_at), não o token — que fica no servidor (audit SEC-12)
+  integrationKey?: string,
   enabled: boolean = false // ✅ FASE 1.2: Default to false (manual only)
 ) => {
   const { toast } = useToast();
@@ -34,8 +35,8 @@ export const useMetaAdsTokenCompatibility = (
 
   // ✅ FASE 1.2: Manual validation only using singleton
   const validateCompatibility = useCallback(async () => {
-    if (!accessToken) {
-      console.log('🔍 Token compatibility check skipped: no token');
+    if (!integrationKey) {
+      console.log('🔍 Token compatibility check skipped: no active integration');
       return;
     }
 
@@ -52,7 +53,7 @@ export const useMetaAdsTokenCompatibility = (
       }
 
       // ✅ FASE 3.1 + 4.2: Use singleton validator (global deduplication + 10min cache)
-      const result = await metaTokenValidator.validate(accessToken, globalConfig);
+      const result = await metaTokenValidator.validate(integrationKey, globalConfig);
 
       if (!mountedRef.current) return;
 
@@ -107,7 +108,7 @@ export const useMetaAdsTokenCompatibility = (
         });
       }
     }
-  }, [accessToken, globalConfig?.appId, toast]);
+  }, [integrationKey, globalConfig?.appId, toast]);
 
   // ✅ FASE 1.2: NO automatic validation effect - manual only
   // Validation is triggered manually via button in MetaAdsConnectedStep

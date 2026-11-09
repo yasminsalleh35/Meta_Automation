@@ -47,13 +47,13 @@ export const IAHeroSection: React.FC = () => {
                 <div className="w-10 h-10 rounded-full bg-camply-yellow/20 flex items-center justify-center">
                   <Bot className="w-5 h-5 text-camply-yellow" />
                 </div>
-                <span className="text-sm sm:text-base">Otimização 24h por dia</span>
+                <span className="text-sm sm:text-base">Monitoramento automático contínuo</span>
               </div>
               <div className="flex items-center gap-3 text-white">
                 <div className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center">
                   <DollarSign className="w-5 h-5 text-white" />
                 </div>
-                <span className="text-sm sm:text-base">Até 80% mais econômico</span>
+                <span className="text-sm sm:text-base">Valor fixo de assinatura</span>
               </div>
             </div>
             

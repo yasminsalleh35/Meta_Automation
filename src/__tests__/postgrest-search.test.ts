@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { sanitizeSearchTerm, buildIlikeOrFilter, pageRange } from '@/lib/postgrestSearch';
+import { sanitizeSearchTerm, buildIlikeOrFilter, pageRange, quotePostgrestValue } from '@/lib/postgrestSearch';
 
 // Audit ADM-03
 describe('sanitizeSearchTerm', () => {
@@ -41,5 +41,13 @@ describe('pageRange', () => {
     expect(pageRange(2, 50)).toEqual([100, 149]);
     expect(pageRange(0, 5000)).toEqual([0, 999]);
     expect(pageRange(-1, 10)).toEqual([0, 9]);
+  });
+});
+
+describe('quotePostgrestValue', () => {
+  it('wraps in double quotes and escapes quotes/backslashes', () => {
+    expect(quotePostgrestValue('Dermatologia')).toBe('"Dermatologia"');
+    expect(quotePostgrestValue('a, b (c)')).toBe('"a, b (c)"');
+    expect(quotePostgrestValue('x"y\\z')).toBe('"x\\"y\\\\z"');
   });
 });

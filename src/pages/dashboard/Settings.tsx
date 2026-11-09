@@ -24,6 +24,7 @@ import { ProfileSection } from '@/components/settings/ProfileSection';
 
 import { SecuritySection } from '@/components/settings/SecuritySection';
 import { NotificationsSection } from '@/components/settings/NotificationsSection';
+import { PrivacySection } from '@/components/settings/PrivacySection';
 
 const Settings = () => {
   const { t } = useI18n();
@@ -32,7 +33,7 @@ const Settings = () => {
   const [settings, setSettings] = useState({
     emailNotifications: true,
     pushNotifications: false,
-    marketingEmails: true,
+    marketingEmails: false, // audit LGL-04: opt-in
     autoOptimization: true,
     currency: 'BRL',
     timezone: 'America/Sao_Paulo',
@@ -57,10 +58,11 @@ const Settings = () => {
       </div>
       
       <Tabs defaultValue="profile" className="space-y-6">
-        <TabsList className="grid w-full grid-cols-3">
+        <TabsList className="grid w-full grid-cols-2 sm:grid-cols-4 h-auto">
           <TabsTrigger value="profile">Perfil</TabsTrigger>
           <TabsTrigger value="notifications">Notificações</TabsTrigger>
           <TabsTrigger value="security">Segurança</TabsTrigger>
+          <TabsTrigger value="privacy">Privacidade</TabsTrigger>
         </TabsList>
 
         <TabsContent value="profile" className="space-y-4">
@@ -73,6 +75,11 @@ const Settings = () => {
 
         <TabsContent value="security" className="space-y-4">
           <SecuritySection />
+        </TabsContent>
+
+        {/* audit LGL-03: exportar dados / excluir conta */}
+        <TabsContent value="privacy" className="space-y-4">
+          <PrivacySection />
         </TabsContent>
       </Tabs>
 

@@ -55,20 +55,20 @@ const AdminQuizzes: React.FC = () => {
     }
   });
 
+  // Audit ADM-03: contagem no servidor por quiz (antes baixava todos os quiz_leads — corte de 1.000 linhas)
   const { data: leadsCounts } = useQuery({
-    queryKey: ['quiz-leads-counts'],
+    queryKey: ['quiz-leads-counts', (quizzes || []).map(q => q.id).join(',')],
+    enabled: !!quizzes,
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from('quiz_leads')
-        .select('quiz_id');
-      
-      if (error) throw error;
-      
       const counts: Record<string, number> = {};
-      data.forEach((lead: any) => {
-        counts[lead.quiz_id] = (counts[lead.quiz_id] || 0) + 1;
-      });
-      
+      await Promise.all((quizzes || []).map(async (quiz) => {
+        const { count, error } = await supabase
+          .from('quiz_leads')
+          .select('id', { count: 'exact', head: true })
+          .eq('quiz_id', quiz.id);
+        if (error) throw error;
+        counts[quiz.id] = count ?? 0;
+      }));
       return counts;
     }
   });

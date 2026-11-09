@@ -122,8 +122,8 @@ const CheckoutCancel: React.FC = () => {
           <div className="mt-8 text-center">
             <p className="text-sm text-gray-500">
               Precisa de ajuda? Entre em contato conosco pelo WhatsApp: 
-              <a href="https://wa.me/5511999999999" className="text-camply-blue hover:underline ml-1">
-                (11) 99999-9999
+              <a href="https://wa.me/5533998581155" target="_blank" rel="noopener noreferrer" className="text-camply-blue hover:underline ml-1">
+                (33) 99858-1155
               </a>
             </p>
           </div>

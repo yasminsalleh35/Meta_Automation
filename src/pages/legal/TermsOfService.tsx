@@ -25,7 +25,7 @@ const TermsOfService = () => {
             />
             <div>
               <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-1">Termos de Uso</h1>
-              <p className="text-sm sm:text-base text-gray-600">Atualização mais recente: 06/06/2025</p>
+              <p className="text-sm sm:text-base text-gray-600">Atualização mais recente: 08/11/2026</p>
             </div>
           </div>
         </div>
@@ -92,10 +92,11 @@ const TermsOfService = () => {
                   <strong>5.1 Planos:</strong> Oferecemos diferentes planos de assinatura com recursos e limitações específicas.
                 </p>
                 <p className="text-gray-700">
-                  <strong>5.2 Faturamento:</strong> Os pagamentos são processados através do Stripe de acordo com o plano escolhido.
+                  <strong>5.2 Faturamento:</strong> Os pagamentos são processados pelos parceiros Pagar.me e Asaas, de acordo com o plano e a forma de pagamento escolhidos. {/* audit LGL-01: antes citava Stripe (não utilizado) */}
                 </p>
                 <p className="text-gray-700">
-                  <strong>5.3 Cancelamento:</strong> Você pode cancelar sua assinatura a qualquer momento através do painel de configurações.
+                  <strong>5.3 Cancelamento:</strong> Você pode solicitar o cancelamento da sua assinatura através do painel. No plano anual, as condições de rescisão antecipada são as previstas no{' '}
+                  <Link to="/legal/contrato" className="text-blue-600 hover:text-blue-800">Contrato de Uso</Link>. {/* audit LGL-06 */}
                 </p>
               </div>
             </section>
@@ -125,7 +126,15 @@ const TermsOfService = () => {
             </section>
 
             <section>
-              <h2 className="text-xl font-semibold text-gray-900 mb-3">9. Lei Aplicável</h2>
+              <h2 className="text-xl font-semibold text-gray-900 mb-3">9. Privacidade e Dados Pessoais</h2>
+              <p className="text-gray-700">
+                O tratamento de dados pessoais na plataforma é descrito na nossa{' '}
+                <Link to="/legal/privacy" className="text-blue-600 hover:text-blue-800">Política de Privacidade</Link>, que faz parte destes Termos.
+              </p>
+            </section>
+
+            <section>
+              <h2 className="text-xl font-semibold text-gray-900 mb-3">10. Lei Aplicável</h2>
               <p className="text-gray-700">
                 Estes Termos de Uso são regidos pelas leis brasileiras. 
                 Qualquer disputa será resolvida no foro da comarca de Governador Valadares, MG.

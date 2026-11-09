@@ -1,15 +1,29 @@
 
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Users, UserCheck, UserX, Mail } from 'lucide-react';
-import { useRealAdminData } from '@/hooks/useRealAdminData';
+import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Users, UserCheck, UserX, Mail, Search } from 'lucide-react';
+import { useAdminUsers } from '@/hooks/useAdminUsers';
+import { AdminPagination } from '@/components/admin/AdminPagination';
 
 const AdminUsers: React.FC = () => {
-  const { users, loading, actions } = useRealAdminData();
+  // Audit ADM-03: lista paginada no servidor, busca/status no servidor, contadores do servidor
+  const { users, totalCount, page, pageSize, goToPage, loadUsers, stats, isLoading, error, actions } = useAdminUsers();
+  const [searchTerm, setSearchTerm] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
 
-  if (loading) {
+  // filtros aplicados no servidor (busca com debounce)
+  useEffect(() => {
+    const t = setTimeout(() => {
+      loadUsers({ status: statusFilter === 'all' ? undefined : statusFilter, search: searchTerm || undefined }, 0);
+    }, 300);
+    return () => clearTimeout(t);
+  }, [statusFilter, searchTerm, loadUsers]);
+
+  if (isLoading && users.length === 0 && !searchTerm && statusFilter === 'all') {
     return (
       <div className="space-y-6">
         <h1 className="text-3xl font-bold text-gray-900">Gerenciar Usuários</h1>
@@ -34,9 +48,9 @@ const AdminUsers: React.FC = () => {
   const getPlanColor = (plan: string) => {
     switch (plan) {
       case 'enterprise': return 'bg-purple-100 text-purple-800';
-      case 'premium': return 'bg-blue-100 text-blue-800';
       case 'basic': return 'bg-gray-100 text-gray-800';
-      default: return 'bg-gray-100 text-gray-800';
+      // premium e planos dos provedores (ex.: Pagar.me anual/mensal)
+      default: return 'bg-blue-100 text-blue-800';
     }
   };
 
@@ -54,7 +68,7 @@ const AdminUsers: React.FC = () => {
               <Users className="h-5 w-5 text-blue-500" />
               <div>
                 <p className="text-sm text-gray-600">Total</p>
-                <p className="text-lg font-semibold">{users.length}</p>
+                <p className="text-lg font-semibold">{stats.total}</p>
               </div>
             </div>
           </CardContent>
@@ -66,9 +80,7 @@ const AdminUsers: React.FC = () => {
               <UserCheck className="h-5 w-5 text-green-500" />
               <div>
                 <p className="text-sm text-gray-600">Ativos</p>
-                <p className="text-lg font-semibold">
-                  {users.filter(u => u.status === 'active').length}
-                </p>
+                <p className="text-lg font-semibold">{stats.active}</p>
               </div>
             </div>
           </CardContent>
@@ -80,9 +92,7 @@ const AdminUsers: React.FC = () => {
               <UserX className="h-5 w-5 text-red-500" />
               <div>
                 <p className="text-sm text-gray-600">Suspensos</p>
-                <p className="text-lg font-semibold">
-                  {users.filter(u => u.status === 'suspended').length}
-                </p>
+                <p className="text-lg font-semibold">{stats.suspended}</p>
               </div>
             </div>
           </CardContent>
@@ -93,10 +103,8 @@ const AdminUsers: React.FC = () => {
             <div className="flex items-center space-x-2">
               <Mail className="h-5 w-5 text-blue-500" />
               <div>
-                <p className="text-sm text-gray-600">Premium</p>
-                <p className="text-lg font-semibold">
-                  {users.filter(u => u.plan === 'premium' || u.plan === 'enterprise').length}
-                </p>
+                <p className="text-sm text-gray-600">Assinaturas ativas</p>
+                <p className="text-lg font-semibold">{stats.activeSubscriptions}</p>
               </div>
             </div>
           </CardContent>
@@ -107,10 +115,37 @@ const AdminUsers: React.FC = () => {
         <CardHeader>
           <CardTitle>Lista de Usuários</CardTitle>
           <CardDescription>
-            Todos os usuários cadastrados no sistema
+            {totalCount} usuário(s) encontrado(s)
           </CardDescription>
         </CardHeader>
         <CardContent>
+          <div className="flex flex-col md:flex-row gap-4 mb-6">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Buscar por nome ou email..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="pl-9"
+              />
+            </div>
+            <Select value={statusFilter} onValueChange={setStatusFilter}>
+              <SelectTrigger className="w-full md:w-48">
+                <SelectValue placeholder="Status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todos os status</SelectItem>
+                <SelectItem value="active">Ativos</SelectItem>
+                <SelectItem value="suspended">Suspensos</SelectItem>
+                <SelectItem value="inactive">Inativos</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          {error && (
+            <p className="text-sm text-destructive mb-4">Erro ao carregar usuários: {error}</p>
+          )}
+
           <div className="space-y-4">
             {users.map((user) => (
               <div key={user.id} className="flex items-center justify-between p-4 border rounded-lg">
@@ -158,7 +193,18 @@ const AdminUsers: React.FC = () => {
                 </div>
               </div>
             ))}
+            {users.length === 0 && !isLoading && (
+              <p className="text-center text-gray-500 py-8">Nenhum usuário encontrado</p>
+            )}
           </div>
+
+          <AdminPagination
+            page={page}
+            pageSize={pageSize}
+            totalCount={totalCount}
+            onPageChange={goToPage}
+            disabled={isLoading}
+          />
         </CardContent>
       </Card>
     </div>

@@ -1,9 +1,10 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Download, Users, UserCheck, Target, TrendingUp } from 'lucide-react';
 import { Lead } from '@/hooks/admin/useLeads';
 import { toCsv } from '@/lib/csv';
+import { useToast } from '@/hooks/use-toast';
 
 interface LeadsHeaderProps {
   metrics: {
@@ -14,11 +15,27 @@ interface LeadsHeaderProps {
     closed: number;
     conversionRate: string;
   };
-  leads: Lead[];
+  // Audit ADM-03: a lista é paginada; o CSV busca TODOS os leads que casam com os filtros
+  fetchAllLeads: () => Promise<Lead[]>;
 }
 
-export const LeadsHeader: React.FC<LeadsHeaderProps> = ({ metrics, leads }) => {
-  const exportToCSV = () => {
+export const LeadsHeader: React.FC<LeadsHeaderProps> = ({ metrics, fetchAllLeads }) => {
+  const [exporting, setExporting] = useState(false);
+  const { toast } = useToast();
+
+  const exportToCSV = async () => {
+    let leads: Lead[];
+    try {
+      setExporting(true);
+      leads = await fetchAllLeads();
+    } catch (error) {
+      console.error('Error exporting leads:', error);
+      toast({ title: 'Erro', description: 'Não foi possível exportar os leads', variant: 'destructive' });
+      setExporting(false);
+      return;
+    }
+    setExporting(false);
+
     const headers = [
       'Nome',
       'Email',
@@ -70,9 +87,9 @@ export const LeadsHeader: React.FC<LeadsHeaderProps> = ({ metrics, leads }) => {
           <h2 className="text-xl font-semibold text-foreground">Visão Geral</h2>
           <p className="text-sm text-muted-foreground">Métricas dos últimos leads capturados</p>
         </div>
-        <Button onClick={exportToCSV} variant="outline" className="gap-2">
+        <Button onClick={exportToCSV} variant="outline" className="gap-2" disabled={exporting}>
           <Download className="h-4 w-4" />
-          Exportar CSV
+          {exporting ? 'Exportando...' : 'Exportar CSV'}
         </Button>
       </div>
 

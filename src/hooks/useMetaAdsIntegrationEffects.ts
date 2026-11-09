@@ -68,16 +68,16 @@ export const useMetaAdsIntegrationEffects = ({
     console.log('🔄 Integration state effect triggered:', {
       hasExistingIntegration: !!existingIntegration,
       integrationStatus: existingIntegration?.status,
-      hasAccessToken: !!existingIntegration?.access_token
     });
 
     // ✅ Simplified logic: if has active integration, set to connected
-    if (existingIntegration?.status === 'active' && existingIntegration?.access_token) {
+    // access_token não é mais legível no navegador (audit SEC-12): status basta
+    if (existingIntegration?.status === 'active') {
       console.log('✅ Active integration found, setting connected state');
       
       // ✅ FASE 2.1: Batch updates (React batches setState calls in same function)
       setCurrentStep('connected');
-      setAccessToken(existingIntegration.access_token || '');
+      setAccessToken('');
       setSelectedAccounts(existingIntegration.selected_accounts || []);
       setSelectedPages(existingIntegration.selected_pages || []);
     } else {
@@ -92,7 +92,6 @@ export const useMetaAdsIntegrationEffects = ({
   }, [
     existingIntegration?.id, 
     existingIntegration?.status,
-    existingIntegration?.access_token,
     setCurrentStep,
     setAccessToken,
     setSelectedAccounts,

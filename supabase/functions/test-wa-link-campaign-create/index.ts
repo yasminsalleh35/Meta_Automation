@@ -1,5 +1,6 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { requireAdmin, authErrorResponse } from '../_shared/auth.ts';
+import { requireMetaAccessToken } from '../_shared/metaIntegration.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -9,7 +10,7 @@ const corsHeaders = {
 interface WaLinkCampaignPayload {
   adAccountId: string;
   pageId: string;
-  accessToken: string;
+  accessToken?: string; // preenchido no servidor (audit SEC-12)
   campaignName: string;
   adTitle: string;
   adText: string;
@@ -63,8 +64,9 @@ serve(async (req) => {
   }
 
   // Laboratório de testes Meta: somente admin (audit SEC-06/SEC-10)
+  let adminUserId = '';
   try {
-    await requireAdmin(req);
+    adminUserId = (await requireAdmin(req)).user.id;
   } catch (e) {
     const resp = authErrorResponse(e, corsHeaders);
     if (resp) return resp;
@@ -73,6 +75,8 @@ serve(async (req) => {
 
   try {
     const payload: WaLinkCampaignPayload = await req.json();
+    // Token lido no servidor da integração do admin; o navegador não o envia (audit SEC-12)
+    payload.accessToken = await requireMetaAccessToken(adminUserId);
     const logs: string[] = [];
 
     logs.push(`[INIT] Starting WA.ME Link campaign creation`);

@@ -71,7 +71,7 @@ export const IAWhatIsSection: React.FC = () => {
                 <div className="flex items-center justify-between text-sm">
                   <span className="text-camply-dark/60">Status</span>
                   <span className="bg-camply-green/10 text-camply-green px-3 py-1 rounded-full font-medium">
-                    Ativo 24/7
+                    Monitorando
                   </span>
                 </div>
               </div>

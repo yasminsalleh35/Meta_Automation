@@ -4,16 +4,16 @@
  * Baseado na documentação: https://developers.facebook.com/docs/marketing-api/targeting-search
  */
 
-export class OfficialLocationSearchService {
-  private baseUrl = 'https://graph.facebook.com/v23.0'; // ✅ Atualizado para v23.0
+import { supabase } from '@/integrations/supabase/client';
 
+export class OfficialLocationSearchService {
   /**
    * Busca localizações usando o endpoint oficial do Meta
    * @param params Parâmetros de busca estruturados
    */
   async searchLocations(params: {
     query: string;
-    accessToken: string;
+    accessToken?: string; // ignorado: token só no servidor (audit SEC-12)
     locationTypes?: Array<'city' | 'region' | 'country'>;
     countryCode?: string;
     limit?: number;
@@ -29,7 +29,6 @@ export class OfficialLocationSearchService {
   }>> {
     const { 
       query, 
-      accessToken, 
       locationTypes = ['city', 'region'],
       countryCode,
       limit = 25 
@@ -40,69 +39,28 @@ export class OfficialLocationSearchService {
       limit
     });
     
-    if (!accessToken) {
-      console.warn('⚠️ No access token provided, returning empty results');
-      return [];
-    }
-    
+    // A busca roda no servidor (meta-targeting-search, type=adgeolocation): o navegador não
+    // lê mais o access_token da integração (audit SEC-12).
+
     try {
-      const encodedQuery = encodeURIComponent(query);
-      const encodedTypes = encodeURIComponent(JSON.stringify(locationTypes));
-      
-      // ✅ Remover locale fixo pt_BR e adicionar country_code dinâmico
-      let url = `${this.baseUrl}/search?type=adgeolocation&location_types=${encodedTypes}&q=${encodedQuery}&limit=${limit}&access_token=${accessToken}`;
-      
-      if (countryCode) {
-        url += `&country_code=${countryCode}`;
-      }
-      
-      console.log(`🌐 Meta API URL: ${url.replace(accessToken, 'TOKEN_HIDDEN')}`);
-      console.log(`🔍 Requesting locationTypes: ${JSON.stringify(locationTypes)}`);
-      
-      const response = await fetch(url, {
-        method: 'GET',
-        headers: {
-          'Accept': 'application/json',
-          'Content-Type': 'application/json'
-        }
+      const { data, error } = await supabase.functions.invoke('meta-targeting-search', {
+        body: {
+          type: 'adgeolocation',
+          q: query,
+          location_types: locationTypes,
+          country_code: countryCode,
+          limit,
+        },
       });
 
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        console.error(`❌ Meta Location Search Error:`, {
-          status: response.status,
-          statusText: response.statusText,
-          error: errorData
-        });
-        
-        // ✅ Tratamento 429 com retry
-        if (response.status === 429) {
-          console.warn('⚠️ Rate limit hit (429), retrying after 500ms...');
-          await new Promise(resolve => setTimeout(resolve, 500));
-          
-          const retryResponse = await fetch(url, {
-            method: 'GET',
-            headers: {
-              'Accept': 'application/json',
-              'Content-Type': 'application/json'
-            }
-          });
-          
-          if (retryResponse.ok) {
-            const retryData = await retryResponse.json();
-            console.log(`✅ Retry successful: ${retryData.data?.length || 0} locations`);
-            return this.processLocationResults(retryData.data || []);
-          }
-        }
-        
-        console.warn('⚠️ Returning empty results due to API error');
+      if (error) {
+        console.error('❌ Meta Location Search Error:', error);
         return [];
       }
 
-      const data = await response.json();
-      console.log(`✅ Meta API returned ${data.data?.length || 0} locations`);
-      
-      return this.processLocationResults(data.data || []);
+      const items = Array.isArray(data?.items) ? data.items : [];
+      console.log(`✅ Meta API returned ${items.length} locations`);
+      return this.processLocationResults(items);
     } catch (error) {
       console.error(`❌ Error searching Meta locations:`, error);
       return [];
@@ -159,29 +117,6 @@ export class OfficialLocationSearchService {
     }
     
     return parts.join(', ');
-  }
-
-  /**
-   * Valida e busca localização específica por key
-   */
-  async validateLocationByKey(key: string, accessToken: string): Promise<any | null> {
-    try {
-      const url = `${this.baseUrl}/${key}?fields=name,type,country_code,region&access_token=${accessToken}`;
-      
-      const response = await fetch(url);
-      
-      if (response.ok) {
-        const location = await response.json();
-        console.log(`✅ Location validated: ${location.name}`);
-        return location;
-      } else {
-        console.warn(`⚠️ Location key not found: ${key}`);
-        return null;
-      }
-    } catch (error) {
-      console.error(`❌ Error validating location key ${key}:`, error);
-      return null;
-    }
   }
 }
 

@@ -102,7 +102,7 @@ const PlanSelector: React.FC<PlanSelectorProps> = ({ onPlanSelect }) => {
                   <span className="text-gray-600">/ano</span>
                 </div>
                 <div className="text-sm text-blue-600 mb-2">
-                  12x R$ {(plan.price_annual / 12).toFixed(2).replace('.', ',')} sem juros
+                  até 12x de R$ {(plan.price_annual / 12).toFixed(2).replace('.', ',')} no cartão
                 </div>
                 <div className="text-xs text-green-600 mb-3">
                   Economia de R$ {((plan.price_monthly * 12) - plan.price_annual).toFixed(2).replace('.', ',')}

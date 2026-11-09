@@ -16,9 +16,41 @@ serve(async (req) => {
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    const { quiz_id, responses, utm_data, device, referrer }: any = await req.json();
+    const { quiz_id, responses, utm_data, device, referrer, consent, consent_at, company }: any = await req.json();
 
     console.log('📥 Quiz Submit - Received submission', { quiz_id, device });
+
+    // audit LGL-05: honeypot (mesmo padrão de lead-quiz-submit) — responde sucesso para não revelar o filtro
+    if (typeof company === 'string' && company.trim() !== '') {
+      console.warn('🍯 Quiz Submit - honeypot preenchido, descartando');
+      return new Response(
+        JSON.stringify({ success: true, message: 'Quiz submitted successfully' }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // audit LGL-05: consentimento LGPD obrigatório (etapa final do QuizPublic)
+    if (consent !== true) {
+      return new Response(
+        JSON.stringify({ error: 'Consentimento obrigatório para enviar o formulário.' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    if (!quiz_id || !responses || typeof responses !== 'object') {
+      return new Response(
+        JSON.stringify({ error: 'Dados inválidos' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // Prova do consentimento guardada junto às respostas (anonimizada em 2 anos — DATA-07)
+    const consentRecord = {
+      accepted: true,
+      at: typeof consent_at === 'string' ? consent_at : new Date().toISOString(),
+      received_at: new Date().toISOString(),
+      policy_url: '/legal/privacy',
+    };
 
     // Buscar steps do quiz para calcular pesos
     const { data: steps, error: stepsError } = await supabase
@@ -52,7 +84,7 @@ serve(async (req) => {
       .from('quiz_leads')
       .insert({
         quiz_id,
-        responses,
+        responses: { ...responses, _lgpd_consent: consentRecord },
         lead_name: responses.lead_name || responses.name,
         whatsapp: responses.whatsapp,
         email: responses.email,

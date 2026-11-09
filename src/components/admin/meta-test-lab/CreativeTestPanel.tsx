@@ -27,7 +27,6 @@ interface LogEntry {
 interface CreativeTestPanelProps {
   adAccountId: string;
   pageId: string;
-  accessToken: string;
   instagramUserId?: string; // Fase 3: receber do MetaTestLab
   onCreativeCreated: (creativeId: string) => void;
 }
@@ -35,7 +34,6 @@ interface CreativeTestPanelProps {
 export const CreativeTestPanel: React.FC<CreativeTestPanelProps> = ({
   adAccountId,
   pageId,
-  accessToken,
   instagramUserId,
   onCreativeCreated
 }) => {
@@ -188,8 +186,7 @@ export const CreativeTestPanel: React.FC<CreativeTestPanelProps> = ({
       pageId,
       instagramUserId,
       selectedMedia: creativeType === 'upload' ? selectedMedia?.filename : null,
-      selectedPost: creativeType === 'post' ? selectedInstagramPost?.id : null,
-      hasAccessToken: !!accessToken
+      selectedPost: creativeType === 'post' ? selectedInstagramPost?.id : null
     });
 
     try {
@@ -203,8 +200,7 @@ export const CreativeTestPanel: React.FC<CreativeTestPanelProps> = ({
         adText: config.adText,
         callToAction: {
           type: 'WHATSAPP_MESSAGE'
-        },
-        accessToken
+        }
       } : {
         creativeType: 'post',
         adAccountId,
@@ -212,8 +208,7 @@ export const CreativeTestPanel: React.FC<CreativeTestPanelProps> = ({
         instagramUserId: selectedInstagramPost!.instagram_user_id,
         instagramMediaId: selectedInstagramPost!.id,
         adTitle: config.adTitle,
-        adText: config.adText,
-        accessToken
+        adText: config.adText
       };
 
       addLog('info', '📤 Enviando para test-meta-creative-create...');

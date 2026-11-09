@@ -45,3 +45,14 @@ export async function resolveMetaIntegration(userId: string): Promise<ResolvedIn
   }
   return null;
 }
+/**
+ * Token Meta da integração ativa do usuário, lido com service_role.
+ * O navegador não lê nem envia mais o access_token (audit SEC-12).
+ */
+export async function requireMetaAccessToken(userId: string): Promise<string> {
+  const integ = await resolveMetaIntegration(userId);
+  if (!integ?.access_token) {
+    throw new Error('Integração Meta Ads ativa não encontrada. Conecte o Meta Ads em Integrações.');
+  }
+  return integ.access_token;
+}

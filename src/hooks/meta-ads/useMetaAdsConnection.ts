@@ -8,7 +8,8 @@ export const useMetaAdsConnection = () => {
     isConnected: !!existingIntegration && existingIntegration.status === 'active',
     adAccountId: existingIntegration?.ad_account_id || null,
     pageId: existingIntegration?.page_id || null,
-    accessToken: existingIntegration?.access_token || null
+    // Token só no servidor (audit SEC-12)
+    accessToken: null as string | null
   };
 
   return {

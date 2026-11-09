@@ -45,6 +45,8 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { format } from 'date-fns';
 import { safeUrl } from '@/lib/safeUrl';
+import { AdminPagination } from '@/components/admin/AdminPagination';
+import { buildIlikeOrFilter, pageRange, ADMIN_PAGE_SIZE } from '@/lib/postgrestSearch';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 
 interface ContingencyCampaign {
@@ -75,6 +77,13 @@ interface ContingencyCampaign {
 
 const REFRESH_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes in milliseconds
 
+// Audit ADM-03: status "finalizados"; o resto conta como pendente/ativo
+const DONE_STATUSES = ['completed', 'auto_retry_success'];
+const COUNTED_STATUSES = ['pending', 'auto_retry_success', 'auto_retry_failed', 'in_progress', 'completed'] as const;
+type ContingencyTab = 'active' | 'completed' | 'all';
+type ContingencyCounts = Record<(typeof COUNTED_STATUSES)[number] | 'total', number>;
+const EMPTY_COUNTS: ContingencyCounts = { pending: 0, auto_retry_success: 0, auto_retry_failed: 0, in_progress: 0, completed: 0, total: 0 };
+
 // ADM-05: o wizard grava public_url; registros antigos/outros fluxos usam publicUrl
 const mediaUrl = (meta: any): string => (meta?.public_url || meta?.publicUrl || '') as string;
 
@@ -90,7 +99,15 @@ const AdminContingency: React.FC = () => {
   const [syncDialogOpen, setSyncDialogOpen] = useState(false);
   const [externalSyncDialogOpen, setExternalSyncDialogOpen] = useState(false);
   const [users, setUsers] = useState<Array<{ id: string; email: string; name?: string }>>([]);
-  const [statusFilter, setStatusFilter] = useState<'active' | 'completed' | 'all'>('active');
+  // ADM-03: busca de usuário no servidor (antes carregava todos os perfis no select)
+  const [userSearch, setUserSearch] = useState('');
+  const [statusFilter, setStatusFilterState] = useState<ContingencyTab>('active');
+  // ADM-03: lista paginada no servidor + contadores por status no servidor
+  const [page, setPage] = useState(0);
+  const [totalCount, setTotalCount] = useState(0);
+  const [counts, setCounts] = useState<ContingencyCounts>(EMPTY_COUNTS);
+  const statusFilterRef = useRef<ContingencyTab>('active');
+  const pageRef = useRef(0);
   const [syncFormData, setSyncFormData] = useState({
     metaCampaignId: '',
     metaAdsetId: '',
@@ -161,10 +178,26 @@ const AdminContingency: React.FC = () => {
     }
   }, [soundEnabled]);
 
-  const loadContingencyCampaignsWithAlert = useCallback(async (isInitialLoad = false) => {
+  const loadCounts = useCallback(async (): Promise<ContingencyCounts> => {
+    const countFor = async (status?: string) => {
+      let q = supabase.from('campaign_contingency').select('id', { count: 'exact', head: true });
+      if (status) q = q.eq('status', status);
+      const { count, error } = await q;
+      if (error) throw error;
+      return count ?? 0;
+    };
+    const values = await Promise.all([...COUNTED_STATUSES.map((st) => countFor(st)), countFor()]);
+    const next = { ...EMPTY_COUNTS };
+    COUNTED_STATUSES.forEach((st, i) => { next[st] = values[i]; });
+    next.total = values[values.length - 1];
+    return next;
+  }, []);
+
+  const loadContingencyCampaignsWithAlert = useCallback(async (isInitialLoad = false, nextPage: number = pageRef.current) => {
     try {
       setLoading(true);
-      const { data, error } = await supabase
+      const [from, to] = pageRange(nextPage, ADMIN_PAGE_SIZE);
+      let query = supabase
         .from('campaign_contingency')
         .select(`
           *,
@@ -172,8 +205,17 @@ const AdminContingency: React.FC = () => {
             email,
             name
           )
-        `)
+        `, { count: 'exact' })
         .order('created_at', { ascending: false });
+
+      const tab = statusFilterRef.current;
+      if (tab === 'active') {
+        query = query.not('status', 'in', `(${DONE_STATUSES.join(',')})`);
+      } else if (tab === 'completed') {
+        query = query.in('status', DONE_STATUSES);
+      }
+
+      const [{ data, error, count }, statusCounts] = await Promise.all([query.range(from, to), loadCounts()]);
 
       if (error) throw error;
 
@@ -184,11 +226,13 @@ const AdminContingency: React.FC = () => {
       }));
 
       setCampaigns(enrichedData);
+      setTotalCount(count ?? 0);
+      setPage(nextPage);
+      pageRef.current = nextPage;
+      setCounts(statusCounts);
 
-      // Count current pending campaigns
-      const currentPendingCount = enrichedData.filter(
-        c => !['completed', 'auto_retry_success'].includes(c.status)
-      ).length;
+      // Count current pending campaigns (contagem do servidor — não só a página carregada)
+      const currentPendingCount = statusCounts.total - statusCounts.completed - statusCounts.auto_retry_success;
 
       // Check for new pending campaigns (only after initial load)
       const previousPendingCount = previousPendingCountRef.current;
@@ -216,12 +260,20 @@ const AdminContingency: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [playAlertSound, toast]);
+  }, [playAlertSound, toast, loadCounts]);
+
+  // ADM-03: trocar de aba recarrega no servidor a partir da 1ª página
+  const setStatusFilter = (tab: ContingencyTab) => {
+    if (tab === statusFilterRef.current) return;
+    statusFilterRef.current = tab;
+    setStatusFilterState(tab);
+    loadContingencyCampaignsWithAlert(false, 0);
+  };
+  const goToPage = (p: number) => loadContingencyCampaignsWithAlert(false, p);
 
   // Initial load and auto-refresh setup
   useEffect(() => {
     loadContingencyCampaignsWithAlert(true);
-    loadUsers();
 
     // Auto-refresh interval (5 minutes)
     const refreshInterval = setInterval(() => {
@@ -245,19 +297,36 @@ const AdminContingency: React.FC = () => {
   // Keep the original function for manual refresh
   const loadContingencyCampaigns = () => loadContingencyCampaignsWithAlert(false);
 
-  const loadUsers = async () => {
+  // ADM-03: até 50 usuários por busca (nome/email) em vez de todos os perfis; mantém o selecionado na lista
+  const selectedUserIdRef = useRef('');
+  selectedUserIdRef.current = externalSyncFormData.userId;
+  const loadUsers = useCallback(async (search: string) => {
     try {
-      const { data, error } = await supabase
+      let query = supabase
         .from('profiles')
         .select('id, email, name')
-        .order('email', { ascending: true });
-      
+        .order('email', { ascending: true })
+        .limit(ADMIN_PAGE_SIZE);
+      const searchFilter = buildIlikeOrFilter(['email', 'name'], search);
+      if (searchFilter) query = query.or(searchFilter);
+      const { data, error } = await query;
+
       if (error) throw error;
-      setUsers(data || []);
+      setUsers(prev => {
+        const list = data || [];
+        const selected = prev.find(u => u.id === selectedUserIdRef.current);
+        return selected && !list.some(u => u.id === selected.id) ? [selected, ...list] : list;
+      });
     } catch (error) {
       console.error('Error loading users:', error);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    if (!externalSyncDialogOpen) return;
+    const t = setTimeout(() => loadUsers(userSearch), 300);
+    return () => clearTimeout(t);
+  }, [externalSyncDialogOpen, userSearch, loadUsers]);
 
 
   const updateStatus = async (id: string, status: string, notes?: string) => {
@@ -422,7 +491,8 @@ const AdminContingency: React.FC = () => {
     }
   };
 
-  if (loading) {
+  // ADM-03: spinner de página inteira só na 1ª carga (troca de aba/página mantém a tela)
+  if (loading && campaigns.length === 0 && counts.total === 0) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="text-center">
@@ -433,18 +503,10 @@ const AdminContingency: React.FC = () => {
     );
   }
 
-  const filteredCampaigns = campaigns.filter(c => {
-    if (statusFilter === 'active') {
-      return !['completed', 'auto_retry_success'].includes(c.status);
-    }
-    if (statusFilter === 'completed') {
-      return ['completed', 'auto_retry_success'].includes(c.status);
-    }
-    return true; // 'all'
-  });
-
-  const activeCount = campaigns.filter(c => !['completed', 'auto_retry_success'].includes(c.status)).length;
-  const completedCount = campaigns.filter(c => ['completed', 'auto_retry_success'].includes(c.status)).length;
+  // ADM-03: a página já vem filtrada pela aba; contadores vêm do servidor
+  const filteredCampaigns = campaigns;
+  const activeCount = counts.total - counts.completed - counts.auto_retry_success;
+  const completedCount = counts.completed + counts.auto_retry_success;
 
   return (
     <div className="space-y-6">
@@ -500,7 +562,7 @@ const AdminContingency: React.FC = () => {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-yellow-600">
-              {campaigns.filter(c => c.status === 'pending').length}
+              {counts.pending}
             </div>
           </CardContent>
         </Card>
@@ -516,7 +578,7 @@ const AdminContingency: React.FC = () => {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-emerald-600">
-              {campaigns.filter(c => c.status === 'auto_retry_success').length}
+              {counts.auto_retry_success}
             </div>
             <p className="text-xs text-muted-foreground mt-1">via wa.me</p>
           </CardContent>
@@ -533,7 +595,7 @@ const AdminContingency: React.FC = () => {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-orange-600">
-              {campaigns.filter(c => c.status === 'auto_retry_failed').length}
+              {counts.auto_retry_failed}
             </div>
             <p className="text-xs text-muted-foreground mt-1">necessita manual</p>
           </CardContent>
@@ -547,7 +609,7 @@ const AdminContingency: React.FC = () => {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-blue-600">
-              {campaigns.filter(c => c.status === 'in_progress').length}
+              {counts.in_progress}
             </div>
           </CardContent>
         </Card>
@@ -560,7 +622,7 @@ const AdminContingency: React.FC = () => {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-green-600">
-              {campaigns.filter(c => c.status === 'completed').length}
+              {counts.completed}
             </div>
           </CardContent>
         </Card>
@@ -573,7 +635,7 @@ const AdminContingency: React.FC = () => {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {campaigns.length}
+              {counts.total}
             </div>
           </CardContent>
         </Card>
@@ -591,7 +653,7 @@ const AdminContingency: React.FC = () => {
             Finalizadas ({completedCount})
           </TabsTrigger>
           <TabsTrigger value="all">
-            Todas ({campaigns.length})
+            Todas ({counts.total})
           </TabsTrigger>
         </TabsList>
 
@@ -801,6 +863,14 @@ const AdminContingency: React.FC = () => {
             </Card>
             ))
           )}
+
+          <AdminPagination
+            page={page}
+            pageSize={ADMIN_PAGE_SIZE}
+            totalCount={totalCount}
+            onPageChange={goToPage}
+            disabled={loading}
+          />
         </TabsContent>
       </Tabs>
 
@@ -1247,6 +1317,12 @@ const AdminContingency: React.FC = () => {
 
             <div>
               <Label htmlFor="userId">Usuário *</Label>
+              <Input
+                className="mb-2"
+                placeholder="Buscar usuário por nome ou email..."
+                value={userSearch}
+                onChange={(e) => setUserSearch(e.target.value)}
+              />
               <Select
                 value={externalSyncFormData.userId}
                 onValueChange={(value) => setExternalSyncFormData({...externalSyncFormData, userId: value})}
@@ -1255,6 +1331,9 @@ const AdminContingency: React.FC = () => {
                   <SelectValue placeholder="Selecione o usuário" />
                 </SelectTrigger>
                 <SelectContent>
+                  {users.length === 0 && (
+                    <div className="px-2 py-1.5 text-sm text-muted-foreground">Nenhum usuário encontrado</div>
+                  )}
                   {users.map(user => (
                     <SelectItem key={user.id} value={user.id}>
                       {user.name || user.email} ({user.email})

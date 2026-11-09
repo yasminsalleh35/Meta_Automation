@@ -39,7 +39,7 @@ export const CTASection: React.FC = () => {
           </div>
           <div className="flex items-center justify-center text-white text-base sm:text-lg lg:text-xl bg-white/15 backdrop-blur-md rounded-2xl p-4 sm:p-5 border border-white/20 hover:bg-white/20 transition-all">
             <CheckCircle className="w-5 h-5 sm:w-6 sm:h-6 lg:w-7 lg:h-7 mr-3 text-camply-yellow flex-shrink-0" />
-            <span className="leading-tight font-medium">Sem riscos</span>
+            <span className="leading-tight font-medium">Orçamento sob seu controle</span>
           </div>
           <div className="flex items-center justify-center text-white text-base sm:text-lg lg:text-xl bg-white/15 backdrop-blur-md rounded-2xl p-4 sm:p-5 border border-white/20 hover:bg-white/20 transition-all">
             <Zap className="w-5 h-5 sm:w-6 sm:h-6 lg:w-7 lg:h-7 mr-3 text-camply-yellow flex-shrink-0" />

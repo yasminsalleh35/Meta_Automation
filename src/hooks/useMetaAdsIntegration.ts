@@ -13,8 +13,12 @@ export const useMetaAdsIntegration = () => {
   const [isCheckingIntegration, setIsCheckingIntegration] = useState(true);
 
   // ✅ FASE 1.2: Token validation is MANUAL only (enabled: false)
+  // O token não é legível no navegador (audit SEC-12); meta-validation o lê no servidor.
+  // Passamos só uma chave da integração ativa (para cache/gate da validação).
   const compatibility = useMetaAdsTokenCompatibility(
-    existingIntegration?.access_token,
+    existingIntegration?.status === 'active'
+      ? `${existingIntegration.id}:${existingIntegration.updated_at ?? ''}`
+      : undefined,
     false  // ← Manual validation only
   );
 

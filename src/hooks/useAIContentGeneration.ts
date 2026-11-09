@@ -28,7 +28,7 @@ export const useAIContentGeneration = (
       const titleSuggestions = [
         "Transforme seu negócio hoje mesmo!",
         "A solução que você estava procurando",
-        "Resultados garantidos para sua empresa",
+        "Conheça nossos serviços", // audit LGL-06: sem promessa de resultado
         "Chegou a hora de crescer!",
         "Sua empresa merece o melhor"
       ];

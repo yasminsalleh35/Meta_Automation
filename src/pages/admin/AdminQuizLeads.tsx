@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import React, { useEffect, useState } from 'react';
+import { useQuery, keepPreviousData } from '@tanstack/react-query';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
@@ -16,6 +16,8 @@ import {
 import { ArrowLeft, Eye, Search, TrendingUp, TrendingDown, Minus } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import { AdminPagination } from '@/components/admin/AdminPagination';
+import { buildIlikeOrFilter, pageRange, ADMIN_PAGE_SIZE } from '@/lib/postgrestSearch';
 
 interface QuizLead {
   id: string;
@@ -36,6 +38,17 @@ const AdminQuizLeads: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [scoreFilter, setScoreFilter] = useState<string>('all');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [page, setPage] = useState(0);
+
+  // Audit ADM-03: busca no servidor (com debounce) e paginação; filtros novos voltam à 1ª página
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(searchQuery), 300);
+    return () => clearTimeout(t);
+  }, [searchQuery]);
+  useEffect(() => {
+    setPage(0);
+  }, [debouncedSearch, statusFilter, scoreFilter, quizId]);
 
   const { data: quiz } = useQuery({
     queryKey: ['quiz', quizId],
@@ -51,12 +64,13 @@ const AdminQuizLeads: React.FC = () => {
     }
   });
 
-  const { data: leads, isLoading } = useQuery({
-    queryKey: ['quiz-leads', quizId, searchQuery, statusFilter, scoreFilter],
+  const { data: leadsPage, isLoading, isFetching } = useQuery({
+    queryKey: ['quiz-leads', quizId, debouncedSearch, statusFilter, scoreFilter, page],
     queryFn: async () => {
+      const [from, to] = pageRange(page, ADMIN_PAGE_SIZE);
       let query = supabase
         .from('quiz_leads')
-        .select('*')
+        .select('id,quiz_id,lead_name,whatsapp,email,company_name,score,score_classification,status,created_at', { count: 'exact' })
         .eq('quiz_id', quizId)
         .order('created_at', { ascending: false });
 
@@ -68,23 +82,19 @@ const AdminQuizLeads: React.FC = () => {
         query = query.eq('score_classification', scoreFilter);
       }
 
-      const { data, error } = await query;
+      const searchFilter = buildIlikeOrFilter(['lead_name', 'company_name', 'whatsapp', 'email'], debouncedSearch);
+      if (searchFilter) query = query.or(searchFilter);
+
+      const { data, error, count } = await query.range(from, to);
       
       if (error) throw error;
 
-      // Filter by search query
-      if (searchQuery) {
-        return data.filter((lead: any) =>
-          lead.lead_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          lead.company_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          lead.whatsapp?.includes(searchQuery) ||
-          lead.email?.toLowerCase().includes(searchQuery.toLowerCase())
-        );
-      }
-
-      return data as QuizLead[];
-    }
+      return { rows: (data || []) as QuizLead[], total: count ?? 0 };
+    },
+    placeholderData: keepPreviousData,
   });
+  const leads = leadsPage?.rows;
+  const totalCount = leadsPage?.total ?? 0;
 
   const getScoreIcon = (classification: string) => {
     switch (classification) {
@@ -165,7 +175,7 @@ const AdminQuizLeads: React.FC = () => {
           </Select>
 
           <div className="text-sm text-muted-foreground flex items-center">
-            Total: {leads?.length || 0} leads
+            Total: {totalCount} leads
           </div>
         </div>
       </Card>
@@ -223,6 +233,14 @@ const AdminQuizLeads: React.FC = () => {
           </Card>
         )}
       </div>
+
+      <AdminPagination
+        page={page}
+        pageSize={ADMIN_PAGE_SIZE}
+        totalCount={totalCount}
+        onPageChange={setPage}
+        disabled={isFetching}
+      />
     </div>
   );
 };

@@ -19,7 +19,7 @@ export const HeroSection: React.FC<HeroSectionProps> = ({ onDemoClick }) => {
   const benefits = [
     'Fácil de usar',
     'Totalmente intuitivo',
-    'Sem risco de desperdiçar dinheiro',
+    'Você define e controla o orçamento', // audit LGL-06
     'Otimização automática com IA',
     'Relatórios e análises automáticas'
   ];

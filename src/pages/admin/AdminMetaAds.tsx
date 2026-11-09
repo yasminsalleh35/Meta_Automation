@@ -1,17 +1,23 @@
 
-import React from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
-import { Facebook, Settings, Users, AlertCircle } from 'lucide-react';
+import { Facebook, Settings, Users, AlertCircle, Search } from 'lucide-react';
 import { useMetaAdsAdmin } from '@/hooks/useMetaAdsAdmin';
 import { ConfirmActionButton } from '@/components/admin/ConfirmActionButton';
+import { AdminPagination } from '@/components/admin/AdminPagination';
 
 const AdminMetaAds: React.FC = () => {
   const {
     users,
+    usersTotal,
+    usersPage,
+    usersPageSize,
+    usersLoading,
+    fetchUsersAndIntegrations,
     loading,
     globalConfig,
     setGlobalConfig,
@@ -19,6 +25,15 @@ const AdminMetaAds: React.FC = () => {
     configureIntegration,
     disconnectIntegration
   } = useMetaAdsAdmin();
+  // Audit ADM-03: busca de usuários no servidor (com debounce); a 1ª carga vem do hook
+  const [userSearch, setUserSearch] = useState('');
+  const searchTouched = useRef(false);
+  useEffect(() => {
+    if (!searchTouched.current) return;
+    const t = setTimeout(() => fetchUsersAndIntegrations(userSearch, 0), 300);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userSearch]);
 
   const handleSaveConfig = async () => {
     try {
@@ -108,10 +123,19 @@ const AdminMetaAds: React.FC = () => {
             <span>Integrações dos Usuários</span>
           </CardTitle>
           <CardDescription>
-            Gerencie as integrações Meta Ads de todos os usuários
+            Gerencie as integrações Meta Ads de todos os usuários ({usersTotal})
           </CardDescription>
         </CardHeader>
         <CardContent>
+          <div className="relative mb-4">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="Buscar por nome ou email..."
+              value={userSearch}
+              onChange={(e) => { searchTouched.current = true; setUserSearch(e.target.value); }}
+              className="pl-9"
+            />
+          </div>
           <div className="space-y-4">
             {users.map((user) => (
               <div key={user.id} className="flex items-center justify-between p-4 border rounded-lg">
@@ -174,10 +198,18 @@ const AdminMetaAds: React.FC = () => {
                 Nenhum usuário encontrado
               </h3>
               <p className="text-gray-600">
-                Os usuários aparecerão aqui quando se cadastrarem no sistema.
+                {userSearch ? 'Nenhum usuário corresponde à busca.' : 'Os usuários aparecerão aqui quando se cadastrarem no sistema.'}
               </p>
             </div>
           )}
+
+          <AdminPagination
+            page={usersPage}
+            pageSize={usersPageSize}
+            totalCount={usersTotal}
+            onPageChange={(p) => fetchUsersAndIntegrations(undefined, p)}
+            disabled={usersLoading}
+          />
         </CardContent>
       </Card>
 

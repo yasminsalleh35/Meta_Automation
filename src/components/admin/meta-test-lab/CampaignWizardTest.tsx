@@ -15,7 +15,6 @@ interface CampaignWizardTestProps {
   mode: 'ctwa' | 'wa_link';
   adAccountId: string;
   pageId: string;
-  accessToken: string;
   instagramUserId?: string;
 }
 
@@ -23,7 +22,6 @@ export const CampaignWizardTest: React.FC<CampaignWizardTestProps> = ({
   mode,
   adAccountId,
   pageId,
-  accessToken,
   instagramUserId
 }) => {
   const { toast } = useToast();
@@ -107,17 +105,7 @@ export const CampaignWizardTest: React.FC<CampaignWizardTestProps> = ({
     try {
       addLog('INIT', 'Iniciando validações...', 'info');
 
-      // 🔍 VALIDAÇÃO DE TOKEN
-      if (!accessToken || accessToken.length < 100) {
-        addLog('VALIDATION', '❌ Token de acesso inválido ou expirado', 'error');
-        toast({
-          title: "Token inválido",
-          description: "O token de acesso do Meta Ads pode ter expirado. Reconecte a integração.",
-          variant: "destructive"
-        });
-        setIsCreating(false);
-        return;
-      }
+      // Token do Meta é resolvido no servidor (audit SEC-12)
 
       // 🔍 VALIDAÇÃO DE AD ACCOUNT
       if (!adAccountId || !adAccountId.startsWith('act_')) {
@@ -154,7 +142,6 @@ export const CampaignWizardTest: React.FC<CampaignWizardTestProps> = ({
       const payload = {
         adAccountId,
         pageId: formData.fanpage,
-        accessToken,
         campaignName: formData.campaignName,
         adTitle: formData.adTitle,
         adText: formData.adText,
@@ -184,11 +171,8 @@ export const CampaignWizardTest: React.FC<CampaignWizardTestProps> = ({
       
       addLog('VALIDATION', '✅ Payload validado com sucesso', 'success');
       
-      // 🔍 DEBUG: Log completo do payload (sem access token)
-      console.log('📦 PAYLOAD COMPLETO:', {
-        ...payload,
-        accessToken: `${payload.accessToken?.substring(0, 20)}...` // Mascarar token
-      });
+      // 🔍 DEBUG: Log completo do payload
+      console.log('📦 PAYLOAD COMPLETO:', payload);
 
       addLog('API_CALL', 'Chamando edge function test-wa-link-campaign-create', 'info');
 

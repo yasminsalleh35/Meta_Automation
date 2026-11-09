@@ -16,14 +16,12 @@ import { CAMPAIGN_TEST_MODES } from './types';
 interface CampaignTestPanelProps {
   adAccountId: string;
   pageId: string;
-  accessToken: string;
   onCampaignCreated: (campaignId: string, objective: string) => void;
 }
 
 const CampaignTestPanel: React.FC<CampaignTestPanelProps> = ({
   adAccountId,
   pageId,
-  accessToken,
   onCampaignCreated,
 }) => {
   const { toast } = useToast();
@@ -67,7 +65,7 @@ const CampaignTestPanel: React.FC<CampaignTestPanelProps> = ({
           body: {
             adAccountId,
             pageId,
-            accessToken,
+            // token resolvido no servidor (audit SEC-12)
             campaignName: config.name,
             adTitle: config.adTitle,
             adText: config.adText,
@@ -141,7 +139,6 @@ const CampaignTestPanel: React.FC<CampaignTestPanelProps> = ({
           body: {
             adAccountId,
             campaignConfig,
-            accessToken,
           },
         });
 

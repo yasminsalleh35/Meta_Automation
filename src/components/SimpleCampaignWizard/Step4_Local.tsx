@@ -81,7 +81,8 @@ export const Step4Local: React.FC<Step4LocalProps> = ({ formData, updateFormData
   const [selectedRegion, setSelectedRegion] = useState<any>(null);
 
   const { existingIntegration } = useMetaAdsIntegration();
-  const metaAccessToken = existingIntegration?.access_token;
+  // Busca Meta roda no servidor; o navegador só sabe se há integração ativa (audit SEC-12)
+  const metaConnected = existingIntegration?.status === 'active';
   
   const { mapboxToken } = useMapbox();
   const debounceTimerRef = useRef<NodeJS.Timeout>();
@@ -276,13 +277,13 @@ export const Step4Local: React.FC<Step4LocalProps> = ({ formData, updateFormData
 
       try {
         // ✅ PRIORIDADE 1: Tentar Meta API oficial (se token disponível)
-        if (metaAccessToken) {
+        if (metaConnected) {
           console.log(`🔍 [META-API] Buscando estados via Meta API oficial: ${regionQuery} (${countryCode})`);
           
           try {
             const metaResults = await metaAdsLocationService.getLocationSuggestions(
               regionQuery,
-              metaAccessToken,
+              '', // token fica no servidor (audit SEC-12)
               countryCode,
               ['region']
             );
@@ -365,7 +366,7 @@ export const Step4Local: React.FC<Step4LocalProps> = ({ formData, updateFormData
         regionAbortControllerRef.current.abort();
       }
     };
-  }, [regionQuery, countryCode, mapboxToken, metaAccessToken, targetingMode]);
+  }, [regionQuery, countryCode, mapboxToken, metaConnected, targetingMode]);
 
   // ✅ Selecionar região/estado (ADICIONAR ao array)
   const handleRegionSelect = (suggestion: any) => {
@@ -719,7 +720,7 @@ export const Step4Local: React.FC<Step4LocalProps> = ({ formData, updateFormData
             {/* Tab: Estado/Região */}
             <TabsContent value="region" className="space-y-4">
               {/* ✅ FASE 1: Warning se Meta API não disponível */}
-              {!metaAccessToken && (
+              {!metaConnected && (
                 <Alert variant="destructive">
                   <AlertCircle className="h-4 w-4" />
                   <AlertDescription>
@@ -729,7 +730,7 @@ export const Step4Local: React.FC<Step4LocalProps> = ({ formData, updateFormData
                 </Alert>
               )}
               
-              {metaAccessToken && (
+              {metaConnected && (
                 <Alert>
                   <AlertDescription>
                     ✅ Meta API conectada. Estados serão segmentados com <strong>targeting oficial</strong> da Meta.

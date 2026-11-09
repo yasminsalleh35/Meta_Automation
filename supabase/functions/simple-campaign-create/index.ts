@@ -1282,6 +1282,10 @@ export async function handleRequest(req: Request): Promise<Response> {
     if (profileRow?.status === 'suspended') {
       throw new CampaignError('ACCOUNT_SUSPENDED', 'Sua conta está suspensa. Entre em contato com o suporte.');
     }
+    // audit LGL-03: conta com exclusão pedida segue o mesmo caminho da suspensa.
+    if (profileRow?.status === 'pending_deletion') {
+      throw new CampaignError('ACCOUNT_SUSPENDED', 'Sua conta está em processo de exclusão. Para cancelar, fale com o suporte em até 30 dias.');
+    }
 
     // Get request body
     payload = await req.json().catch(() => null);

@@ -50,7 +50,6 @@ interface AdSetTestPanelProps {
   campaignId: string;
   campaignObjective: string;
   pageId?: string | null;
-  accessToken: string;
   onAdSetCreated: (adSetId: string) => void;
 }
 
@@ -59,7 +58,6 @@ const AdSetTestPanel: React.FC<AdSetTestPanelProps> = ({
   campaignId,
   campaignObjective,
   pageId,
-  accessToken,
   onAdSetCreated,
 }) => {
   const { toast } = useToast();
@@ -243,7 +241,7 @@ const AdSetTestPanel: React.FC<AdSetTestPanelProps> = ({
         body: {
           adAccountId,
           adSetConfig: finalConfig,
-          accessToken,
+          // token resolvido no servidor (audit SEC-12)
         },
       });
 

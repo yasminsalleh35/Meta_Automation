@@ -70,7 +70,7 @@ const MetaTestLab: React.FC = () => {
   const hasIntegration = existingIntegration?.status === 'active';
   const adAccountId = existingIntegration?.ad_account_id;
   const pageId = existingIntegration?.page_id;
-  const accessToken = existingIntegration?.access_token;
+  // access_token não é legível no navegador; as test functions o resolvem no servidor (audit SEC-12)
 
   return (
     <div className="container mx-auto py-8 space-y-6">
@@ -120,17 +120,13 @@ const MetaTestLab: React.FC = () => {
                 <p className="text-muted-foreground">Page ID:</p>
                 <p className="font-mono text-xs">{pageId || 'N/A'}</p>
               </div>
-              <div>
-                <p className="text-muted-foreground">Access Token:</p>
-                <p className="font-mono text-xs">{accessToken ? '***' + accessToken.slice(-8) : 'N/A'}</p>
-              </div>
             </div>
           </CardContent>
         </Card>
       )}
 
       {/* Profile Mode Selector */}
-      {hasIntegration && adAccountId && pageId && accessToken && (
+      {hasIntegration && adAccountId && pageId && (
         <MetaAssetsProvider>
           <Tabs value={profileMode} onValueChange={(v) => setProfileMode(v as 'ctwa' | 'wa_link')}>
             <TabsList className="grid w-full grid-cols-2 mb-6">
@@ -185,7 +181,6 @@ const MetaTestLab: React.FC = () => {
                   <CampaignTestPanel
                     adAccountId={adAccountId}
                     pageId={pageId}
-                    accessToken={accessToken}
                     onCampaignCreated={handleCampaignCreated}
                   />
                 </TabsContent>
@@ -198,7 +193,6 @@ const MetaTestLab: React.FC = () => {
                       campaignId={campaignId}
                       campaignObjective={campaignObjective}
                       pageId={pageId}
-                      accessToken={accessToken}
                       onAdSetCreated={handleAdSetCreated}
                     />
                   )}
@@ -209,7 +203,6 @@ const MetaTestLab: React.FC = () => {
                     <CreativeTestPanel
                       adAccountId={adAccountId}
                       pageId={pageId}
-                      accessToken={accessToken}
                       instagramUserId={instagramUserId}
                       onCreativeCreated={handleCreativeCreated}
                     />
@@ -221,7 +214,6 @@ const MetaTestLab: React.FC = () => {
                     <AdTestPanel
                       adAccountId={adAccountId}
                       adSetId={adSetId!}
-                      accessToken={accessToken}
                       creativeId={creativeId}
                     />
                   )}
@@ -235,7 +227,6 @@ const MetaTestLab: React.FC = () => {
                 mode="wa_link"
                 adAccountId={adAccountId}
                 pageId={pageId}
-                accessToken={accessToken}
                 instagramUserId={instagramUserId}
               />
             </TabsContent>

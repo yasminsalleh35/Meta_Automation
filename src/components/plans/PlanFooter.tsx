@@ -1,5 +1,6 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
+import { CookiePreferencesLink } from '@/components/legal/CookieConsentBanner';
 
 export const PlanFooter: React.FC = () => {
   return (
@@ -30,6 +31,8 @@ export const PlanFooter: React.FC = () => {
             >
               Termos
             </Link>
+            {/* audit LGL-02 */}
+            <CookiePreferencesLink className="text-sm text-muted-foreground hover:text-foreground transition-colors" />
           </div>
         </div>
       </div>

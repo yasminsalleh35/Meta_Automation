@@ -32,3 +32,14 @@ export function pageRange(page: number, pageSize: number = ADMIN_PAGE_SIZE): [nu
   const p = Math.max(0, Math.floor(page) || 0);
   return [p * size, p * size + size - 1];
 }
+
+/**
+ * Audit ADM-03: valor literal entre aspas para uso dentro de `.or(...)` (vírgulas, parênteses e
+ * pontos deixam de ser sintaxe do PostgREST). Aspas e barras invertidas são escapadas.
+ */
+export function quotePostgrestValue(raw: string): string {
+  return `"${String(raw).replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
+}
+
+/** Tamanho do lote ao percorrer todas as linhas (ex.: exportação CSV) — o máximo do PostgREST. */
+export const EXPORT_CHUNK_SIZE = 1000;

@@ -2,6 +2,7 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
+import { CookiePreferencesLink } from '@/components/legal/CookieConsentBanner';
 
 export const LandingFooter: React.FC = () => {
   return (
@@ -68,6 +69,10 @@ export const LandingFooter: React.FC = () => {
                   >
                     Termos
                   </Link>
+                </li>
+                <li>
+                  {/* audit LGL-02 */}
+                  <CookiePreferencesLink className="hover:text-camply-green transition-colors touch-target inline-block" />
                 </li>
               </ul>
             </div>

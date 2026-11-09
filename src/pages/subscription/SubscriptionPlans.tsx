@@ -30,7 +30,7 @@ const plans = [
     features: [
       'Tudo do plano mensal',
       '2 meses grátis',
-      'Parcelamento em 12x sem juros',
+      'Parcelamento em até 12x no cartão',
       'Suporte VIP dedicado',
       'Consultoria estratégica mensal',
       'Relatórios avançados com IA'
@@ -92,7 +92,7 @@ export default function SubscriptionPlans() {
                     {(plan.price / plan.installments).toLocaleString('pt-BR', {
                       minimumFractionDigits: 2
                     })}{' '}
-                    sem juros
+                    no cartão
                   </p>
                 )}
               </div>
