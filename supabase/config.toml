@@ -202,3 +202,7 @@ verify_jwt = true
 
 [functions.user-account-delete]
 verify_jwt = true
+
+[functions.purge-deleted-accounts]
+# cron diário (x-cron-secret); a function valida com isCron
+verify_jwt = false
