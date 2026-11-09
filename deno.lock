@@ -205,7 +205,7 @@
     "packageJson": {
       "dependencies": [
         "npm:@eslint/js@^9.9.0",
-        "npm:@hookform/resolvers@^3.9.0",
+        "npm:@hookform/resolvers@^5.9.2",
         "npm:@playwright/test@1.64.1",
         "npm:@radix-ui/react-accordion@^1.2.0",
         "npm:@radix-ui/react-alert-dialog@^1.1.1",
@@ -290,7 +290,7 @@
         "npm:vaul@~0.9.3",
         "npm:vite@^6.4.5",
         "npm:vitest@^4.1.12",
-        "npm:zod@^3.23.8"
+        "npm:zod@^4.6.7"
       ],
       "overrides": {
         "react-day-picker": {
