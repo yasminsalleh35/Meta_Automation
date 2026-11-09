@@ -1,6 +1,6 @@
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
-import { requireUser, isAdminUser, authErrorResponse } from '../_shared/auth.ts'
+import { requireUser, isAdminUser, isServiceRole, serviceClient, authErrorResponse } from '../_shared/auth.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -48,10 +48,19 @@ serve(async (req) => {
     return new Response('ok', { headers: corsHeaders })
   }
 
+  let pendingRowId: string | null = null
   try {
     // Usuário logado; só verifica ad sets próprios (admin: qualquer) — audit SEC-10/SEC-15
-    const { user, db: supabaseClient } = await requireUser(req)
-    const isAdmin = await isAdminUser(supabaseClient, user.id)
+    // Chamada interna do auto-verify-ad-sets (cron) usa a service role: age como admin.
+    let user: { id: string } | null = null
+    let supabaseClient = serviceClient()
+    let isAdmin = isServiceRole(req)
+    if (!isAdmin) {
+      const ctx = await requireUser(req)
+      user = ctx.user
+      supabaseClient = ctx.db
+      isAdmin = await isAdminUser(supabaseClient, user.id)
+    }
 
     const { ad_set_id } = await req.json() as AdSetVerificationRequest
 
@@ -62,7 +71,7 @@ serve(async (req) => {
       .from('expected_ad_set_settings')
       .select('*')
       .eq('ad_set_id', ad_set_id)
-    if (!isAdmin) settingsQuery = settingsQuery.eq('user_id', user.id)
+    if (!isAdmin && user) settingsQuery = settingsQuery.eq('user_id', user.id)
     const { data: expectedSettings, error: dbError } = await settingsQuery.maybeSingle()
 
     if (dbError || !expectedSettings) {
@@ -77,9 +86,11 @@ serve(async (req) => {
     }
 
     const settings = expectedSettings as ExpectedAdSetSettings & { user_id: string | null }
+    pendingRowId = settings.id
 
     // 2. Buscar dados atuais da Meta API com o token do DONO do ad set
-    const ownerId = settings.user_id ?? user.id
+    const ownerId = settings.user_id ?? user?.id
+    if (!ownerId) throw new Error('Ad set has no owner')
     const metaAccessToken = await getMetaAccessToken(supabaseClient, ownerId)
     
     if (!metaAccessToken) {
@@ -127,6 +138,19 @@ serve(async (req) => {
     console.error('❌ Verification failed:', error)
     const authResp = authErrorResponse(error, corsHeaders)
     if (authResp) return authResp
+
+    // Falha definitiva (sem dono, sem token, erro da Meta): marca ERROR para o cron não repetir para sempre
+    if (pendingRowId) {
+      await serviceClient()
+        .from('expected_ad_set_settings')
+        .update({
+          verification_status: 'ERROR',
+          last_verified_at: new Date().toISOString(),
+          is_pending_verification: false,
+          error_details: { message: (error as any)?.message ?? String(error) }
+        })
+        .eq('id', pendingRowId)
+    }
 
     return new Response(
       JSON.stringify({
