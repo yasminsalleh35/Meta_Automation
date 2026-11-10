@@ -27,4 +27,4 @@ jobs:
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
           PROBE_USER_A_JWT: ${{ secrets.PROBE_USER_A_JWT }}
           PROBE_USER_B_ID: ${{ secrets.PROBE_USER_B_ID }}
-        run: deno run --allow-net --allow-env --allow-read scripts/security-probe.ts
+        run: deno run --allow-net --allow-env --allow-read --node-modules-dir=none scripts/security-probe.ts

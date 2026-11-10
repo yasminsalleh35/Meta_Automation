@@ -101,4 +101,4 @@ jobs:
           exit $fail
 
       - name: deno test
-        run: deno test --allow-all supabase/functions/_tests/
+        run: deno test --allow-all --node-modules-dir=none supabase/functions/_tests/
