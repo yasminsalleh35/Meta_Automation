@@ -238,7 +238,7 @@ Rollback: redeploy the previous commit's folder.
 `/auth/callback/meta` uses the state-checked page (SEC-14); OAuth dialog v23.0; admin WhatsApp links
 normalised.
 
-**CI:** strict typecheck and `deno check` of every function added.
+**CI:** strict typecheck and `deno check` of every function added. The Deno job had failed on every run since it was introduced (the repo-root `package.json` made Deno expect `node_modules`); fixed with `--node-modules-dir=none` — first fully green run on `3d0cdba`.
 
 **Verification after deploy:** vitest 62/62, Deno 75/75, `deno check` 72/72, build + bundle budget
 (187 KB gz), security probe 383 checks / 0 FAIL, Playwright smoke + 87-route crawl, cron runs 200.
