@@ -38,7 +38,6 @@ npm run dev            # http://localhost:8080
 |---|---|
 | `VITE_SUPABASE_URL` | Supabase project URL |
 | `VITE_SUPABASE_ANON_KEY` | Supabase anon (public) key |
-| `VITE_SUPABASE_PROJECT_ID` | Supabase project ref |
 | `VITE_FEATURE_ADVANCED_ANALYTICS` | Optional, default off. Shows the Advanced Analytics page (hidden until rebuilt on real data) |
 
 The browser code must read the Supabase URL and key from these variables (or use the client in
@@ -101,8 +100,8 @@ src/
   lib/            # Utility libraries
   routes/         # Route definitions and guards
 supabase/
-  functions/      # 73 edge functions (Deno) + _shared/ modules + _tests/
-  migrations/     # 152 SQL migrations (+ rollback/)
+  functions/      # 72 edge functions (Deno) + _shared/ modules + _tests/
+  migrations/     # 155 SQL migrations (+ rollback/)
 docs/             # Plans, guides, audit remediation and release records
 ```
 

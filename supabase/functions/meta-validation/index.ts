@@ -68,7 +68,7 @@ serve(async (req) => {
       throw new HttpError(401, 'unauthenticated');
     }
 
-    console.log('User authenticated for validation:', { userId: user.id, email: user.email });
+    console.log('User authenticated for validation:', { userId: user.id });
 
     // Get active Meta Ads integration for this user
     const { data: integration, error: integrationError } = await supabaseServiceClient

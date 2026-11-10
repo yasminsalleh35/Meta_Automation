@@ -26,12 +26,13 @@ import {
 import { Lead } from '@/hooks/admin/useLeads';
 import { useToast } from '@/hooks/use-toast';
 import { safeUrl } from '@/lib/safeUrl';
+import { waLinkFromPhone } from '@/lib/phone';
 
 interface LeadDrawerProps {
   lead: Lead | null;
   open: boolean;
   onClose: () => void;
-  onLeadUpdate: (leadId: string, updates: any) => Promise<boolean>;
+  onLeadUpdate: (leadId: string, updates: Record<string, unknown>) => Promise<boolean>;
   onAddComment: (leadId: string, comment: string) => Promise<boolean>;
 }
 
@@ -72,10 +73,9 @@ export const LeadDrawer: React.FC<LeadDrawerProps> = ({
   };
 
   const openWhatsApp = () => {
-    if (lead.whatsapp_e164) {
-      const cleanNumber = lead.whatsapp_e164.replace(/\D/g, '');
-      window.open(`https://wa.me/${cleanNumber}`, '_blank');
-    }
+    // audit CMP-06: mesma normalização (+55) do resto do app
+    const link = waLinkFromPhone(lead.whatsapp_e164);
+    if (link) window.open(link, '_blank', 'noopener,noreferrer');
   };
 
   const openInstagram = () => {
@@ -376,7 +376,7 @@ export const LeadDrawer: React.FC<LeadDrawerProps> = ({
             <CardContent className="space-y-4">
               {lead.comments && lead.comments.length > 0 ? (
                 <div className="space-y-3">
-                  {lead.comments.map((comment: any, index: number) => (
+                  {lead.comments.map((comment: { author_name?: string; created_at: string; text?: string }, index: number) => (
                     <div key={index} className="bg-muted/50 p-3 rounded-lg">
                       <div className="flex justify-between items-center mb-2">
                         <span className="text-sm font-medium">{comment.author_name}</span>

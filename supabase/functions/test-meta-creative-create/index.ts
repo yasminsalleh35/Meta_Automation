@@ -4,6 +4,7 @@ import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { requireAdmin, authErrorResponse } from '../_shared/auth.ts';
 import { requireMetaAccessToken } from '../_shared/metaIntegration.ts';
 import { GRAPH_BASE } from '../_shared/meta.ts'; // audit PLT-03
+import { waLinkFromPhone } from '../_shared/phone.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -303,7 +304,8 @@ serve(async (req) => {
           page_id: pageId,
           link_data: {
             image_hash: imageHash,
-            link: `https://wa.me/${pageId}`, // Placeholder - será substituído pela Meta
+            // audit CMP-06: nunca wa.me/<pageId>. Número informado → wa.me/55…; senão o destino CTWA padrão da Meta
+            link: waLinkFromPhone(payload.whatsappNumber ?? payload.whatsapp_number) ?? 'https://api.whatsapp.com/send',
             message: adText,
             name: adTitle,
             call_to_action: callToAction || {

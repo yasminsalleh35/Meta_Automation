@@ -206,3 +206,53 @@ verify_jwt = true
 [functions.purge-deleted-accounts]
 # cron diário (x-cron-secret); a function valida com isCron
 verify_jwt = false
+
+# audit (re-verification 2026-11-10): explicit entries for functions that relied on the default.
+# All of them check the caller's JWT themselves (requireUser/requireAdmin); verify_jwt=true matches production.
+[functions.advantage-campaign-create]
+verify_jwt = true
+
+[functions.ai-evaluate-metrics]
+verify_jwt = true
+
+[functions.ai-generate-profile]
+verify_jwt = true
+
+[functions.apply-optimization]
+verify_jwt = true
+
+[functions.create-guest-user]
+verify_jwt = true
+
+[functions.duplicate-campaign]
+verify_jwt = true
+
+[functions.edge-log-persist]
+verify_jwt = true
+
+[functions.meta-assets-cached]
+verify_jwt = true
+
+[functions.meta-campaign-daily-insights]
+verify_jwt = true
+
+[functions.pagarme-customer-portal]
+verify_jwt = true
+
+[functions.pagarme-subscriptions-cancel]
+verify_jwt = true
+
+[functions.pagarme-subscriptions-reactivate]
+verify_jwt = true
+
+[functions.pagarme-subscriptions-update-card]
+verify_jwt = true
+
+[functions.send-payment-confirmation]
+verify_jwt = true
+
+[functions.simple-campaign-assets]
+verify_jwt = true
+
+[functions.simple-campaign-list]
+verify_jwt = true

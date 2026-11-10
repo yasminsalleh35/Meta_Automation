@@ -38,7 +38,7 @@ Thumbs.db
 # Supabase CLI temp/cache files
 supabase/.temp/
 
-# audit PLT-08: deno.lock and docs/plan.md are tracked (no longer ignored).
+# audit PLT-08: deno.lock is tracked (no longer ignored).
 
 # Audit evidence (client screenshots / console logs) — never commit
 No/
@@ -49,3 +49,7 @@ docs/plan.md
 # Playwright
 test-results/
 playwright-report/
+
+# Database dumps (pg_dump) — never commit, keep encrypted outside the repo
+db_backups/
+*.dump

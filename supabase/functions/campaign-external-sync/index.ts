@@ -2,6 +2,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
 import { resolveMetaIntegration } from '../_shared/metaIntegration.ts';
 import { META_GRAPH_VERSION } from '../_shared/meta.ts'; // audit PLT-03
+import { mapMetaEffectiveStatus } from '../_shared/status.ts'; // audit CMP-10
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -16,6 +17,7 @@ interface MetaCampaignData {
   name: string;
   objective: string;
   status: string;
+  effective_status?: string;
   created_time: string;
 }
 
@@ -116,7 +118,7 @@ Deno.serve(async (req) => {
     // Fetch Campaign data
     console.log('📊 Fetching campaign data...');
     const campaignResponse = await fetch(
-      `${META_BASE_URL}/${meta_campaign_id}?fields=id,name,objective,status,created_time,updated_time&access_token=${accessToken}`
+      `${META_BASE_URL}/${meta_campaign_id}?fields=id,name,objective,status,effective_status,created_time,updated_time&access_token=${accessToken}`
     );
     
     if (!campaignResponse.ok) {
@@ -237,7 +239,8 @@ Deno.serve(async (req) => {
       user_id,
       name: campaignData.name,
       objective: campaignData.objective || 'UNKNOWN',
-      status: mapMetaStatusToLocal(campaignData.status),
+      // audit CMP-10: mapeamento canônico único (effective_status primeiro: em análise ≠ ativa)
+      status: mapMetaEffectiveStatus(campaignData.effective_status) ?? mapMetaEffectiveStatus(campaignData.status) ?? 'draft',
       meta_campaign_id,
       meta_adset_id,
       meta_ad_id,
@@ -332,16 +335,6 @@ Deno.serve(async (req) => {
     );
   }
 });
-
-function mapMetaStatusToLocal(metaStatus: string): string {
-  const statusMap: Record<string, string> = {
-    'ACTIVE': 'active',
-    'PAUSED': 'paused',
-    'DELETED': 'finished',
-    'ARCHIVED': 'finished'
-  };
-  return statusMap[metaStatus] || 'draft';
-}
 
 function mapMetaGenderToLocal(genders?: number[]): string {
   if (!genders || genders.length === 0) return 'all';

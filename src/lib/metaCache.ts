@@ -15,7 +15,7 @@ interface CacheEntry<T> {
 }
 
 class MetaCache {
-  private memoryCache = new Map<string, CacheEntry<any>>();
+  private memoryCache = new Map<string, CacheEntry<unknown>>();
   private channel: BroadcastChannel | null = null;
 
   constructor() {
@@ -32,10 +32,18 @@ class MetaCache {
     }
   }
 
+  /** Remove `key` and its per-user variants `key:<userId>` (audit SEC-13). */
+  private deleteKeyFamily(key: string) {
+    const isFamily = (k: string) => k === key || k.startsWith(`${key}:`);
+    for (const k of [...this.memoryCache.keys()]) if (isFamily(k)) this.memoryCache.delete(k);
+    Object.keys(localStorage).forEach(k => {
+      if (k.startsWith(CACHE_PREFIX) && isFamily(k.slice(CACHE_PREFIX.length))) localStorage.removeItem(k);
+    });
+  }
+
   private handleClearMessage(key?: string) {
     if (key) {
-      this.memoryCache.delete(key);
-      localStorage.removeItem(CACHE_PREFIX + key);
+      this.deleteKeyFamily(key);
     } else {
       this.memoryCache.clear();
       // Clear all meta cache items from localStorage
@@ -47,7 +55,7 @@ class MetaCache {
     }
   }
 
-  private handleSetMessage(key: string, entry: CacheEntry<any>) {
+  private handleSetMessage(key: string, entry: CacheEntry<unknown>) {
     this.memoryCache.set(key, entry);
   }
 
@@ -118,8 +126,7 @@ class MetaCache {
    */
   clear(key?: string): void {
     if (key) {
-      this.memoryCache.delete(key);
-      localStorage.removeItem(CACHE_PREFIX + key);
+      this.deleteKeyFamily(key);
       console.log(`[metaCache] Cleared "${key}"`);
     } else {
       this.memoryCache.clear();
@@ -141,7 +148,7 @@ class MetaCache {
   /**
    * Check if cache entry is still valid
    */
-  private isValid(entry: CacheEntry<any>): boolean {
+  private isValid(entry: CacheEntry<unknown>): boolean {
     const age = Date.now() - entry.timestamp;
     return age < entry.ttl;
   }
@@ -158,7 +165,7 @@ class MetaCache {
           const parsed = JSON.parse(stored);
           return Math.floor((Date.now() - parsed.timestamp) / 1000);
         }
-      } catch {}
+      } catch { /* entrada inválida no localStorage → sem idade */ }
       return null;
     }
     return Math.floor((Date.now() - entry.timestamp) / 1000);

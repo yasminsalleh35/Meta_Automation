@@ -71,7 +71,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   useEffect(() => {
     let isMounted = true;
-    let authSubscription: any = null;
+    let authSubscription: { unsubscribe: () => void } | null = null;
     
     console.log('AuthProvider: Initializing auth state', { isActiveRecovery });
     
@@ -288,7 +288,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         throw error;
       }
       console.log('Logout: SignOut successful');
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Logout: Error during signOut:', error);
       throw error;
     } finally {
@@ -322,6 +322,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     </AuthContext.Provider>
   );
 };
+
+/**
+ * audit SEC-13: id do usuário logado para compor chaves de cache (React Query / metaCache).
+ * Não lança fora do AuthProvider (testes de hooks isolados) — retorna null.
+ */
+export const useOptionalUserId = (): string | null => useContext(AuthContext)?.user?.id ?? null;
 
 export const useAuth = () => {
   const context = useContext(AuthContext);

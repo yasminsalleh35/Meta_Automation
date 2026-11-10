@@ -35,6 +35,9 @@ jobs:
       - name: Typecheck
         run: npx tsc --noEmit -p tsconfig.app.json
 
+      - name: Typecheck (strict — src/hooks, src/lib)
+        run: npx tsc --noEmit -p tsconfig.strict.json
+
       - name: ESLint (changed files only)
         env:
           EVENT: ${{ github.event_name }}
@@ -85,6 +88,17 @@ jobs:
       - uses: denoland/setup-deno@v2
         with:
           deno-version: v2.x
+
+      - name: deno check (every function)
+        # --node-modules-dir=none: the repo-root package.json would otherwise make Deno resolve
+        # npm sub-dependencies of jsr: imports from a (non-existent) node_modules folder.
+        run: |
+          fail=0
+          for f in supabase/functions/*/index.ts; do
+            case "$f" in supabase/functions/_*) continue;; esac
+            deno check --node-modules-dir=none "$f" || { echo "::error file=$f::deno check failed"; fail=1; }
+          done
+          exit $fail
 
       - name: deno test
         run: deno test --allow-all supabase/functions/_tests/

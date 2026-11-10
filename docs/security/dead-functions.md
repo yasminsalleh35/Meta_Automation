@@ -41,3 +41,32 @@ Shallow orphan check: for every function, at least one frontend caller file is i
 ```
 send-confirmation-email
 ```
+
+`send-confirmation-email` was deleted remotely on 2026-11-09.
+
+## Deployed functions with no source in the repo (found 2026-11-10)
+
+`supabase functions list` showed 78 deployed functions against 72 folders. These 6 were never in
+git (no commit touches `supabase/functions/<name>`), nothing in `src`, `supabase/functions`,
+migrations or pg_cron calls them, and the security probe never covered them because it lists
+functions from the repo. Their deployed bundles were downloaded before any change (kept outside
+the repo, for rollback).
+
+| Function | Last deploy | verify_jwt | Behaviour seen | Verdict |
+|---|---|---|---|---|
+| `process-campaign-jobs` | 2025-06-14 | true | Legacy `campaign_jobs` queue runner (table empty). Predates the shared auth guard. | **Delete remotely** (SEC-10) |
+| `save-campaign-simple` | 2025-06-14 | true | Checks the user; inserts/updates `campaigns`. Superseded by `simple-campaign-create`. | **Delete remotely** |
+| `save-whatsapp-campaign` | 2025-06-23 | true | Checks the user; inserts `whatsapp_campaigns` (0 rows ever). | **Delete remotely** |
+| `pagarme-subscriptions-create` | 2026-03-11 | false | Returns `ENDPOINT_DEPRECATED` (V4). | Payments owner decides; probably delete |
+| `pagarme-create-subscription` | 2026-03-11 | false | Returns `ENDPOINT_DEPRECATED` (V1 card_hash). | Payments owner decides; probably delete |
+| `asaas-process-checkout-success` | 2025-11-20 | false | Legacy Asaas success handler, predates the shared auth guard. | Payments owner decides — review before the payments work |
+
+### Remote delete list (exact names)
+
+```
+process-campaign-jobs
+save-campaign-simple
+save-whatsapp-campaign
+```
+
+`npx supabase functions delete <name> --project-ref ibwhqkgvrkkqxiksbiqr` (needs the account owner's approval).

@@ -38,8 +38,8 @@
 
 | Item | Count | How to recount |
 |---|---|---|
-| Edge functions | 73 (plus `_shared/` and `_tests/`) | `ls supabase/functions` (exclude names starting with `_`) |
-| SQL migrations | 152 files (plus `rollback/`) | `ls supabase/migrations/*.sql \| wc -l` |
+| Edge functions | 72 (plus `_shared/` and `_tests/`) | `ls supabase/functions` (exclude names starting with `_`) |
+| SQL migrations | 155 files (plus `rollback/`) | `ls supabase/migrations/*.sql \| wc -l` |
 
 ---
 
@@ -71,7 +71,7 @@ CI does **not** deploy anything. Deploys are the manual steps below.
   `public/assets/images/*` (not hashed) get `max-age=86400, must-revalidate`.
 
 Frontend build variables (Netlify → Site settings → Environment variables): `VITE_SUPABASE_URL`,
-`VITE_SUPABASE_ANON_KEY`, `VITE_SUPABASE_PROJECT_ID`, optional `VITE_FEATURE_ADVANCED_ANALYTICS`.
+`VITE_SUPABASE_ANON_KEY`, optional `VITE_FEATURE_ADVANCED_ANALYTICS`.
 
 **Rollback:** Netlify → Deploys → pick the previous good deploy → "Publish deploy".
 

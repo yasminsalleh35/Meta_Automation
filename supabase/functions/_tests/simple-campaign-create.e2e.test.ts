@@ -128,7 +128,7 @@ function jsonResp(obj: unknown, status = 200) {
   return new Response(JSON.stringify(obj), { status, headers: { 'content-type': 'application/json' } });
 }
 
-function installFetch(opts: { failAds?: boolean; failAdsTransient?: boolean; adsetFailFirst?: boolean; myPages?: string[] } = {}) {
+function installFetch(opts: { failAds?: boolean; failAdsTransient?: boolean; adsetFailFirst?: boolean; myPages?: string[]; pageIg?: string; adsetFailFirstCode?: number } = {}) {
   const calls: FetchCall[] = [];
   let adsetAttempts = 0;
   const mock = async (input: Request | URL | string, init?: RequestInit): Promise<Response> => {
@@ -147,6 +147,10 @@ function installFetch(opts: { failAds?: boolean; failAdsTransient?: boolean; ads
 
     if (method === 'DELETE') return jsonResp({ success: true });
     if (path.endsWith('/me/accounts')) return jsonResp({ data: (opts.myPages ?? []).map((id) => ({ id })) });
+    // Page → linked Instagram account (audit CMP-03)
+    if (url.includes('fields=instagram_business_account')) {
+      return jsonResp(opts.pageIg ? { id: path.split('/').pop(), instagram_business_account: { id: opts.pageIg } } : { id: path.split('/').pop() });
+    }
     if (path.includes('/thumbnails')) return jsonResp({ data: [{ uri: 'https://cdn.test/vthumb.jpg' }] });
     // Instagram media-info check (existing-post flow)
     if (url.includes('fields=media_type')) {
@@ -160,7 +164,7 @@ function installFetch(opts: { failAds?: boolean; failAdsTransient?: boolean; ads
       adsetAttempts++;
       // Simulate Meta rejecting the pinned WhatsApp number on the first attempt.
       if (opts.adsetFailFirst && adsetAttempts === 1) {
-        return jsonResp({ error: { message: 'Invalid parameter', code: 100, error_subcode: 9999,
+        return jsonResp({ error: { message: 'Invalid parameter', code: opts.adsetFailFirstCode ?? 100, error_subcode: 9999,
           error_user_msg: 'The WhatsApp phone number is not valid for this page' } }, 400);
       }
       return jsonResp({ id: 'as_1' });
@@ -408,7 +412,7 @@ scc('S6 existing-post VIDEO → bare WHATSAPP_MESSAGE CTA (no value.link) + thum
   const cfg = baseConfig();
   (cfg.integration as any).selected_instagram_ids = ['ig_1'];
   __setSupabaseFactoryForTests(() => makeSupabase(cfg));
-  const calls = installFetch({});
+  const calls = installFetch({ pageIg: 'ig_1' });
 
   const payload = {
     campaignName: 'C', adTitle: 'T', adText: 'Olá', fanpage: 'page1', instagram: '',
@@ -485,6 +489,19 @@ scc('S8 pinned WhatsApp rejected → strips it, retries page-only, succeeds', as
   assertEquals(retry.page_id, 'page1');
 });
 
+scc('S8b phone-related error that is NOT an invalid parameter (code≠100) → pinned number is kept', async () => {
+  const cfg = baseConfig();
+  __setSupabaseFactoryForTests(() => makeSupabase(cfg));
+  const calls = installFetch({ adsetFailFirst: true, adsetFailFirstCode: 1 });
+  await handleRequest(makeRequest({
+    whatsapp_meta: { business_id: 'b1', waba_id: 'w1', phone_number_id: 'PHONE123', display_phone_number: '+55 11 90000-0000' },
+  }));
+  const adsetCalls = calls.filter((c) => c.method === 'POST' && c.url.includes('/adsets'));
+  for (const c of adsetCalls) {
+    assertEquals(JSON.parse(c.body || '{}').promoted_object.whatsapp_phone_number_id, 'PHONE123');
+  }
+});
+
 // ---------------------------------------------------------------------------------------------
 // audit CMP-01/03/05/06/08 — validações antes de tocar na Meta + idempotência
 // ---------------------------------------------------------------------------------------------
@@ -522,6 +539,31 @@ scc('S11 selected Page B (owned, not stored) → ad set + creative use Page B', 
   const creative = JSON.parse(calls.find((c) => c.method === 'POST' && c.url.includes('/adcreatives'))!.body || '{}');
   assertEquals(creative.object_story_spec.page_id, 'pageB');
   assertEquals((cfg.campaignInserts![0] as any).facebook_page, 'pageB');
+});
+
+scc('S11b Instagram of ANOTHER page in the payload → ignored; the selected Page’s own IG is used', async () => {
+  const cfg = baseConfig();
+  __setSupabaseFactoryForTests(() => makeSupabase(cfg));
+  const calls = installFetch({ myPages: ['page1', 'pageB'], pageIg: 'ig_of_pageB' });
+  const res = await handleRequest(makeRequest({ fanpage: 'pageB', instagram: 'ig_of_page1' }));
+  assertEquals((await res.json()).status, 'created');
+  const creative = JSON.parse(calls.find((c) => c.method === 'POST' && c.url.includes('/adcreatives'))!.body || '{}');
+  assertEquals(creative.object_story_spec.instagram_user_id, 'ig_of_pageB');
+  const adset = JSON.parse(calls.find((c) => c.method === 'POST' && c.url.includes('/adsets'))!.body || '{}');
+  assertEquals(adset.targeting.publisher_platforms, ['facebook', 'instagram']);
+});
+
+scc('S11c selected Page has no linked Instagram → Facebook-only placements, no IG in the creative', async () => {
+  const cfg = baseConfig();
+  __setSupabaseFactoryForTests(() => makeSupabase(cfg));
+  const calls = installFetch({ myPages: ['page1', 'pageB'] });
+  const res = await handleRequest(makeRequest({ fanpage: 'pageB', instagram: 'ig_of_page1' }));
+  assertEquals((await res.json()).status, 'created');
+  const adset = JSON.parse(calls.find((c) => c.method === 'POST' && c.url.includes('/adsets'))!.body || '{}');
+  assertEquals(adset.targeting.publisher_platforms, ['facebook']);
+  assert(!('instagram_positions' in adset.targeting), 'no Instagram positions without an IG account');
+  const creative = JSON.parse(calls.find((c) => c.method === 'POST' && c.url.includes('/adcreatives'))!.body || '{}');
+  assert(!creative.object_story_spec.instagram_user_id, 'creative must not carry another page’s IG');
 });
 
 scc('S12 invalid WhatsApp number → 422 INVALID_WHATSAPP; valid one is normalised', async () => {

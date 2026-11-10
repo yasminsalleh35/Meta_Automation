@@ -1,6 +1,7 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMetaSelection } from '@/hooks/useMetaSelection';
 import { useSupabase } from '@/hooks/useSupabase';
+import { useOptionalUserId } from '@/contexts/AuthContext';
 
 export interface CachedCampaign {
   id: string;
@@ -41,6 +42,7 @@ export const useCampaignsCache = (filters: CampaignsCacheFilters = {}) => {
   const supabase = useSupabase();
   const queryClient = useQueryClient();
   const { data: selection } = useMetaSelection();
+  const userId = useOptionalUserId(); // audit SEC-13
 
   const {
     status = 'all',
@@ -51,6 +53,7 @@ export const useCampaignsCache = (filters: CampaignsCacheFilters = {}) => {
 
   const query = useQuery({
     queryKey: ['campaigns-cache', { 
+      user_id: userId, // audit SEC-13: cache por usuário
       ad_account_id: selection?.ad_account_id, 
       status, 
       search, 

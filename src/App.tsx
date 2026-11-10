@@ -28,7 +28,6 @@ const EmailConfirmation = lazy(() => import("./pages/auth/EmailConfirmation"));
 const ConfirmEmail = lazy(() => import("./pages/auth/ConfirmEmail"));
 const SetPassword = lazy(() => import("./pages/auth/SetPassword"));
 const MetaCallback = lazy(() => import("./pages/auth/MetaCallback"));
-const MetaCallbackGeneral = lazy(() => import("./pages/auth/MetaCallbackGeneral"));
 const PrivateRoutes = lazy(() => import("./routes/PrivateRoutes"));
 const Quiz = lazy(() => import("./pages/Quiz"));
 const SubscriptionPlans = lazy(() => import("./pages/subscription/SubscriptionPlans"));
@@ -58,7 +57,8 @@ const AppWithRoutes = () => {
         <Route path="confirm-email" element={<ConfirmEmail />} />
         <Route path="set-password" element={<SetPassword />} />
         <Route path="meta-callback" element={<MetaCallback />} />
-        <Route path="callback/meta" element={<MetaCallbackGeneral />} />
+        {/* audit SEC-14: rota antiga → mesma página com validação de state (one-time, no servidor) */}
+        <Route path="callback/meta" element={<MetaCallback />} />
       </Route>
 
       {/* Outras rotas públicas */}

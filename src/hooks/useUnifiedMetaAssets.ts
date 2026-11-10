@@ -2,6 +2,7 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from './use-toast';
 import { metaCache } from '@/lib/metaCache';
+import { useOptionalUserId } from '@/contexts/AuthContext';
 
 interface MetaAdAccount {
   id: string;
@@ -40,11 +41,17 @@ const BASE_RETRY_DELAY_MS = 1000;
 export const NO_META_INTEGRATION_MESSAGE = 'Conecte sua conta Meta';
 
 // Sem integração Meta não adianta repetir: o backend devolve code NO_INTEGRATION (200) ou 404
-const isNoIntegrationError = (data: any, err: any): boolean =>
-  data?.code === 'NO_INTEGRATION' ||
-  err?.context?.status === 404;
+const isNoIntegrationError = (data: unknown, err: unknown): boolean =>
+  (data as { code?: string } | null | undefined)?.code === 'NO_INTEGRATION' ||
+  (err as { context?: { status?: number } } | null | undefined)?.context?.status === 404;
 
 export const useUnifiedMetaAssets = () => {
+  // audit SEC-13: entrada do metaCache por usuário (ref → não muda a identidade dos callbacks).
+  // metaCache.clear('unified-assets') continua limpando todas as variantes por usuário.
+  const userId = useOptionalUserId();
+  const userIdRef = useRef(userId);
+  userIdRef.current = userId;
+  const assetsCacheKey = () => `unified-assets:${userIdRef.current ?? 'anon'}`;
   const [adAccounts, setAdAccounts] = useState<MetaAdAccount[]>([]);
   const [facebookPages, setFacebookPages] = useState<FacebookPage[]>([]);
   const [instagramAccounts, setInstagramAccounts] = useState<InstagramAccount[]>([]);
@@ -92,7 +99,7 @@ export const useUnifiedMetaAssets = () => {
 
     // Check cache first
     if (!forceRefresh) {
-      const cached = metaCache.get<UnifiedAssetsData>('unified-assets');
+      const cached = metaCache.get<UnifiedAssetsData>(assetsCacheKey());
       if (cached) {
         console.log('[useUnifiedMetaAssets] Using cached data');
         setAdAccounts(cached.adAccounts);
@@ -155,7 +162,7 @@ export const useUnifiedMetaAssets = () => {
       setRetryCount(0);
 
       // Cache response
-      metaCache.set('unified-assets', assetsData);
+      metaCache.set(assetsCacheKey(), assetsData);
 
       console.log('[useUnifiedMetaAssets] Success:', {
         adAccounts: assetsData.adAccounts.length,
@@ -175,7 +182,7 @@ export const useUnifiedMetaAssets = () => {
         });
       }
 
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('[useUnifiedMetaAssets] Error:', err);
 
       // Retry logic with exponential backoff (limitado por MAX_ATTEMPTS)
@@ -196,7 +203,7 @@ export const useUnifiedMetaAssets = () => {
       }
 
       // Max retries reached - try to use cached data
-      const cached = metaCache.get<UnifiedAssetsData>('unified-assets');
+      const cached = metaCache.get<UnifiedAssetsData>(assetsCacheKey());
       if (cached) {
         console.log('[useUnifiedMetaAssets] Using stale cache after error');
         setAdAccounts(cached.adAccounts);
@@ -204,7 +211,7 @@ export const useUnifiedMetaAssets = () => {
         setInstagramAccounts(cached.instagramAccounts);
         setError('Usando dados em cache. Clique em "Atualizar" para tentar novamente.');
       } else {
-        setError(err?.message || 'Erro ao carregar ativos');
+        setError((err instanceof Error && err.message) || 'Erro ao carregar ativos');
         setAdAccounts([]);
         setFacebookPages([]);
         setInstagramAccounts([]);

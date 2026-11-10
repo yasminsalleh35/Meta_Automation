@@ -15,12 +15,13 @@ import {
 import { Lead } from '@/hooks/admin/useLeads';
 import { useToast } from '@/hooks/use-toast';
 import { useResponsive } from '@/hooks/useResponsive';
+import { waLinkFromPhone } from '@/lib/phone';
 
 interface LeadsTableProps {
   leads: Lead[];
   loading: boolean;
   onLeadSelect: (lead: Lead) => void;
-  onLeadUpdate: (leadId: string, updates: any) => Promise<boolean>;
+  onLeadUpdate: (leadId: string, updates: Record<string, unknown>) => Promise<boolean>;
 }
 
 export const LeadsTable: React.FC<LeadsTableProps> = ({
@@ -59,10 +60,9 @@ export const LeadsTable: React.FC<LeadsTableProps> = ({
   };
 
   const openWhatsApp = (number: string) => {
-    if (number) {
-      const cleanNumber = number.replace(/\D/g, '');
-      window.open(`https://wa.me/${cleanNumber}`, '_blank');
-    }
+    // audit CMP-06: mesma normalização (+55) do resto do app
+    const link = waLinkFromPhone(number);
+    if (link) window.open(link, '_blank', 'noopener,noreferrer');
   };
 
   const formatDate = (dateString: string) => {

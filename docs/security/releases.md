@@ -215,3 +215,33 @@ finding before doing this.
 To stop a misbehaving job without a migration: `select cron.unschedule('<jobname>');` and, for the Meta
 auto-sync, set the function secret `PAUSE_AUTO_SYNC=true`. Re-create the job by re-running the
 migration that scheduled it.
+
+## 2026-11-10 — Re-verification of Phases 0–2 and 4–8
+
+An independent re-check of every task's acceptance criterion (code + live DB + live HTTP) found the
+gaps below; all code-side ones were fixed and deployed the same day. Backup before the migrations:
+`db_backups/prod_2026-11-10_schema_pre-reverify.dump` (schema of `public`).
+
+**Migrations applied:**
+- `20261110000001_learning_comments_authenticated_only` — DATA-07. Rollback: in the file header.
+- `20261110000002_campaign_profiles_select_scoped` — SEC-02 regression (non-admins saw 0 campaign
+  profiles since 2026-11-03). Rollback: `drop policy cp_select_scoped on public.campaign_profiles;`
+
+**Functions deployed (12):** `simple-campaign-create` (CMP-03 Page-linked Instagram, CMP-07 retry
+gate), `advantage-campaign-create` (CMP-06, ADM-02, no PII in logs), `save-campaign` and
+`duplicate-campaign` (ADM-02), `contingency-manual-sync` (multi-role admin check),
+`campaign-external-sync` and `meta-campaign-auto-sync` (CMP-10 effective_status), `test-meta-creative-create`
+(CMP-06), `meta-assets`, `meta-validation`, `simple-campaign-list`, `send-account-creation` (no PII in logs).
+Rollback: redeploy the previous commit's folder.
+
+**Frontend (Netlify):** Step 2 resets Instagram on Page change; per-user cache keys (SEC-13);
+`/auth/callback/meta` uses the state-checked page (SEC-14); OAuth dialog v23.0; admin WhatsApp links
+normalised.
+
+**CI:** strict typecheck and `deno check` of every function added.
+
+**Verification after deploy:** vitest 62/62, Deno 75/75, `deno check` 72/72, build + bundle budget
+(187 KB gz), security probe 383 checks / 0 FAIL, Playwright smoke + 87-route crawl, cron runs 200.
+
+**Not done here (needs the account owner):** SEC-03 key rotation; deleting the 3 orphan functions
+listed in `dead-functions.md`.

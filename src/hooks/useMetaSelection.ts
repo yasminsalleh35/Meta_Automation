@@ -1,6 +1,7 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { trackApiCall } from '@/utils/apiCallTracker';
+import { useOptionalUserId } from '@/contexts/AuthContext';
 
 export interface MetaSelection {
   ad_account_id: string | null;
@@ -12,9 +13,10 @@ export interface MetaSelection {
 
 export function useMetaSelection() {
   const queryClient = useQueryClient();
+  const userId = useOptionalUserId(); // audit SEC-13: cache por usuário
 
   const query = useQuery({
-    queryKey: ['meta-selection'],
+    queryKey: ['meta-selection', userId],
     queryFn: async (): Promise<MetaSelection> => {
       trackApiCall('meta-selection', 'Fetch ad account selection', 'meta-selection');
       try {

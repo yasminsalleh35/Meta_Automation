@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
+import { useOptionalUserId } from '@/contexts/AuthContext';
 
 export interface WhatsAppNumber {
   business_id: string;
@@ -19,8 +20,9 @@ interface BusinessNode { id: string; name?: string; wabas?: WabaNode[] }
  * Used by the campaign wizard (step 2) so the user can pick which number a campaign will use.
  */
 export const useWhatsAppNumbers = () => {
+  const userId = useOptionalUserId(); // audit SEC-13: cache por usuário
   const query = useQuery({
-    queryKey: ['whatsapp-numbers'],
+    queryKey: ['whatsapp-numbers', userId],
     queryFn: async (): Promise<WhatsAppNumber[]> => {
       // Always resolve a fresh session first. getSession() auto-refreshes an expired token, and
       // passing the Authorization header explicitly guarantees the invoke uses THAT token rather

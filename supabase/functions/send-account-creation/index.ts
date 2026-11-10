@@ -262,7 +262,7 @@ serve(async (req: Request): Promise<Response> => {
       );
     }
 
-    console.log('[send-account-creation] Creating password reset link for:', email);
+    console.log('[send-account-creation] Creating password reset link');
 
     // Gerar link de redefinição de senha (válido por 24h)
     const { data, error } = await supabase.auth.admin.generateLink({

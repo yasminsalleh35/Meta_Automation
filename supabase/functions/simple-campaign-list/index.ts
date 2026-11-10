@@ -68,7 +68,7 @@ serve(async (req) => {
       );
     }
 
-    console.log('✅ User authenticated:', user.email);
+    console.log('✅ User authenticated:', user.id);
 
     // Parse request body for filters
     const filters: SimpleCampaignListFilters = req.method === 'POST' ? await req.json() : {};

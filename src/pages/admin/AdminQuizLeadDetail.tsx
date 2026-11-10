@@ -16,6 +16,7 @@ import { ArrowLeft, ExternalLink, TrendingUp, TrendingDown, Minus } from 'lucide
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { useToast } from '@/hooks/use-toast';
+import { waLinkFromPhone } from '@/lib/phone';
 
 const AdminQuizLeadDetail: React.FC = () => {
   const { quizId, leadId } = useParams<{ quizId: string; leadId: string }>();
@@ -83,11 +84,11 @@ const AdminQuizLeadDetail: React.FC = () => {
   }
 
   // ADM-05: valida o formato antes de renderizar (.map em string/objeto derrubava a página)
-  const responses: Record<string, any> =
+  const responses: Record<string, unknown> =
     lead.responses && typeof lead.responses === 'object' && !Array.isArray(lead.responses)
-      ? (lead.responses as Record<string, any>)
+      ? (lead.responses as Record<string, unknown>)
       : {};
-  const rawInsights = lead.ai_insights as any;
+  const rawInsights = lead.ai_insights as Record<string, unknown> | null;
   const aiInsights = rawInsights && typeof rawInsights === 'object' && !Array.isArray(rawInsights) ? rawInsights : null;
   const toTextList = (v: unknown): string[] =>
     Array.isArray(v)
@@ -114,9 +115,9 @@ const AdminQuizLeadDetail: React.FC = () => {
             Capturado em {format(new Date(lead.created_at), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
           </p>
         </div>
-        {lead.whatsapp && (
+        {waLinkFromPhone(lead.whatsapp) && (
           <Button
-            onClick={() => window.open(`https://wa.me/${lead.whatsapp.replace(/\D/g, '')}`, '_blank')}
+            onClick={() => window.open(waLinkFromPhone(lead.whatsapp)!, '_blank', 'noopener,noreferrer')}
           >
             <ExternalLink className="w-4 h-4 mr-2" />
             WhatsApp

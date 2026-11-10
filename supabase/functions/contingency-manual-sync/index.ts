@@ -1,6 +1,6 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.49.8'
 import { corsHeadersFor, handlePreflight } from '../_shared/cors.ts'
-import { serviceClient } from '../_shared/auth.ts'
+import { serviceClient, isAdminUser } from '../_shared/auth.ts'
 import { mapMetaEffectiveStatus, type CampaignStatus } from '../_shared/status.ts'
 import { GRAPH_BASE } from '../_shared/meta.ts'; // audit PLT-03
 
@@ -61,13 +61,8 @@ Deno.serve(async (req) => {
       throw new Error('Unauthorized');
     }
 
-    const { data: userRoles } = await supabaseClient
-      .from('user_roles')
-      .select('role')
-      .eq('user_id', user.id)
-      .single();
-
-    if (!userRoles || !['admin', 'super_admin'].includes(userRoles.role)) {
+    // audit SEC-10: sem .single() — um admin pode ter mais de um papel
+    if (!(await isAdminUser(serviceClient(), user.id))) {
       throw new Error('Admin access required');
     }
 

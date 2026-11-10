@@ -2,8 +2,10 @@
 import { serve } from 'https://deno.land/std@0.190.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { GRAPH_BASE } from '../_shared/meta.ts';
+import { waLinkFromPhone } from '../_shared/phone.ts';
 import { toMessage, toObject } from '../_shared/errors.ts';
 import type { CampaignStatus } from '../_shared/status.ts';
+import { inactiveAccountReason } from '../_shared/auth.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -79,7 +81,16 @@ serve(async (req) => {
       );
     }
 
-    console.log('✅ User authenticated:', user.email);
+    // audit ADM-02: conta suspensa / em exclusão não cria campanha
+    const blocked = await inactiveAccountReason(user.id);
+    if (blocked) {
+      return new Response(
+        JSON.stringify({ success: false, error: blocked.code, message: blocked.message }),
+        { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    console.log('✅ User authenticated:', user.id);
 
     // Parse request body
     if (req.method !== 'POST') {
@@ -133,7 +144,7 @@ serve(async (req) => {
       );
     }
 
-    console.log('🔗 Meta Ads integration found for user:', user.email);
+    console.log('🔗 Meta Ads integration found for user:', user.id);
 
     const { access_token: accessToken, ad_account_id } = integration;
 
@@ -155,9 +166,15 @@ serve(async (req) => {
     console.log(`💰 Budget: R$${payload.daily_budget} → ${budgetInCents} centavos`);
 
     // Format WhatsApp link
-    const cleanWhatsApp = payload.whatsapp_number.replace(/\D/g, '');
-    const whatsappLink = `https://wa.me/${cleanWhatsApp}`;
-    console.log(`📱 WhatsApp link: ${whatsappLink}`);
+    // audit CMP-06: normalização única (+55); número inválido → 400 antes de criar algo na Meta
+    const whatsappLink = waLinkFromPhone(payload.whatsapp_number);
+    if (!whatsappLink) {
+      return new Response(
+        JSON.stringify({ success: false, error: 'INVALID_WHATSAPP', message: 'O número de WhatsApp informado é inválido. Use DDD + número.' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+    console.log('📱 WhatsApp link built');
 
     // 🎯 LOG DOS PARÂMETROS ADVANTAGE+ (SEM SEGMENTAÇÃO MANUAL)
     console.log('🎯 Configuração Advantage+ (targeting automático):');

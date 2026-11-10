@@ -52,6 +52,27 @@ export async function requireAdmin(req: Request) {
   return ctx;
 }
 
+/**
+ * audit ADM-02 / LGL-03: conta suspensa ou com exclusão pedida não cria/duplica campanhas.
+ * Retorna o motivo (para um 403) ou null se a conta está ativa. Lê com service role.
+ */
+export async function inactiveAccountReason(
+  userId: string,
+  db: SupabaseClient = serviceClient(),
+): Promise<{ code: "ACCOUNT_SUSPENDED"; message: string } | null> {
+  const { data } = await db.from("profiles").select("status").eq("id", userId).maybeSingle();
+  if (data?.status === "suspended") {
+    return { code: "ACCOUNT_SUSPENDED", message: "Sua conta está suspensa. Entre em contato com o suporte." };
+  }
+  if (data?.status === "pending_deletion") {
+    return {
+      code: "ACCOUNT_SUSPENDED",
+      message: "Sua conta está em processo de exclusão. Para cancelar, fale com o suporte em até 30 dias.",
+    };
+  }
+  return null;
+}
+
 /** Chamada interna entre functions: Authorization: Bearer <service role key>. */
 export function isServiceRole(req: Request): boolean {
   const key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");

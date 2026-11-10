@@ -22,7 +22,7 @@ import { waLinkFromPhone } from '@/lib/phone';
 
 interface Step2MidiaProps {
   formData: SimpleCampaignFormData;
-  updateFormData: (field: keyof SimpleCampaignFormData, value: any) => void;
+  updateFormData: (field: keyof SimpleCampaignFormData, value: unknown) => void;
 }
 
 export const Step2Midia: React.FC<Step2MidiaProps> = ({ formData, updateFormData }) => {
@@ -80,7 +80,10 @@ export const Step2Midia: React.FC<Step2MidiaProps> = ({ formData, updateFormData
   
   const handleFanpageChange = (pageId: string) => {
     updateFormData('fanpage', pageId);
-    
+    // audit CMP-03: o Instagram é o vinculado à NOVA Página (ou nenhum) — nunca o da Página anterior.
+    const linkedIg = instagramAccounts.find(account => account.pageId === pageId);
+    updateFormData('instagram', linkedIg?.id ?? '');
+
     // Auto-fill WhatsApp se a página tiver número conectado
     const selectedPage = facebookPages.find(p => p.id === pageId);
     if (selectedPage?.whatsappNumber) {

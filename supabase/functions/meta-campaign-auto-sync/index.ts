@@ -374,10 +374,11 @@ serve(async (req) => {
             undefined;
         }
 
-        // Status canônico (audit CMP-10); desconhecido → mantém o atual em vez de forçar 'paused'
+        // Status canônico (audit CMP-10); effective_status primeiro (configurada ACTIVE mas em análise
+        // → pending_review); desconhecido → mantém o atual em vez de forçar 'paused'
         const expectedLocalStatus =
-          mapMetaEffectiveStatus(metaCampaign.status) ??
           mapMetaEffectiveStatus(metaCampaign.effective_status) ??
+          mapMetaEffectiveStatus(metaCampaign.status) ??
           campaign.status;
 
         const nowIso = new Date().toISOString();

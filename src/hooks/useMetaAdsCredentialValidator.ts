@@ -84,7 +84,7 @@ export const useMetaAdsCredentialValidator = () => {
         throw new Error('Não foi possível iniciar a conexão com a Meta. Tente novamente.');
       }
 
-      // ✅ CORREÇÃO: URL OAuth atualizada para v19.0 e parâmetros corrigidos
+      // URL OAuth (mesma versão da Graph API usada nas Edge Functions: _shared/meta.ts)
       const params = new URLSearchParams({
         client_id: effectiveAppId,
         redirect_uri: redirectUri,
@@ -95,8 +95,8 @@ export const useMetaAdsCredentialValidator = () => {
         auth_type: 'rerequest' // 👈 Força reapresentar consentimentos e exibir link da política
       });
       
-      // ✅ CORREÇÃO: Usar v19.0 conforme objetivo
-      const oauthUrl = `https://www.facebook.com/v19.0/dialog/oauth?${params.toString()}`;
+      // audit PLT-03: v23.0, igual a META_GRAPH_VERSION
+      const oauthUrl = `https://www.facebook.com/v23.0/dialog/oauth?${params.toString()}`;
       
       console.log('📍 Redirect URI:', redirectUri);
       console.log('🔑 Requested scopes:', requestedScopes.join(','));

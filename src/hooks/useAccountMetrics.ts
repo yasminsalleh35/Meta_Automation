@@ -1,6 +1,7 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useEffect, useRef } from 'react';
+import { useOptionalUserId } from '@/contexts/AuthContext';
 
 type DatePreset = 'today' | 'last_7d' | 'last_30d';
 
@@ -25,9 +26,10 @@ export interface AccountMetrics {
 export function useAccountMetrics(datePreset: DatePreset = 'last_30d') {
   const queryClient = useQueryClient();
   const autoRefreshTriggered = useRef(false);
+  const userId = useOptionalUserId(); // audit SEC-13: cache por usuário
 
   const query = useQuery<AccountMetrics>({
-    queryKey: ['account-metrics', datePreset],
+    queryKey: ['account-metrics', datePreset, userId],
     queryFn: async () => {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) {

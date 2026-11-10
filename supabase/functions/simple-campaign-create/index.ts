@@ -335,6 +335,34 @@ async function resolveAllowedPage(requested: string | null | undefined, integrat
     'A Página selecionada não está entre as Páginas que sua conta Meta administra. Reconecte a Meta ou escolha outra Página.');
 }
 
+// audit CMP-03: o Instagram do anúncio é o vinculado à Página escolhida — nunca o de outra Página
+// (o Step 2 podia manter o IG da Página anterior). Pede à Graph o IG da Página; o pedido do payload só
+// vale se for esse. Se a Graph falhar, confia no IG salvo apenas para a Página padrão da integração.
+export async function resolvePageInstagram(
+  pageId: string,
+  requested: string | null | undefined,
+  integration: any,
+): Promise<string | null> {
+  const req = requested ? String(requested) : null;
+  try {
+    const res = await fetch(
+      `${GRAPH_BASE}/${pageId}?fields=instagram_business_account{id},connected_instagram_account{id}`,
+      { headers: metaAuthHeaders(integration.access_token), signal: AbortSignal.timeout(10_000) },
+    );
+    if (res.ok) {
+      const body: any = await res.json();
+      const linked = [body?.instagram_business_account?.id, body?.connected_instagram_account?.id]
+        .filter(Boolean).map(String);
+      if (req && linked.includes(req)) return req;
+      return linked[0] ?? null;
+    }
+  } catch { /* cai no fallback abaixo */ }
+  if (pageId !== String(integration?.page_id ?? '')) return null;
+  const saved: string[] = (integration?.selected_instagram_ids ?? []).map(String);
+  if (req && saved.includes(req)) return req;
+  return saved[0] ?? null;
+}
+
 // audit CMP-08: idempotência por (user_id, chave). Não lança: se a tabela falhar, segue sem trava.
 const IN_PROGRESS_STALE_MS = 10 * 60 * 1000;
 
@@ -534,7 +562,9 @@ export async function createAdSetWithInterestRetries({
       // Auto-cura do número de WhatsApp por campanha: se um whatsapp_phone_number_id específico foi
       // fixado no promoted_object e a Meta reclamou DELE, removemos e tentamos com o número padrão
       // da Página. Só para erros sobre WhatsApp/telefone (audit CMP-07) — outros erros não descartam o número.
-      const aboutWhatsapp = /whatsapp|phone|telefone|n[uú]mero/i.test(`${fbMsg} ${body?.error?.message ?? ''}`);
+      // Só "parâmetro inválido" (code 100) cujo texto fala do número — outros erros não descartam o número fixado.
+      const aboutWhatsapp = body?.error?.code === 100 &&
+        /whatsapp|phone|telefone|n[uú]mero/i.test(`${fbMsg} ${body?.error?.message ?? ''}`);
       if ((payload as any)?.promoted_object?.whatsapp_phone_number_id && aboutWhatsapp && subcode !== 2446885) {
         const removedPhone = (payload as any).promoted_object.whatsapp_phone_number_id;
         delete (payload as any).promoted_object.whatsapp_phone_number_id;
@@ -1324,6 +1354,11 @@ export async function handleRequest(req: Request): Promise<Response> {
     const adAccountId = integration.ad_account_id;
     // audit CMP-03: a Página escolhida no Step 2, validada contra as páginas do usuário
     const pageId = await resolveAllowedPage(payload.fanpage, integration);
+    // audit CMP-03: IG da Página escolhida (null → anúncio só no Facebook)
+    const pageInstagramId = await resolvePageInstagram(pageId, payload.instagram, integration);
+    // Post existente do Instagram: a conta dona do post precisa ir no criativo
+    const placementInstagramId: string | null =
+      payload.creativeType === 'post' ? (payload.instagramUserId || pageInstagramId) : pageInstagramId;
     const whatsappPhoneId = integration.selected_whatsapp_phone_id ?? null;
     // Per-campaign WhatsApp override (Step 2). When present, we pin this specific number on the ad
     // set's promoted_object; otherwise Meta resolves it from the Page's linked WABA (default).
@@ -1592,11 +1627,12 @@ export async function handleRequest(req: Request): Promise<Response> {
     // Record<string, any> so dynamic Meta targeting fields (flexible_spec, targeting_automation,
     // languages) can be assigned without `as any` casts further down.
     let targeting: Record<string, any> = {
-      publisher_platforms: ['facebook', 'instagram'],
+      // audit CMP-03: sem conta do Instagram vinculada à Página, só posicionamentos do Facebook
+      publisher_platforms: placementInstagramId ? ['facebook', 'instagram'] : ['facebook'],
       // Meta API v23 (subcode 2490562): o posicionamento "video_feeds" do Facebook foi
       // descontinuado e não pode ser selecionado. Mantemos apenas posicionamentos válidos.
       facebook_positions: ['feed', 'story'],
-      instagram_positions: ['stream', 'story', 'reels'],
+      ...(placementInstagramId ? { instagram_positions: ['stream', 'story', 'reels'] } : {}),
       device_platforms: ['mobile'],
       geo_locations,
       ...normalizeAgeRange(payload.ageMin, payload.ageMax),
@@ -1743,10 +1779,7 @@ export async function handleRequest(req: Request): Promise<Response> {
     // [IG-RESOLVE] — ADICIONAR (não remova nada existente)
     // audit CMP-03: a conta escolhida no Step 2 primeiro; a da integração só vale para a Página padrão
     // dela (senão seria o Instagram de OUTRA página). Sem IG → posicionamentos só do Facebook.
-    const instagramUserId: string | null =
-      payload?.instagram ||
-      (pageId === integration?.page_id ? integration?.selected_instagram_ids?.[0] : null) ||
-      null;
+    const instagramUserId: string | null = pageInstagramId;
 
     logger('info', 'IG-RESOLVED', 'Resolved instagram user id', {
       hasIG: !!instagramUserId

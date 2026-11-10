@@ -68,8 +68,8 @@ Camply is a production SaaS platform for creating and managing Meta (Facebook/In
 | Custom Hooks | 154 |
 | Pages | 104 |
 | Services | 48 |
-| Edge Functions | 73 (2026-11-09; 25 dead functions deleted in Nov 2026) |
-| SQL Migrations | 152 files in `supabase/migrations/` (+ `rollback/`), 2026-11-09 |
+| Edge Functions | 72 (2026-11-10; 25 dead functions deleted in Nov 2026) |
+| SQL Migrations | 155 files in `supabase/migrations/` (+ `rollback/`), 2026-11-10 |
 | Type Files | 21 |
 | Utility Files | 21 |
 | Contexts | 7 |
@@ -112,7 +112,7 @@ User → React Frontend → Supabase Edge Function → Meta Marketing API
 - **Hooks** (154): Data fetching & state logic (`useMetaAds*`, `useCampaign*`, `useSubscription*`, `useAI*`)
 - **Services** (48): Business logic, especially `metaAds/` with 36 files
 - **Contexts** (7): `AuthContext`, `I18nContext`, `MetaAssetsContext`, `ThemeContext`, `DemoModeContext`, `MapboxContext`, `PagarmeCheckoutContext`
-- **Edge Functions** (73): Server-side logic on Supabase Deno runtime
+- **Edge Functions** (72): Server-side logic on Supabase Deno runtime
 
 ### Key Design Principles
 
@@ -201,7 +201,7 @@ The category table from March 2026 listed functions that no longer exist (`setup
 `create-checkout`, `customer-portal`, `meta-campaign-management`, `meta-unified-assets`,
 `simple-campaign-insights`, `security-audit`, `security-monitor`, `contingency-auto-retry-walink`, …).
 They were deleted in the audit remediation (SEC-10, CMP-02). For the current list run
-`ls supabase/functions` (73 functions plus `_shared/` and `_tests/` on 2026-11-09). The deleted set
+`ls supabase/functions` (72 functions plus `_shared/` and `_tests/` on 2026-11-10). The deleted set
 is recorded in `docs/security/remediation-deploy-checklist.md` and `docs/security/releases.md`.
 
 ### Shared Utilities (`_shared/`)
@@ -235,7 +235,7 @@ is recorded in `docs/security/remediation-deploy-checklist.md` and `docs/securit
 | `pagarme_events` | Pagar.me webhook idempotency tracking |
 | `asaas_webhook_events` | Asaas webhook idempotency tracking |
 
-### Total Migrations: 152 (2026-11-09)
+### Total Migrations: 155 (2026-11-10)
 
 ---
 

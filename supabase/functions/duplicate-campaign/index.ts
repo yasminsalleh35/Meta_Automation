@@ -1,6 +1,7 @@
 // deno-lint-ignore-file
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
+import { inactiveAccountReason } from "../_shared/auth.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -37,6 +38,10 @@ serve(async (req) => {
     const token = authHeader.replace('Bearer ', '');
     const { data: { user }, error: authError } = await supabaseAnon.auth.getUser(token);
     if (authError || !user) return json(401, { error: 'Invalid token' });
+
+    // audit ADM-02: conta suspensa / em exclusão não duplica campanha
+    const blocked = await inactiveAccountReason(user.id);
+    if (blocked) return json(403, { error: blocked.code, message: blocked.message });
 
     // Parse body
     const body = await req.json();
