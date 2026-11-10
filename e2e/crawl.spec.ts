@@ -14,7 +14,8 @@ const routes = collectRoutes();
  */
 const EXPECTED_CONSOLE: Record<string, RegExp> = {
   '/auth/meta-callback': /MetaCallback: not opened by the app or missing state/,
-  '/auth/callback/meta': /MetaCallbackGeneral: Invalid origin or no opener window/,
+  // audit SEC-14: the old route now renders the same state-checked MetaCallback page
+  '/auth/callback/meta': /MetaCallback: not opened by the app or missing state/,
 };
 
 const log = (line: string) => process.stdout.write(`${line}
