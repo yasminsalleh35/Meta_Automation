@@ -100,8 +100,8 @@ src/
   lib/            # Utility libraries
   routes/         # Route definitions and guards
 supabase/
-  functions/      # 72 edge functions (Deno) + _shared/ modules + _tests/
-  migrations/     # 155 SQL migrations (+ rollback/)
+  functions/      # 75 edge functions (Deno) + _shared/ modules + _tests/
+  migrations/     # 157 SQL migrations (+ rollback/)
 docs/             # Plans, guides, audit remediation and release records
 ```
 

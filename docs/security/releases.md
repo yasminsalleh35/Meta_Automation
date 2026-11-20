@@ -245,3 +245,39 @@ normalised.
 
 **Not done here (needs the account owner):** SEC-03 key rotation; deleting the 3 orphan functions
 listed in `dead-functions.md`.
+
+## 2026-11-19 — Feature: WhatsApp campaign bot, F1–F3 (deployed with the bot OFF)
+
+Not an audit task; recorded here because it touches the audited creation/activation path. Design:
+`docs/whatsapp-campaign-bot-plan.md`. Backup before the migrations:
+`db_backups/prod_2026-11-19_schema_pre-wa-bot.dump` (schema of `public`).
+
+**Migrations applied:**
+- `20261119000001_wa_bot_tables` — `wa_bot_links`, `wa_bot_sessions`, `wa_bot_messages`, `wa_bot_jobs`
+  (RLS on, no policies, revoked from anon/authenticated) and the service-role-only RPCs
+  `wa_bot_claim_session` / `wa_bot_release_session`. Rollback:
+  `drop function public.wa_bot_claim_session(text,int), public.wa_bot_release_session(uuid); drop table public.wa_bot_jobs, public.wa_bot_messages, public.wa_bot_sessions, public.wa_bot_links;`
+- `20261119000002_wa_bot_sweep_cron` — job `camply_wa_bot_sweep` (every minute). Rollback:
+  `select cron.unschedule('camply_wa_bot_sweep');`
+
+**Functions deployed (7):** `simple-campaign-create` and `simple-campaign-activate` (logic moved to
+`core.ts`, HTTP responses unchanged; activation now also refuses suspended / pending-deletion
+accounts), `wa-bot-webhook`, `wa-bot-worker`, `wa-bot-link` (new), `user-data-export` (exports the
+`wa_bot_*` tables), `meta-campaigns-cached` (`createdVia` for the "via WhatsApp" badge).
+Rollback: redeploy the previous commit's folders; `WA_BOT_MODE=off` disables the bot instantly.
+
+**Secrets set:** `WA_BOT_MODE=off`, `WA_BOT_NUMBER`, `WA_BOT_MAX_DAILY_BUDGET`, `WA_VERIFY_TOKEN`
+(values not recorded here).
+
+**Frontend (Netlify):** Settings → WhatsApp tab (hidden while the bot is unavailable to the user),
+"via WhatsApp" badge on campaign cards.
+
+**Verification after deploy:** Deno 161/161 (86 new), `deno check` 75/75, vitest 62/62, both
+typechecks, build + bundle budget (187 KB gz), security probe 404 checks / 0 FAIL (6 known WARN on
+payment functions + 1 transient timeout re-checked at 401 in 0.2 s). Live checks: webhook handshake
+200 with the right token / 403 wrong; forged and unsigned POST → 401; worker → 401 without service
+role or cron secret; cron runs 200 `skipped`. A temporary test user with no Meta connection ran the
+new create/activate cores in production (422 INVALID_PAYLOAD, 422 NO_INTEGRATION, 404, 400),
+`wa-bot-link` (available=false, start → 403) and the LGPD export (4 new tables present); the user was
+deleted afterwards. **Not yet done:** a real (paused) campaign created from the web wizard after the
+refactor — needs an account with a Meta connection.

@@ -29,6 +29,7 @@ export interface CachedCampaign {
   previewUrl?: string; // Deprecated: use mediaPreviewUrl
   mediaPreviewUrl?: string;
   created_time?: string;
+  createdVia?: string | null; // 'whatsapp' | 'simple-wizard' | null
 }
 
 export interface CampaignsCacheFilters {

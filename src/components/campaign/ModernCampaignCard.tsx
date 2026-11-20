@@ -158,6 +158,11 @@ export const ModernCampaignCard: React.FC<ModernCampaignCardProps> = ({
                 <h3 className="font-bold text-sm sm:text-base text-foreground mb-0.5 leading-tight truncate">
                   {campaign.name}
                 </h3>
+                {campaign.createdVia === 'whatsapp' && (
+                  <Badge variant="outline" className="mb-0.5 border-green-600/40 text-[10px] text-green-700 dark:text-green-400">
+                    via WhatsApp
+                  </Badge>
+                )}
                 <p className="text-[10px] sm:text-xs text-muted-foreground truncate">
                   {getObjectiveFriendlyName(campaign.objective)}
                 </p>

@@ -194,7 +194,9 @@ export async function handleRequest(req: Request): Promise<Response> {
       // Include additional fields from meta_data if present
       page: c.meta_data?.page,
       instagram: c.meta_data?.instagram,
-      created_time: c.meta_data?.created_time
+      created_time: c.meta_data?.created_time,
+      // 'whatsapp' when created through the WhatsApp bot (badge on the campaign card)
+      createdVia: c.meta_data?.created_via ?? null
       };
     });
 

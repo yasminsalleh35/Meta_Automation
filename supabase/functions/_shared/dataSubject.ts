@@ -56,6 +56,11 @@ export const EXPORT_TABLES: ExportTable[] = [
   { table: 'user_roles', column: 'user_id' },
   { table: 'user_learning_progress', column: 'user_id' },
   { table: 'learning_content_comments', column: 'user_id' },
+  // WhatsApp campaign bot (plan §6.3)
+  { table: 'wa_bot_links', column: 'user_id', omit: ['code_hash'] },
+  { table: 'wa_bot_sessions', column: 'user_id' },
+  { table: 'wa_bot_messages', column: 'user_id' },
+  { table: 'wa_bot_jobs', column: 'user_id' },
 ];
 
 /** Remove segredos e colunas omitidas de uma linha. */

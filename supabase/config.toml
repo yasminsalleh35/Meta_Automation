@@ -256,3 +256,16 @@ verify_jwt = true
 
 [functions.simple-campaign-list]
 verify_jwt = true
+
+# WhatsApp campaign bot (docs/whatsapp-campaign-bot-plan.md)
+# Meta calls the webhook without a JWT; the function verifies X-Hub-Signature-256 itself.
+[functions.wa-bot-webhook]
+verify_jwt = false
+
+# Internal: service role (kicks) or x-cron-secret (pg_cron sweep). Guarded by requireCron().
+[functions.wa-bot-worker]
+verify_jwt = false
+
+# Settings card API (user JWT, checked again with requireUser()).
+[functions.wa-bot-link]
+verify_jwt = true

@@ -38,8 +38,8 @@
 
 | Item | Count | How to recount |
 |---|---|---|
-| Edge functions | 72 (plus `_shared/` and `_tests/`) | `ls supabase/functions` (exclude names starting with `_`) |
-| SQL migrations | 155 files (plus `rollback/`) | `ls supabase/migrations/*.sql \| wc -l` |
+| Edge functions | 75 (plus `_shared/` and `_tests/`) | `ls supabase/functions` (exclude names starting with `_`) |
+| SQL migrations | 157 files (plus `rollback/`) | `ls supabase/migrations/*.sql \| wc -l` |
 
 ---
 
@@ -196,6 +196,7 @@ Schedules are UTC.
 | `camply_auto_verify_ad_sets` | `10 * * * *` (hourly, at :10) | `auto-verify-ad-sets` |
 | `camply_anonymize_old_leads` | `0 3 1 * *` (monthly, 1st at 03:00) | SQL `public.anonymize_old_leads()` (`20261108000016`) |
 | `camply_hard_delete_accounts` | `0 4 * * *` (daily 04:00) | `purge-deleted-accounts` (removes Storage files, then `hard_delete_pending_accounts()`; `20261109000004`) |
+| `camply_wa_bot_sweep` | `* * * * *` (every minute) | `wa-bot-worker` `{"mode":"sweep"}` — WhatsApp bot safety net + retention; returns `{"skipped":true}` while the bot is off (`20261119000002`) |
 
 There is **no** scheduled clean-up of `edge_function_logs`; the example in
 `20260321000000_add_edge_function_logs.sql` is commented out.
@@ -226,8 +227,36 @@ select * from cron.job_run_details order by start_time desc limit 20;
 - Pagar.me: `https://<PROJECT_REF>.supabase.co/functions/v1/pagarme-webhook`
 - Asaas: `https://<PROJECT_REF>.supabase.co/functions/v1/asaas-webhook`
 - Stripe (legacy): `https://<PROJECT_REF>.supabase.co/functions/v1/stripe-webhook`
+- WhatsApp bot (WhatsApp Cloud API, field `messages`): `https://<PROJECT_REF>.supabase.co/functions/v1/wa-bot-webhook`
 
 Webhook secrets are stored in the gateway config tables via the admin panel.
+
+---
+
+## WhatsApp campaign bot
+
+Design and scope: `docs/whatsapp-campaign-bot-plan.md`. Functions: `wa-bot-webhook` (public, Meta
+signature), `wa-bot-worker` (service role / cron), `wa-bot-link` (user JWT). Tables `wa_bot_*`
+(service-role only). The creation and activation logic is shared with the web app
+(`simple-campaign-create/core.ts`, `simple-campaign-activate/core.ts`).
+
+Function secrets (set with `supabase secrets set`, never committed):
+
+| Secret | Value | Who provides it |
+|---|---|---|
+| `WA_BOT_MODE` | `off` → `beta` → `on` (switch without a deploy) | us |
+| `WA_BOT_BETA_USER_IDS` | comma-separated user ids allowed in `beta` | us |
+| `WA_BOT_NUMBER` | bot number, digits only (`55…`), for the wa.me link | client |
+| `WA_BOT_MAX_DAILY_BUDGET` | daily cap via WhatsApp in R$ (default 200) | client decision |
+| `WA_VERIFY_TOKEN` | random string; typed in the Meta webhook setup | us → client |
+| `WA_ACCESS_TOKEN` | permanent system-user token (`whatsapp_business_messaging`) | client |
+| `WA_PHONE_NUMBER_ID` | Cloud API phone number id of the bot | client |
+| `WA_APP_SECRET` | optional; by default the App Secret from the admin panel (`get_meta_ads_config`) is used | — |
+
+While `WA_ACCESS_TOKEN`/`WA_PHONE_NUMBER_ID` are missing or `WA_BOT_MODE=off`, the worker skips, the
+webhook acknowledges without storing, and the Settings → WhatsApp tab stays hidden.
+
+Rollback: `WA_BOT_MODE=off` stops the bot immediately.
 
 ---
 

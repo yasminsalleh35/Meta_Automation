@@ -84,7 +84,7 @@ const PUBLIC_BY_DESIGN = new Set(['asaas-public-checkout', 'lead-quiz-submit', '
 const SENSITIVE_FN = /^send-|create-guest-user|subscribe|checkout|payment|purge|user-account-delete|webhook|^test-(meta|wa)-|quiz-lead-scoring|campaign-create|^duplicate-campaign|edge-log-persist|quiz-submit/;
 
 /** Source markers that show a function authenticates its caller. */
-const GUARD_MARKERS = /getUser\(|requireUser|requireAdmin|requireAuth|requireServiceRole|requireServiceOrAdmin|isServiceRole|requireCron|isCron|x-cron-secret|CRON_SECRET|verifyWebhookSignature|Asaas-Signature|asaas-access-token|stripe-signature|constructEvent/;
+const GUARD_MARKERS = /X-Hub-Signature-256|getUser\(|requireUser|requireAdmin|requireAuth|requireServiceRole|requireServiceOrAdmin|isServiceRole|requireCron|isCron|x-cron-secret|CRON_SECRET|verifyWebhookSignature|Asaas-Signature|asaas-access-token|stripe-signature|constructEvent/;
 
 /** Read-only, user-scoped functions used for the cross-user (A reads B) check. */
 const CROSS_USER_READ_FUNCTIONS = [
@@ -208,7 +208,9 @@ async function loadSchema(): Promise<Schema> {
 async function probeFunctions(fns: string[], verifyJwt: Record<string, boolean>) {
   for (const fn of fns) {
     const path = `/functions/v1/${fn}`;
-    const src = await readText(new URL(`${fn}/index.ts`, FUNCTIONS_DIR));
+    // index.ts + core.ts (a thin HTTP entry may delegate auth to its core module)
+    const src = (await readText(new URL(`${fn}/index.ts`, FUNCTIONS_DIR))) +
+      (await readText(new URL(`${fn}/core.ts`, FUNCTIONS_DIR)).catch(() => ''));
     const guarded = GUARD_MARKERS.test(src);
     const publicByDesign = PUBLIC_BY_DESIGN.has(fn);
     const sensitive = SENSITIVE_FN.test(fn) && !publicByDesign;
@@ -246,6 +248,29 @@ async function probeFunctions(fns: string[], verifyJwt: Record<string, boolean>)
   }
 }
 
+/** WhatsApp bot (docs/whatsapp-campaign-bot-plan.md §8): explicit negative checks. */
+async function probeWhatsAppBot() {
+  const expect = (target: string, mode: string, status: number, want: number[], text: string) =>
+    add({
+      area: 'wa-bot', target, mode, status: String(status),
+      verdict: status === 404 ? 'INFO' : want.includes(status) ? 'PASS' : (status >= 200 && status < 300 ? 'FAIL' : 'WARN'),
+      note: status === 404 ? 'not deployed' : short(text, 70),
+    });
+  const hs = await http('/functions/v1/wa-bot-webhook?hub.mode=subscribe&hub.verify_token=probe-wrong-token&hub.challenge=424242', { method: 'GET' });
+  expect('wa-bot-webhook', 'GET handshake, wrong verify token', hs.status, [403], hs.text);
+  const fake = JSON.stringify({ object: 'whatsapp_business_account', entry: [{ changes: [{ field: 'messages', value: { messages: [{ id: 'probe', from: '5500000000000', timestamp: '1', type: 'text', text: { body: 'VINCULAR 0000 0000' } }] } }] }] });
+  const forged = await http('/functions/v1/wa-bot-webhook', { method: 'POST', body: fake, headers: { 'Content-Type': 'application/json', 'X-Hub-Signature-256': 'sha256=' + '0'.repeat(64) } });
+  expect('wa-bot-webhook', 'POST forged signature', forged.status, [401], forged.text);
+  const unsigned = await http('/functions/v1/wa-bot-webhook', { method: 'POST', body: fake, headers: { 'Content-Type': 'application/json' } });
+  expect('wa-bot-webhook', 'POST unsigned', unsigned.status, [401], unsigned.text);
+  const w1 = await http('/functions/v1/wa-bot-worker', { method: 'POST', body: '{"mode":"sweep"}', headers: { 'Content-Type': 'application/json', ...anonHeaders } });
+  expect('wa-bot-worker', 'anon key', w1.status, [401], w1.text);
+  const w2 = await http('/functions/v1/wa-bot-worker', { method: 'POST', body: '{"mode":"sweep"}', headers: { 'Content-Type': 'application/json', 'x-cron-secret': 'probe-wrong' } });
+  expect('wa-bot-worker', 'wrong cron secret', w2.status, [401], w2.text);
+  const l1 = await http('/functions/v1/wa-bot-link', { method: 'POST', body: '{"action":"start"}', headers: { 'Content-Type': 'application/json', ...anonHeaders, Origin: 'https://iacamply.com' } });
+  expect('wa-bot-link', 'anon key (no user)', l1.status, [401, 403], l1.text);
+}
+
 function dummyFor(arg: RpcArg, idValue: string): string | null {
   const t = arg.type.replace(/\s*\|\s*null/, '');
   if (/\[\]|Json|\{/.test(t)) return null;
@@ -261,7 +286,7 @@ function isEmptyResult(j: unknown): boolean {
 }
 
 function classifyRpc(r: { status: number; text: string; json: unknown }) {
-  const code = (r.json as any)?.code ?? '';
+  const code = (r.json as { code?: string } | null)?.code ?? '';
   if (r.status >= 200 && r.status < 300) return { kind: 'executed', code };
   if (code === '25006') return { kind: 'writer-executed', code };
   if (code === 'PGRST202') return { kind: 'no-match', code };
@@ -324,7 +349,7 @@ async function probeTables(schema: Schema) {
     if (hasRows) {
       verdict = PUBLIC_TABLES[table] ? 'PASS' : 'FAIL';
       if (PUBLIC_TABLES[table]) note = `allowlisted: ${PUBLIC_TABLES[table]}`;
-      else note += ` — columns: ${Object.keys((r.json as any[])[0]).slice(0, 8).join(',')}`;
+      else note += ` — columns: ${Object.keys((r.json as Array<Record<string, unknown>>)[0]).slice(0, 8).join(',')}`;
     }
     if (r.status === 404) verdict = 'INFO';
     add({ area: 'table', target: table, mode: 'anon-key', status: String(r.status), verdict, note });
@@ -370,6 +395,7 @@ const openapi = await http('/rest/v1/', { headers: anonHeaders });
 add({ area: 'rest', target: '/rest/v1/ (OpenAPI)', mode: 'anon-key', status: String(openapi.status), verdict: openapi.status === 200 ? 'WARN' : 'PASS', note: openapi.status === 200 ? 'schema is public to anon' : 'not exposed to anon (enumerated from local types/migrations)' });
 
 await probeFunctions(fns, verifyJwt);
+await probeWhatsAppBot();
 await probeRpcs(schema, 'anon-key');
 await probeTables(schema);
 if (userHeaders && USER_B_ID) {

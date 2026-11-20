@@ -7,7 +7,7 @@ import { assert, assertEquals } from 'https://deno.land/std@0.224.0/assert/mod.t
 // Disable the production `serve()` call BEFORE importing the module (dynamic import so the env var
 // is set first), then drive `handleRequest` directly.
 Deno.env.set('SCC_DISABLE_SERVE', '1');
-const { handleRequest, __setSupabaseFactoryForTests } = await import('../simple-campaign-create/index.ts');
+const { handleRequest, createSimpleCampaign, __setSupabaseFactoryForTests } = await import('../simple-campaign-create/index.ts');
 
 // ---- Make smartDelay / setTimeout-based waits instant (microtask, no leaked timers) ----------
 // Installed per test (see `scc()` below) and ALWAYS restored afterwards, together with `fetch`,
@@ -739,6 +739,41 @@ scc('N6 empty JSON body with a valid user → 422 INVALID_PAYLOAD, no Meta calls
   const body = await res.json();
   assertEquals(res.status, 422);
   assertEquals(body.code, 'INVALID_PAYLOAD');
+  assertEquals(calls.length, 0);
+});
+
+// ---------------------------------------------------------------------------------------------
+// Core entry point (no HTTP) — used by the WhatsApp bot (wa-bot-worker)
+// ---------------------------------------------------------------------------------------------
+async function bodyOf(req: Request): Promise<Record<string, unknown>> {
+  return await req.json();
+}
+
+scc('W1 createSimpleCampaign (source whatsapp) → created, row tagged created_via=whatsapp', async () => {
+  const cfg = baseConfig();
+  installFetch({});
+  const r = await createSimpleCampaign(makeSupabase(cfg), 'u1', await bodyOf(makeRequest()), { source: 'whatsapp' });
+  assertEquals(r.status, 200);
+  assertEquals(r.body.status, 'created');
+  assertEquals(cfg.campaignInserts!.length, 1);
+  assertEquals((cfg.campaignInserts![0].meta_data as Record<string, unknown>).created_via, 'whatsapp');
+});
+
+scc('W2 web path keeps created_via=simple-wizard', async () => {
+  const cfg = baseConfig();
+  __setSupabaseFactoryForTests(() => makeSupabase(cfg));
+  installFetch({});
+  const res = await handleRequest(makeRequest());
+  assertEquals(res.status, 200);
+  assertEquals((cfg.campaignInserts![0].meta_data as Record<string, unknown>).created_via, 'simple-wizard');
+});
+
+scc('W3 createSimpleCampaign blocks a suspended account with no Meta call', async () => {
+  const cfg = baseConfig({ profile: { status: 'suspended' } });
+  const calls = installFetch({});
+  const r = await createSimpleCampaign(makeSupabase(cfg), 'u1', await bodyOf(makeRequest()), { source: 'whatsapp' });
+  assertEquals(r.status, 403);
+  assertEquals(r.body.code, 'ACCOUNT_SUSPENDED');
   assertEquals(calls.length, 0);
 });
 
