@@ -509,24 +509,27 @@ check) is done by us, so Jefte has fewer screens to go through.
 2. **Get a dedicated phone number.** It must not be registered on the WhatsApp or WhatsApp Business
    apps, or its WhatsApp account must be deleted first. It can be a new SIM or a virtual number, and
    it must receive one SMS or voice code.
-3. **Add the WhatsApp product to Camply's existing Meta App** (developers.facebook.com → the app → Add
-   product → WhatsApp → Set up) and link it to Camply's business portfolio. Meta creates a **test
-   number** automatically.
+3. **Create a new Meta App with the WhatsApp use case** (developers.facebook.com → Create app → use case
+   "Connect with customers through WhatsApp" → Camply's business portfolio). This is the flow Meta
+   documents (checked 2026-11-20); it leaves the login app untouched. Meta creates a **test number**
+   automatically. Because it is a separate app, Jefte also sends its **App Secret** (`WA_APP_SECRET`).
+   Publish the app (privacy policy URL `https://camplyia.netlify.app/legal/privacy`, icon, category) before
+   going live.
 4. **Add up to 5 test recipients** (his own and the team's numbers) on the app's WhatsApp → API Setup page.
 5. **Create a system user:** Business Settings → Users → System users → Add, with the Admin role.
    - Assign assets: **the App** (full control) and **the WhatsApp account(s)** (full control).
    - Generate token → choose the app, expiry **Never**, permissions `whatsapp_business_messaging` and
      `whatsapp_business_management`.
-6. **Add a payment method** to the WhatsApp account in WhatsApp Manager. Meta requires it, but the MVP
-   only replies inside the free 24 h window the customer opens. Brazil is moving to BRL billing in
-   2026–2027, so check the rate card there.
+6. **Add a payment method** in Billing Hub (`business.facebook.com/latest/billing_hub/payment_methods/`)
+   for the WhatsApp account. Since 2026-10-01 service replies are free only for the first **1,000 per
+   number per month**; without a payment method Meta stops delivering them after that.
 7. **Send us via a one-time link:**
    - the **permanent token**;
    - the **WhatsApp Business Account ID**;
    - the test number's **Phone number ID**.
 
 **Stage B: after we deploy `wa-bot-webhook` (end of F2)**
-8. In the app → WhatsApp → Configuration → Webhook:
+8. In the app → Use cases → Customize (WhatsApp) → Configuration → Webhook (older apps: WhatsApp → Configuration):
    - **Callback URL:** `https://<project>.supabase.co/functions/v1/wa-bot-webhook`
    - **Verify token:** we generate it and send it to him.
    - Then **Verify and save** → Manage → subscribe to **`messages`**.
@@ -549,10 +552,9 @@ check) is done by us, so Jefte has fewer screens to go through.
 - `WA_BOT_NUMBER` (the public display number for the wa.me link);
 - `WA_BOT_MODE` (`off|beta|on`), `WA_BOT_BETA_USER_IDS`, `WA_BOT_MAX_DAILY_BUDGET`.
 
-**App Secret:** the webhook signature uses the App Secret of the same Meta App. It is **already stored**
-in Camply's admin panel (Meta Ads configuration, read through the `get_meta_ads_config` RPC by
-`meta-oauth-exchange`), so Jefte doesn't send it. If he rotates it, he updates it there, and both the
-login and the bot keep working. `WA_APP_SECRET` is only an optional override.
+**App Secret:** the webhook signature uses the App Secret of the app that owns the webhook. With the
+separate WhatsApp app (step 3) it must be set as `WA_APP_SECRET`. Without it, the webhook falls back to
+the login app's secret (`get_meta_ads_config`), which only matches if WhatsApp lives in that same app.
 
 **Development** runs on the test number (Stage A) until the real number is approved (Stage C).
 
@@ -636,7 +638,7 @@ real web campaign on production (paused) before and after the deploy.
 
 | Item | Cost |
 |---|---|
-| WhatsApp messages in the MVP | Every bot reply goes inside the **24 h service window the user opened**, which is **free** in Brazil. There are no templates in the MVP |
+| WhatsApp messages in the MVP | Every bot reply goes inside the **24 h service window the user opened** (no templates). Since **2026-10-01** Meta charges service messages beyond a free tier of **1,000 per number per month** (Meta pricing page, checked 2026-11-20). A full campaign chat is ~10–15 replies, so roughly 70–100 campaigns/month fit in the free tier; check the BRL rate card for the rest |
 | Proactive alerts (Version 2) | Utility or marketing **templates are paid per message**. Third-party sources quote about R$ 0.04–0.08 (utility) and about R$ 0.38 (marketing) in 2026, but Meta's BRL rate card is the source of truth |
 | AI copy | One short completion per campaign, plus one per "Editar texto" regeneration. Negligible, and capped by `consume_ai_quota` |
 | Supabase | A few edge invocations per message. Within the current plan for expected volumes |
