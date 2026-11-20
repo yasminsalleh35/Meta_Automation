@@ -40,7 +40,8 @@ export const WhatsAppBotSection: React.FC<{ bot: BotLink }> = ({ bot }) => {
   const expired = !!linkCode && secondsLeft === 0;
   const botNumber = formatBotNumber(status?.botNumber);
 
-  if (!status?.available) return null;
+  // Still shown to a linked user when the bot is off for them, so they can always unlink.
+  if (!status?.available && !status?.linked) return null;
 
   const handleUnlink = async () => {
     setConfirmUnlink(false);
@@ -72,11 +73,15 @@ export const WhatsAppBotSection: React.FC<{ bot: BotLink }> = ({ bot }) => {
                 {status.linkedAt && (
                   <p className="text-muted-foreground">desde {new Date(status.linkedAt).toLocaleDateString('pt-BR')}</p>
                 )}
-                <p className="mt-2">
-                  Envie <strong>oi</strong> para{' '}
-                  <a className="underline" href={`https://wa.me/${status.botNumber}`} target="_blank" rel="noopener noreferrer">{botNumber}</a>{' '}
-                  para começar.
-                </p>
+                {status.available && status.botNumber ? (
+                  <p className="mt-2">
+                    Envie <strong>oi</strong> para{' '}
+                    <a className="underline" href={`https://wa.me/${status.botNumber}`} target="_blank" rel="noopener noreferrer">{botNumber}</a>{' '}
+                    para começar.
+                  </p>
+                ) : (
+                  <p className="mt-2 text-muted-foreground">A criação de campanhas pelo WhatsApp está indisponível no momento.</p>
+                )}
               </div>
             </div>
             <Button variant="outline" onClick={() => setConfirmUnlink(true)} disabled={busy}>

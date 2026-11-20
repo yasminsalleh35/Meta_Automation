@@ -63,14 +63,22 @@ export const T = {
   review: (r: {
     title: string; text: string; place: string; radius: number; budget: number; duration: 0 | 7 | 30; page: string; creative: string;
   }) =>
+    // Facts first: WhatsApp clips interactive bodies at 1024 chars, so the budget/place/"pausada" lines
+    // must never be the part that gets cut. The ad text comes last and is shortened by the caller.
     `*Resumo da campanha*\n\n` +
-    `📣 *${r.title}*\n${r.text}\n\n` +
-    `🖼️ ${r.creative}\n` +
-    `📍 ${r.place} (raio de ${r.radius} km)\n` +
     `💰 ${brl(r.budget)} por dia\n` +
+    `📍 ${r.place} (raio de ${r.radius} km)\n` +
     `🗓️ ${r.duration ? `${r.duration} dias` : 'Sem data de término'}\n` +
-    `📄 Página: ${r.page}\n\n` +
-    'A campanha será criada *pausada*, sem gastar nada até você ativar.',
+    `📄 Página: ${r.page}\n` +
+    `🖼️ ${r.creative}\n\n` +
+    'A campanha será criada *pausada*, sem gastar nada até você ativar.\n\n' +
+    `📣 *${r.title}*\n${r.text}`,
+  /** Sent before the summary when the ad text is too long to fit in it. */
+  fullCopy: (title: string, text: string) => `📣 *Texto do anúncio*\n\n*${title}*\n${text}`,
+  copyContinued: () => '… (texto completo na mensagem acima)',
+  activateTapHint: () => 'Para ativar, toque no botão *Ativar* (assim a campanha só começa a gastar quando você tem certeza).',
+  createdReconciling: () =>
+    `✅ A campanha foi criada na Meta (pausada) e vai aparecer no painel em alguns minutos. Para ativar, use ${SITE()}/dashboard/campaigns.`,
   askEditCopy: () =>
     'Envie o novo texto do anúncio (até 1.000 caracteres).\nSe quiser trocar o título também, escreva o título na *primeira linha* (até 40 caracteres).',
   copyTooLong: () => 'O texto passou de 1.000 caracteres. Pode resumir?',

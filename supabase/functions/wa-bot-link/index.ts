@@ -82,6 +82,9 @@ export async function handleLink(req: Request): Promise<Response> {
   if (action === 'unlink') {
     await db.from('wa_bot_links').update({ status: 'revoked', code_hash: null, updated_at: new Date().toISOString() })
       .eq('user_id', userId).in('status', ['pending', 'active']);
+    // Cancel anything queued from WhatsApp that hasn't started (runJob also re-checks the link).
+    await db.from('wa_bot_jobs').update({ status: 'failed', result: { error: 'unlinked' }, finished_at: new Date().toISOString() })
+      .eq('user_id', userId).eq('status', 'pending');
     if (active?.wa_id) {
       await db.from('wa_bot_sessions').update({ state: 'IDLE', draft: {}, user_id: null, updated_at: new Date().toISOString() }).eq('wa_id', active.wa_id);
       const cfg = waConfig();

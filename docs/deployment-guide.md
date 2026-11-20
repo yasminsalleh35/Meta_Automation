@@ -39,7 +39,7 @@
 | Item | Count | How to recount |
 |---|---|---|
 | Edge functions | 75 (plus `_shared/` and `_tests/`) | `ls supabase/functions` (exclude names starting with `_`) |
-| SQL migrations | 157 files (plus `rollback/`) | `ls supabase/migrations/*.sql \| wc -l` |
+| SQL migrations | 158 files (plus `rollback/`) | `ls supabase/migrations/*.sql \| wc -l` |
 
 ---
 

@@ -101,7 +101,7 @@ src/
   routes/         # Route definitions and guards
 supabase/
   functions/      # 75 edge functions (Deno) + _shared/ modules + _tests/
-  migrations/     # 157 SQL migrations (+ rollback/)
+  migrations/     # 158 SQL migrations (+ rollback/)
 docs/             # Plans, guides, audit remediation and release records
 ```
 

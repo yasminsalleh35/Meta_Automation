@@ -69,7 +69,7 @@ Camply is a production SaaS platform for creating and managing Meta (Facebook/In
 | Pages | 104 |
 | Services | 48 |
 | Edge Functions | 75 (2026-11-19: + wa-bot-webhook, wa-bot-worker, wa-bot-link; 25 dead functions deleted in Nov 2026) |
-| SQL Migrations | 157 files in `supabase/migrations/` (+ `rollback/`), 2026-11-19 |
+| SQL Migrations | 158 files in `supabase/migrations/` (+ `rollback/`), 2026-11-20 |
 | Type Files | 21 |
 | Utility Files | 21 |
 | Contexts | 7 |
@@ -235,7 +235,7 @@ is recorded in `docs/security/remediation-deploy-checklist.md` and `docs/securit
 | `pagarme_events` | Pagar.me webhook idempotency tracking |
 | `asaas_webhook_events` | Asaas webhook idempotency tracking |
 
-### Total Migrations: 157 (2026-11-19)
+### Total Migrations: 158 (2026-11-20)
 
 ---
 

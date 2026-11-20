@@ -19,11 +19,17 @@ class FakeDb {
       if (!s) { s = { id: crypto.randomUUID(), wa_id: args.p_wa_id, user_id: null, state: 'IDLE', draft: {}, draft_version: 0, retries: 0, updated_at: new Date().toISOString(), locked_until: null, last_unknown_reply_at: null }; this.t('wa_bot_sessions').push(s); }
       if (s.locked_until && new Date(s.locked_until) > new Date()) return Promise.resolve({ data: null, error: null });
       s.locked_until = new Date(Date.now() + 180_000).toISOString();
+      s.lock_token = args.p_token ?? 'test-holder';
       return Promise.resolve({ data: s.id, error: null });
     }
+    if (name === 'wa_bot_extend_session') {
+      const s = this.t('wa_bot_sessions').find((r) => r.id === args.p_id && r.lock_token === args.p_token);
+      if (s) s.locked_until = new Date(Date.now() + 180_000).toISOString();
+      return Promise.resolve({ data: !!s, error: null });
+    }
     if (name === 'wa_bot_release_session') {
-      const s = this.t('wa_bot_sessions').find((r) => r.id === args.p_id);
-      if (s) s.locked_until = null;
+      const s = this.t('wa_bot_sessions').find((r) => r.id === args.p_id && r.lock_token === args.p_token);
+      if (s) { s.locked_until = null; s.lock_token = null; }
       return Promise.resolve({ data: null, error: null });
     }
     if (name === 'consume_ai_quota') return Promise.resolve({ data: true, error: null });
@@ -293,4 +299,57 @@ t('RT13 flood control: > 30 messages in a minute are stored but not answered', a
   await processNumber(db, cfg, '5533121');
   assertEquals(sends.length, 0);
   assert(db.t('wa_bot_messages').every((m) => m.error === 'rate_limited'));
+});
+
+// ---------------- review fixes (2026-11-20) ----------------
+t('RT14 sweep re-delivers a finished job whose result never reached the user (stuck CREATING)', async () => {
+  const db = new FakeDb(); const sends = installFetch();
+  activeLink(db, 'U1', '5533444');
+  await db.rpc('wa_bot_claim_session', { p_wa_id: '5533444', p_token: 'x' });
+  const sess = db.t('wa_bot_sessions')[0];
+  Object.assign(sess, { locked_until: null, lock_token: null, state: 'CREATING', user_id: 'U1', draft_version: 3,
+    draft: { budget: 50, location: { type: 'city', name: 'Ipatinga' } }, updated_at: new Date(Date.now() - 5 * 60_000).toISOString() });
+  db.t('wa_bot_jobs').push({ id: 'J3', session_id: sess.id, user_id: 'U1', wa_id: '5533444', kind: 'create_campaign', status: 'done',
+    payload: { draftVersion: 3 }, result: { status: 200, body: { status: 'created', metaCampaignId: '120200009' } }, created_at: new Date().toISOString() });
+  const stats = await sweep(db, cfg);
+  assertEquals(stats.redelivered, 1);
+  assertEquals(db.t('wa_bot_sessions')[0].state, 'CREATED');
+  assert(sentText(sends[sends.length - 1]).includes('criada (pausada)'));
+  // a second sweep does nothing more (state moved on)
+  const again = await sweep(db, cfg);
+  assertEquals(again.redelivered, 0);
+});
+
+t('RT15 stuck CREATING with no job at all → honest "check the panel" message, session freed', async () => {
+  const db = new FakeDb(); const sends = installFetch();
+  activeLink(db, 'U1', '5533555');
+  await db.rpc('wa_bot_claim_session', { p_wa_id: '5533555', p_token: 'x' });
+  Object.assign(db.t('wa_bot_sessions')[0], { locked_until: null, lock_token: null, state: 'CREATING', user_id: 'U1', updated_at: new Date(Date.now() - 5 * 60_000).toISOString() });
+  await sweep(db, cfg);
+  assertEquals(db.t('wa_bot_sessions')[0].state, 'IDLE');
+  assert(sentText(sends[0]).includes('Não consegui confirmar'));
+});
+
+t('RT16 a queued activation does not run after the number was unlinked', async () => {
+  const db = new FakeDb(); const sends = installFetch();
+  db.t('wa_bot_links').push({ id: 'L1', user_id: 'U1', status: 'revoked', wa_id: '5533666' });
+  db.t('campaigns').push({ id: crypto.randomUUID(), user_id: 'U1', meta_campaign_id: '120200000001' });
+  db.t('wa_bot_jobs').push({ id: 'J4', session_id: 'S', user_id: 'U1', wa_id: '5533666', kind: 'activate_campaign', status: 'pending', attempts: 0, payload: { metaCampaignId: '120200000001' } });
+  await runJob(db, cfg, 'J4');
+  assertEquals(db.t('wa_bot_jobs')[0].status, 'failed');
+  assertEquals(db.t('wa_bot_jobs')[0].result, { error: 'link_inactive' });
+  assertEquals(db.t('campaigns')[0].status, undefined); // untouched
+  assertEquals(sends.length, 0);
+});
+
+t('RT17 lock owner: another run cannot release or extend a lock it does not hold', async () => {
+  const db = new FakeDb(); installFetch();
+  const { data: id } = await db.rpc('wa_bot_claim_session', { p_wa_id: '5533777', p_token: 'A' });
+  await db.rpc('wa_bot_release_session', { p_id: id, p_token: 'B' });
+  assert(db.t('wa_bot_sessions')[0].locked_until != null);
+  assertEquals((await db.rpc('wa_bot_extend_session', { p_id: id, p_token: 'B' })).data, false);
+  // and processNumber leaves a foreign lock in place
+  inbound(db, '5533777', 'oi');
+  await processNumber(db, cfg, '5533777');
+  assertEquals(db.t('wa_bot_sessions')[0].lock_token, 'A');
 });

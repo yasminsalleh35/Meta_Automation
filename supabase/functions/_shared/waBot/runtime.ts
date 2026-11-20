@@ -14,7 +14,7 @@ import {
   type CampaignLine, type Deps, type IgLookup, type JobOutcome, type Session, type StoredMedia, type UserContext,
   handleJobResult, handleMessage, newSession,
 } from './engine.ts';
-import { botMode, isUserAllowed, kickWorker } from './flags.ts';
+import { isUserAllowed, kickWorker } from './flags.ts';
 import { createSimpleCampaign } from '../../simple-campaign-create/core.ts';
 import { activateCampaignForUser } from '../../simple-campaign-activate/core.ts';
 
@@ -24,7 +24,9 @@ type Db = any;
 export const MAX_MEDIA_BYTES = 50 * 1024 * 1024;
 export const INBOUND_PER_MINUTE = 30;
 export const LINK_FAILS_PER_HOUR_PER_NUMBER = 5;
-export const LINK_FAILS_PER_HOUR_GLOBAL = 100;
+// High enough that a handful of numbers can't block linking for everyone; with 8-digit codes valid for
+// 10 minutes, even this many guesses per hour have a negligible chance of hitting a pending code.
+export const LINK_FAILS_PER_HOUR_GLOBAL = 1000;
 const DEFAULT_MAX_DAILY_BUDGET = 200;
 
 // ------------------------------------------------------------------------------------------------
@@ -52,20 +54,34 @@ async function saveSession(db: Db, id: string, s: Session, userId: string | null
   }).eq('id', id);
 }
 
-/** Lock the number's session (creating it). Retries for up to ~`waitMs` while another run holds it. */
-export async function claimSession(db: Db, waId: string, waitMs = 0): Promise<string | null> {
+export const LOCK_SECONDS = 180;
+/** A run stops picking up new messages after this long; the rest go to the next kick/sweep. */
+export const RUN_BUDGET_MS = 100_000;
+
+export interface SessionLock { id: string; token: string }
+
+/** Lock the number's session (creating it) with our own token. Retries for up to ~`waitMs` while another run holds it. */
+export async function claimSession(db: Db, waId: string, waitMs = 0): Promise<SessionLock | null> {
   const deadline = Date.now() + waitMs;
+  const token = crypto.randomUUID();
   for (;;) {
-    const { data, error } = await db.rpc('wa_bot_claim_session', { p_wa_id: waId, p_lock_seconds: 180 });
+    const { data, error } = await db.rpc('wa_bot_claim_session', { p_wa_id: waId, p_token: token, p_lock_seconds: LOCK_SECONDS });
     if (error) throw new Error(`claim: ${error.message}`);
-    if (data) return String(data);
+    if (data) return { id: String(data), token };
     if (Date.now() >= deadline) return null;
     await new Promise((r) => setTimeout(r, 1000));
   }
 }
 
-async function releaseSession(db: Db, id: string) {
-  await db.rpc('wa_bot_release_session', { p_id: id });
+/** Renews our lock; false when another run took it (ours had expired). */
+async function extendSession(db: Db, lock: SessionLock): Promise<boolean> {
+  const { data, error } = await db.rpc('wa_bot_extend_session', { p_id: lock.id, p_token: lock.token, p_lock_seconds: LOCK_SECONDS });
+  return !error && data === true;
+}
+
+/** Releases the lock only if we still own it. */
+async function releaseSession(db: Db, lock: SessionLock) {
+  await db.rpc('wa_bot_release_session', { p_id: lock.id, p_token: lock.token });
 }
 
 // ------------------------------------------------------------------------------------------------
@@ -282,15 +298,21 @@ async function countSince(db: Db, filter: (q: Db) => Db, sinceMs: number): Promi
 }
 
 export async function processNumber(db: Db, cfg: WaConfig, waId: string): Promise<void> {
-  const sessionId = await claimSession(db, waId);
-  if (!sessionId) return; // another run holds this number; it re-checks for new messages before releasing
+  const lock = await claimSession(db, waId);
+  // Another run holds this number. It re-reads pending messages until none are left; anything that
+  // lands in the gap before it releases is picked up by the sweep (≤ ~2 min).
+  if (!lock) return;
+  const sessionId = lock.id;
+  const started = Date.now();
   try {
-    for (let round = 0; round < 10; round++) {
+    outer: for (let round = 0; round < 10; round++) {
       const { data: pending } = await db.from('wa_bot_messages').select('*')
         .eq('wa_id', waId).eq('direction', 'in').is('processed_at', null)
         .order('wa_timestamp', { ascending: true }).order('id', { ascending: true }).limit(20);
       if (!pending?.length) break;
       for (const row of pending) {
+        // Time budget + lock renewal: never keep working on a lock that may have passed to another run.
+        if (Date.now() - started > RUN_BUDGET_MS || !(await extendSession(db, lock))) break outer;
         try {
           await processOne(db, cfg, sessionId, rowToInbound(row), row.id);
         } catch (e) {
@@ -300,7 +322,7 @@ export async function processNumber(db: Db, cfg: WaConfig, waId: string): Promis
       }
     }
   } finally {
-    await releaseSession(db, sessionId);
+    await releaseSession(db, lock);
   }
 }
 
@@ -337,13 +359,17 @@ async function processOne(db: Db, cfg: WaConfig, sessionId: string, msg: Inbound
       return await done({ error: 'link_conflict' });
     }
     const masked = maskPhone(waId);
-    const { error: upErr } = await db.from('wa_bot_links').update({
+    const { data: activated, error: upErr } = await db.from('wa_bot_links').update({
       status: 'active', wa_id: waId, phone_masked: masked, linked_at: new Date().toISOString(),
       code_hash: null, code_expires_at: null, opted_out_at: null, updated_at: new Date().toISOString(),
-    }).eq('id', pend.id).eq('status', 'pending');
+    }).eq('id', pend.id).eq('status', 'pending').select('id').maybeSingle();
     if (upErr) {
       await send({ kind: 'text', text: T.linkAlreadyOther() });
       return await done({ error: 'link_conflict' });
+    }
+    if (!activated) { // code regenerated or cancelled in the meantime: nothing was linked
+      await send({ kind: 'text', text: T.linkInvalid() });
+      return await done({ error: 'link_failed' });
     }
     if (link && link.id !== pend.id) {
       await db.from('wa_bot_links').update({ status: 'revoked', updated_at: new Date().toISOString() }).eq('id', link.id);
@@ -406,9 +432,16 @@ export async function runJob(db: Db, cfg: WaConfig, jobId: string): Promise<void
   if (!job) return; // already taken by another run
 
   await db.from('wa_bot_jobs').update({ attempts: (job.attempts ?? 0) + 1 }).eq('id', jobId);
+  // The number must still be linked to the job's account (an unlink right after the tap cancels the job).
+  const { data: stillLinked } = await db.from('wa_bot_links').select('id')
+    .eq('user_id', job.user_id).eq('wa_id', job.wa_id).eq('status', 'active').is('opted_out_at', null).maybeSingle();
+  if (!stillLinked || !isUserAllowed(job.user_id)) {
+    await db.from('wa_bot_jobs').update({ status: 'failed', result: { error: 'link_inactive' }, finished_at: new Date().toISOString() }).eq('id', jobId);
+    return; // nothing is sent: the number is no longer this account's
+  }
+
   let result: JobOutcome['result'] = null;
   try {
-    if (!isUserAllowed(job.user_id)) throw new Error('bot disabled for user');
     if (job.kind === 'create_campaign') {
       result = await createSimpleCampaign(db, job.user_id, job.payload?.payload ?? null, { source: 'whatsapp' });
     } else {
@@ -427,18 +460,34 @@ export async function runJob(db: Db, cfg: WaConfig, jobId: string): Promise<void
 }
 
 // deno-lint-ignore no-explicit-any
-async function deliverJobResult(db: Db, cfg: WaConfig, job: any, outcome: JobOutcome) {
-  const sessionId = await claimSession(db, job.wa_id, 60_000);
-  if (!sessionId) { console.error('[wa-bot] could not lock session to deliver job result', { jobId: job.id }); return; }
+async function deliverJobResult(db: Db, cfg: WaConfig, job: any, outcome: JobOutcome): Promise<boolean> {
+  // If the lock can't be taken now, the sweep re-delivers later (the session stays CREATING/ACTIVATING).
+  const lock = await claimSession(db, job.wa_id, 60_000);
+  if (!lock) { console.error('[wa-bot] could not lock session to deliver job result', { jobId: job.id }); return false; }
+  const sessionId = lock.id;
   try {
     const { data: row } = await db.from('wa_bot_sessions').select('*').eq('id', sessionId).single();
+    const r = row as SessionRow;
+    // Deliver only to the conversation that is waiting for this job (same account, same state, same draft).
+    const expected = outcome.kind === 'create_campaign' ? 'CREATING' : 'ACTIVATING';
+    const sameDraft = outcome.kind !== 'create_campaign' || job.payload?.draftVersion == null || Number(job.payload.draftVersion) === Number(r.draft_version);
+    if (r.state !== expected || r.user_id !== job.user_id || !sameDraft) return false;
     const { data: link } = await db.from('wa_bot_links').select('max_daily_budget').eq('user_id', job.user_id).eq('status', 'active').maybeSingle();
     const deps = makeDeps(db, cfg, job.wa_id, job.user_id, link?.max_daily_budget != null ? Number(link.max_daily_budget) : null, sessionId);
-    const next = await handleJobResult(toSession(row as SessionRow), outcome, deps);
+    const next = await handleJobResult(toSession(r), outcome, deps);
     await saveSession(db, sessionId, next, job.user_id);
+    return true;
   } finally {
-    await releaseSession(db, sessionId);
+    await releaseSession(db, lock);
   }
+}
+
+/** A finished job row → the outcome the engine expects (null result = "couldn't confirm"). */
+// deno-lint-ignore no-explicit-any
+function outcomeFromJob(job: any): JobOutcome {
+  const res = job.result;
+  const ok = res && typeof res.status === 'number' && job.status !== 'failed_unknown';
+  return { kind: job.kind, result: ok ? { status: res.status, body: res.body ?? {} } : null };
 }
 
 // ------------------------------------------------------------------------------------------------
@@ -467,6 +516,21 @@ export async function sweep(db: Db, cfg: WaConfig): Promise<Record<string, numbe
     const { data: upd } = await db.from('wa_bot_jobs').update({ status: 'failed_unknown', finished_at: new Date().toISOString() })
       .eq('id', j.id).eq('status', 'running').select('id').maybeSingle();
     if (upd) { await deliverJobResult(db, cfg, j, { kind: j.kind, result: null }); stats.jobsStuck++; }
+  }
+
+  // Conversations still waiting (CREATING/ACTIVATING) whose job already finished: the result was never
+  // delivered (worker died, or the session was locked). Re-deliver it so the user is never stuck.
+  stats.redelivered = 0;
+  const { data: waiting } = await db.from('wa_bot_sessions').select('id, wa_id, user_id, state, draft_version')
+    .in('state', ['CREATING', 'ACTIVATING']).lt('updated_at', iso(3 * 60_000)).limit(20);
+  for (const s of waiting ?? []) {
+    const kind = s.state === 'CREATING' ? 'create_campaign' : 'activate_campaign';
+    const { data: jobs } = await db.from('wa_bot_jobs').select('*').eq('session_id', s.id).eq('kind', kind)
+      .order('created_at', { ascending: false }).limit(1);
+    const job = jobs?.[0];
+    if (job && (job.status === 'pending' || job.status === 'running')) continue; // still in flight (handled above)
+    const target = job ?? { id: null, kind, wa_id: s.wa_id, user_id: s.user_id, payload: { draftVersion: s.draft_version }, status: 'failed_unknown' };
+    if (await deliverJobResult(db, cfg, target, outcomeFromJob(target))) stats.redelivered++;
   }
 
   // Retention (plan §6.3): bodies 90 days; unknown numbers 7 days; expired link codes 1 day.

@@ -32,9 +32,9 @@ import { useWhatsAppBotLink } from '@/hooks/useWhatsAppBotLink';
 const Settings = () => {
   const { t } = useI18n();
   const { toast } = useToast();
-  // WhatsApp campaign bot: tab only when the bot is available to this user; ?tab=whatsapp opens it (bot link)
+  // WhatsApp campaign bot: tab when the bot is available to this user, or while a number is still linked (so it can be unlinked); ?tab=whatsapp opens it
   const bot = useWhatsAppBotLink();
-  const showWhatsApp = !!bot.status?.available;
+  const showWhatsApp = !!bot.status?.available || !!bot.status?.linked;
   const [searchParams] = useSearchParams();
   const requestedTab = searchParams.get('tab');
   const initialTab = requestedTab && ['profile', 'notifications', 'security', 'privacy', 'whatsapp'].includes(requestedTab) ? requestedTab : 'profile';

@@ -94,6 +94,11 @@ export function newSession(now: Date): Session {
   return { state: 'IDLE', draft: {}, draftVersion: 0, retries: 0, updatedAt: now };
 }
 
+/** Ad text shown inside the summary; longer texts are sent in full just before it. */
+export const REVIEW_TEXT_MAX = 400;
+const DURATION_BUTTONS = [
+  { id: 'dur:0', title: 'Sem data de término' }, { id: 'dur:7', title: '7 dias' }, { id: 'dur:30', title: '30 dias' }];
+
 const reset = (s: Session, now: Date): Session => ({ state: 'IDLE', draft: {}, draftVersion: s.draftVersion + 1, retries: 0, updatedAt: now });
 const goto = (s: Session, state: State, draft: Draft, now: Date): Session => ({ ...s, state, draft, retries: 0, updatedAt: now });
 const retry = (s: Session, now: Date): Session => ({ ...s, retries: s.retries + 1, updatedAt: now });
@@ -136,8 +141,7 @@ async function promptState(state: State, d: Draft, deps: Deps, retries = 0): Pro
         { id: 'budget:30', title: 'R$ 30' }, { id: 'budget:50', title: 'R$ 50' }, { id: 'budget:100', title: 'R$ 100' }] });
       return;
     case 'ASK_DURATION':
-      await deps.send({ kind: 'buttons', text: r(T.askDuration()), buttons: [
-        { id: 'dur:0', title: 'Sem data de término' }, { id: 'dur:7', title: '7 dias' }, { id: 'dur:30', title: '30 dias' }] });
+      await deps.send({ kind: 'buttons', text: r(T.askDuration()), buttons: DURATION_BUTTONS });
       return;
     case 'REVIEW': {
       const c = d.creative!;
@@ -145,11 +149,17 @@ async function promptState(state: State, d: Draft, deps: Deps, retries = 0): Pro
         ? `Post do Instagram${c.igUsername ? ` @${c.igUsername}` : ''}`
         : (c.kind === 'video' ? 'Vídeo enviado' : 'Foto enviada');
       const imageUrl = c.type === 'upload' ? (c.kind === 'image' ? c.url : undefined) : (c.thumbnailUrl ?? undefined);
+      const fullText = d.copy!.text;
+      let shownText = fullText;
+      if (fullText.length > REVIEW_TEXT_MAX) {
+        await deps.send({ kind: 'text', text: T.fullCopy(d.copy!.title, fullText) });
+        shownText = fullText.slice(0, REVIEW_TEXT_MAX).trimEnd() + T.copyContinued();
+      }
       await deps.send({
         kind: 'buttons',
         imageUrl,
         text: T.review({
-          title: d.copy!.title, text: d.copy!.text, place: placeLabel(d), radius: d.radius!, budget: d.budget!,
+          title: d.copy!.title, text: shownText, place: placeLabel(d), radius: d.radius!, budget: d.budget!,
           duration: d.duration ?? 0, page: d.pageName ?? d.pageId ?? '', creative: creativeLabel,
         }),
         buttons: [{ id: 'review:confirm', title: 'Confirmar' }, { id: 'review:edit', title: 'Editar texto' }, { id: 'review:cancel', title: 'Cancelar' }],
@@ -291,7 +301,7 @@ export async function handleMessage(session: Session, msg: InboundMessage, deps:
     }
     case 'ASK_DURATION': {
       const dur = reply.startsWith('dur:') ? (Number(reply.slice(4)) as 0 | 7 | 30) : parseDuration(msg.text);
-      if (dur !== 0 && dur !== 7 && dur !== 30) { await deps.send({ kind: 'text', text: T.retry(T.durationInvalid(), s.retries + 1) }); await promptState('ASK_DURATION', s.draft, deps); return retry(s, now); }
+      if (dur !== 0 && dur !== 7 && dur !== 30) { await deps.send({ kind: 'buttons', text: T.retry(T.durationInvalid(), s.retries + 1), buttons: DURATION_BUTTONS }); return retry(s, now); }
       const d: Draft = { ...s.draft, duration: dur };
       d.copy = await buildCopy(d, deps);
       await promptState('REVIEW', d, deps);
@@ -329,7 +339,9 @@ export async function handleMessage(session: Session, msg: InboundMessage, deps:
     case 'CREATED': {
       const created = s.draft.created;
       const yn = msg.type === 'text' ? parseYesNo(msg.text) : null;
-      if (created && (reply === `act:yes:${created.metaCampaignId}` || yn === 'yes')) {
+      // Spending starts only from a tap on the button carrying this campaign's id; a typed "ok"/"sim"
+      // is never enough (plan §8).
+      if (created && reply === `act:yes:${created.metaCampaignId}`) {
         await deps.enqueueJob('activate_campaign', { metaCampaignId: created.metaCampaignId });
         return goto(s, 'ACTIVATING', s.draft, now);
       }
@@ -337,6 +349,7 @@ export async function handleMessage(session: Session, msg: InboundMessage, deps:
         await deps.send({ kind: 'buttons', text: T.keptPaused(), buttons: [MENU_BUTTONS[0], MENU_BUTTONS[1]] });
         return reset(s, now);
       }
+      if (yn === 'yes') await deps.send({ kind: 'text', text: T.activateTapHint() });
       await sendActivateQuestion(created, deps);
       return retry(s, now);
     }
@@ -423,7 +436,7 @@ async function buildCopy(d: Draft, deps: Deps): Promise<NonNullable<Draft['copy'
 }
 
 /** Same shape the web wizard sends (src/hooks/useSimpleCampaignWizard.ts) — plan §7.3. */
-export function buildCreatePayload(d: Draft, draftVersion: number, now: Date, _deps?: Deps): Record<string, unknown> {
+export function buildCreatePayload(d: Draft, _draftVersion: number, now: Date, _deps?: Deps): Record<string, unknown> {
   const loc = d.location!;
   const selected_locations = loc.type === 'city'
     ? [{ key: loc.key, name: loc.name, type: 'city', country_code: 'BR', radius: d.radius, distance_unit: 'kilometer' }]
@@ -493,13 +506,20 @@ export async function handleJobResult(s: Session, outcome: JobOutcome, deps: Dep
   if (outcome.kind === 'create_campaign') {
     if (!outcome.result) { await deps.send({ kind: 'text', text: T.createUnknown() }); return reset(s, now); }
     const st = String(body.status ?? '');
+    if (st === 'created' && body.reconcilePending) {
+      // Exists at Meta but not yet in Camply's table: activation would fail until reconciliation.
+      await deps.send({ kind: 'buttons', text: T.createdReconciling(), buttons: [MENU_BUTTONS[0], MENU_BUTTONS[1]] });
+      return reset(s, now);
+    }
     if (st === 'created') {
       const created = { metaCampaignId: String(body.metaCampaignId ?? body.campaignId), name: buildCampaignName(s.draft.businessName, placeLabel(s.draft), now), budget: s.draft.budget ?? 0 };
       await sendActivateQuestion(created, deps);
       return goto(s, 'CREATED', { ...s.draft, created }, now);
     }
     if (st === 'queued') { await deps.send({ kind: 'text', text: T.createQueued(String(body.userMessage ?? '')) }); return reset(s, now); }
-    if (st === 'in_progress') return s;
+    // Same idempotency key already being processed elsewhere: we can't know the outcome here, so never
+    // leave the user waiting in CREATING — point them to the panel (same as an unknown result).
+    if (st === 'in_progress') { await deps.send({ kind: 'text', text: T.createUnknown() }); return reset(s, now); }
     // failed: back to REVIEW with a new draft version (a new idempotency key for the retry)
     await deps.send({ kind: 'text', text: T.createFailed(String(body.userMessage ?? 'erro desconhecido')) });
     const next: Session = { ...goto(s, 'REVIEW', s.draft, now), draftVersion: s.draftVersion + 1 };

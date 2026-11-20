@@ -281,3 +281,35 @@ new create/activate cores in production (422 INVALID_PAYLOAD, 422 NO_INTEGRATION
 `wa-bot-link` (available=false, start → 403) and the LGPD export (4 new tables present); the user was
 deleted afterwards. **Not yet done:** a real (paused) campaign created from the web wizard after the
 refactor — needs an account with a Meta connection.
+
+## 2026-11-20 — WhatsApp bot: fixes from an independent review (bot still OFF)
+
+An independent code review of the F1–F3 build found these; each was confirmed against the code, fixed
+and covered by a new test (Deno 170/170, 9 new).
+
+- **Stuck "creating…" conversation.** If the result of a create/activate job could not be delivered
+  (worker died, session locked), or the create core answered `in_progress`, the conversation stayed in
+  CREATING/ACTIVATING forever. Now the sweep re-delivers finished jobs to conversations still waiting
+  (>3 min), sends an honest "check the panel" message when no job exists, and `in_progress` ends the
+  wait. Delivery is guarded: same account, same state, same draft version.
+- **Summary could hide the budget.** WhatsApp clips interactive bodies at 1024 chars and the ad text
+  came first, so a long text could push "R$/dia", region and "pausada" out of the message the user
+  confirms. Facts now come first; texts over 400 chars are sent in full in a message just before.
+- **Typed "ok"/"sim" activated spending.** Activation now needs the tap on the button carrying the
+  campaign id (plan §8); a typed yes gets a hint and the buttons again.
+- **Unlink didn't stop queued jobs.** Unlink cancels pending jobs, and every job re-checks that the
+  number is still linked to the account before running.
+- **Session lock.** New migration `20261120000001_wa_bot_lock_owner`: locks carry an owner token;
+  release/extend only work for the owner; a run renews its lock per message and stops taking new
+  messages after 100 s. Rollback: re-apply the two functions from `20261119000001` and
+  `drop function public.wa_bot_extend_session(uuid,uuid,int); alter table public.wa_bot_sessions drop column lock_token;`
+- Smaller: global link-failure limit raised from 100 to 1000/hour (a few numbers could block linking
+  for everyone; 8-digit codes keep guessing hopeless); a link that was regenerated mid-way no longer
+  reports success; "created but pending reconciliation" no longer offers an activation that would fail;
+  an invalid duration answer sends one message instead of two; a linked user keeps the Settings card
+  (and the unlink button) even if the bot is turned off for them.
+
+**Deployed:** migration applied and recorded; `wa-bot-worker`, `wa-bot-link`, `wa-bot-webhook`.
+**Verified in production:** lock RPCs via the API (claim while held → null, foreign extend → false,
+owner extend → true, claim after release ok, anon → permission denied); worker/link/webhook still 401
+without credentials; webhook handshake 200; cron sweep 200.

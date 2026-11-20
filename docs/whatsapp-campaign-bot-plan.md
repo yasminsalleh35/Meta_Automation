@@ -6,7 +6,7 @@
 
 ---
 
-## Implementation status (2026-11-19)
+## Implementation status (2026-11-19, review fixes 2026-11-20)
 
 | Part | State |
 |---|---|
@@ -15,7 +15,7 @@
 | §6 data model | **Applied:** `20261119000001_wa_bot_tables.sql`, sweep cron `20261119000002_wa_bot_sweep_cron.sql`. LGPD export includes the four tables. |
 | §7.4 Instagram post by link | **Done** (engine + runtime). |
 | §10 web app | **Done:** Settings → WhatsApp tab (`?tab=whatsapp`), "via WhatsApp" badge on the campaign card. Hidden while the bot is off. |
-| §11 tests | **Done:** 86 new Deno tests (units, engine, runtime with fake DB, activation core, core entry point); probe gained explicit bot checks. |
+| §11 tests | **Done:** 95 new Deno tests (units, engine, runtime with fake DB, activation core, core entry point); probe gained explicit bot checks. |
 | §9 Meta setup | **Waiting for the client** (Stage A). Secrets already set: `WA_BOT_MODE=off`, `WA_BOT_NUMBER`, `WA_BOT_MAX_DAILY_BUDGET=200`, `WA_VERIFY_TOKEN`. Missing: `WA_ACCESS_TOKEN`, `WA_PHONE_NUMBER_ID`. |
 | F4 manual QA on real devices, beta, launch | **Pending** (needs the Meta setup). |
 
@@ -24,10 +24,15 @@
   `simple-campaign-activate/core.ts`) instead of `_shared/campaign/` — no file moves, so every existing
   test import still works.
 - The link code is **8 digits** (not 6), with **5 failed attempts per number per hour** and a **global limit of
-  100 failures/hour**; anyone who guessed a pending code would otherwise link *their* WhatsApp to someone
+  1000 failures/hour**; anyone who guessed a pending code would otherwise link *their* WhatsApp to someone
   else's account.
-- The worker lock is `wa_bot_claim_session(p_wa_id, p_lock_seconds)` / `wa_bot_release_session(p_id)`
-  (one session row per number, reset to IDLE between flows) instead of `claim_wa_bot_messages`.
+- The worker lock is `wa_bot_claim_session(p_wa_id, p_token, p_lock_seconds)` / `wa_bot_extend_session` /
+  `wa_bot_release_session(p_id, p_token)` (one session row per number, owner token, renewed per message;
+  migration `20261120000001`) instead of `claim_wa_bot_messages`.
+- Activation needs the **button tap**; a typed "sim"/"ok" is not enough. The summary lists budget, place,
+  duration and "pausada" **before** the ad text; texts over 400 chars are sent in full just before it.
+- The sweep also re-delivers finished job results to conversations still waiting in CREATING/ACTIVATING,
+  so no conversation can stay stuck on "criando…".
 - Media is accepted up to **50 MB** (not 100 MB): the edge function holds the file in memory.
 - Activation now also blocks suspended / pending-deletion accounts — for the web endpoint too (the
   audit had fixed creation but not activation, which is the step that spends money).

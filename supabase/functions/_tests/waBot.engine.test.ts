@@ -443,3 +443,55 @@ Deno.test('S4 "Criar campanha" tapped mid-flow restarts cleanly', async () => {
   assertEquals(s.state, 'ASK_MEDIA');
   assertEquals(s.draft.creative, undefined);
 });
+
+// ---------------- review fixes (2026-11-20) ----------------
+Deno.test('F1 typed "sim"/"ok" after creation never activates; only the Ativar button does', async () => {
+  const f = fake();
+  let s = await run(f, await toReview(f), btn('review:confirm'));
+  s = await handleJobResult(s, { kind: 'create_campaign', result: { status: 200, body: { status: 'created', metaCampaignId: '120200001' } } }, f.deps);
+  s = await run(f, s, txt('sim'), txt('ok'), txt('pode'));
+  assertEquals(s.state, 'CREATED');
+  assertEquals(f.jobs.length, 1); // only the create job
+  assert(f.sent.some((m) => 'text' in m && m.text.includes('toque no botão *Ativar*')));
+  assertEquals(lastButtons(f), ['act:yes:120200001', 'act:no']);
+  s = await run(f, s, btn('act:yes:120200001'));
+  assertEquals(s.state, 'ACTIVATING');
+});
+Deno.test('F2 long ad text: budget/place/"pausada" always inside the summary (≤1024), full text sent before it', async () => {
+  const f = fake();
+  let s = await toReview(f);
+  s = await run(f, s, btn('review:edit'), txt('x'.repeat(990)));
+  assertEquals(s.state, 'REVIEW');
+  const last = f.sent[f.sent.length - 1] as { text: string };
+  assert(last.text.length <= 1024, `summary ${last.text.length} chars`);
+  assert(last.text.includes('R$ 50,00 por dia'));
+  assert(last.text.includes('*pausada*'));
+  assert(last.text.includes('texto completo na mensagem acima'));
+  const before = f.sent[f.sent.length - 2] as { text: string };
+  assert(before.text.includes('x'.repeat(990)));
+});
+Deno.test('F3 create "in_progress" result never leaves the user stuck in CREATING', async () => {
+  const f = fake();
+  let s = await run(f, await toReview(f), btn('review:confirm'));
+  s = await handleJobResult(s, { kind: 'create_campaign', result: { status: 409, body: { status: 'in_progress' } } }, f.deps);
+  assertEquals(s.state, 'IDLE');
+  assert(lastText(f).includes('Não consegui confirmar'));
+});
+Deno.test('F4 created but pending reconciliation → no Ativar button (it would fail), points to the panel', async () => {
+  const f = fake();
+  let s = await run(f, await toReview(f), btn('review:confirm'));
+  s = await handleJobResult(s, { kind: 'create_campaign', result: { status: 200, body: { status: 'created', metaCampaignId: '1202', reconcilePending: true } } }, f.deps);
+  assertEquals(s.state, 'IDLE');
+  assert(!lastButtons(f).some((id: string) => id.startsWith('act:yes')));
+  assert(lastText(f).includes('/dashboard/campaigns'));
+});
+Deno.test('F5 invalid duration → one message with the buttons (not two)', async () => {
+  const f = fake();
+  let s = await toReview(f);
+  // walk back: a fresh flow up to ASK_DURATION is long; reuse REVIEW draft by forcing the state
+  s = { ...s, state: 'ASK_DURATION' };
+  const before = f.sent.length;
+  s = await run(f, s, txt('banana'));
+  assertEquals(f.sent.length - before, 1);
+  assertEquals(lastButtons(f), ['dur:0', 'dur:7', 'dur:30']);
+});
